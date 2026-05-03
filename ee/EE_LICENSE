@@ -1,0 +1,26 @@
+KiwiFS Enterprise License
+
+Copyright (c) 2026 KiwiFS Authors. All rights reserved.
+
+The code in this directory and its subdirectories ("Enterprise Features") is
+licensed separately from the rest of the KiwiFS project.
+
+You may view, read, and audit this code freely. However, to use Enterprise
+Features in a production environment, you must hold a valid KiwiFS Enterprise
+license obtained from the KiwiFS Authors.
+
+A valid license is required for:
+  - Self-hosted production deployments using Enterprise Features
+  - Any deployment managed by a third party on your behalf
+
+A valid license is NOT required for:
+  - Reading, auditing, or reviewing the code
+  - Development, testing, or evaluation purposes
+  - Contributing improvements back to the project (subject to CLA)
+
+Enterprise licenses are available at: https://kiwifs.com/pricing
+For questions: enterprise@kiwifs.com
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
