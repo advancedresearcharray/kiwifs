@@ -491,6 +491,18 @@ func (r *RemoteBackend) ResolveWikiLinks(ctx context.Context, content string) st
 	return content
 }
 
+func (r *RemoteBackend) Context(ctx context.Context) (string, string, string, error) {
+	var result struct {
+		Schema   string `json:"schema"`
+		Playbook string `json:"playbook"`
+		Index    string `json:"index"`
+	}
+	if err := r.getJSON(ctx, r.apiPrefix+"/context", &result); err != nil {
+		return "", "", "", err
+	}
+	return result.Schema, result.Playbook, result.Index, nil
+}
+
 func (r *RemoteBackend) Health(ctx context.Context) error {
 	return r.getJSON(ctx, "/health", &json.RawMessage{})
 }

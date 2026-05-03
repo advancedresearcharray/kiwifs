@@ -26,7 +26,7 @@
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kiwifs/kiwifs/main/install.sh | sh
-kiwifs init ./knowledge && kiwifs serve --root ./knowledge
+kiwifs init --root ./knowledge && kiwifs serve --root ./knowledge
 # Open http://localhost:3333
 ```
 
@@ -63,7 +63,7 @@ KiwiFS is all five.
 ```
 AGENT                              HUMAN
 ─────                              ─────
-cat /kiwi/concepts/auth.md         Web UI (like Obsidian Publish
+cat /kiwi/pages/auth.md            Web UI (like Obsidian Publish
 grep -r "timeout" /kiwi/             + Notion's block editor)
 echo "# Report" > /kiwi/r.md      wiki links, graph view, search
 
@@ -112,20 +112,26 @@ kiwifs init --template knowledge
 
 ```
 knowledge/
-├── SCHEMA.md          # Agent instructions: ingest, query, lint
+├── SCHEMA.md          # Structure and frontmatter conventions
 ├── index.md           # Auto-maintained table of contents
 ├── log.md             # Append-only chronological record
-├── concepts/          # One page per concept (agent-created)
-├── entities/          # One page per named entity
-├── episodes/          # Per-run episodic notes (memory_kind, episode_id)
-└── reports/           # Chronological reports
+├── pages/             # Durable knowledge — one page per concept, entity, or topic
+├── episodes/          # Per-session episodic notes (consolidate into pages over time)
+└── .kiwi/
+    └── playbook.md    # Agent-readable operation guide (MCP tool sequences)
 ```
 
-The agent reads `SCHEMA.md` to understand how to maintain the wiki. Three operations:
+Every template ships with two agent-facing documents:
+- **`SCHEMA.md`** — structure, directory layout, frontmatter field tables
+- **`.kiwi/playbook.md`** — step-by-step MCP tool sequences for each operation
 
-- **Ingest** — process a new source, create/update wiki pages, update index + log.
-- **Query** — search the wiki to answer a question.
-- **Lint** — audit for orphan pages, broken links, contradictions, stale content.
+The agent calls `kiwi_context` on connect to receive both documents plus the current index in one call. Operations from the playbook:
+
+- **Ingest** — process a new source, create/update pages, update index + log
+- **Query** — search the wiki to answer a question
+- **Remember** — save episodic observations during a session
+- **Consolidate** — merge episodes into durable pages
+- **Lint** — audit for orphan pages, broken links, stale content
 
 Other templates: `wiki`, `runbook`, `research`, or start blank with `kiwifs init`.
 
@@ -138,10 +144,10 @@ Other templates: `wiki`, `runbook`, `research`, or start blank with `kiwifs init
 Embedded in the binary via `go:embed`. No separate frontend deploy, no Node runtime. Obsidian's knowledge features (wiki links, backlinks, graph view) with a Notion-style block editor.
 
 - **WYSIWYG editor** — block-based (BlockNote), drag handles, 15+ block types, slash commands
-- **`[[Wiki links]]` + backlinks** — type `[[auth]]`, resolves to `concepts/authentication.md`. Backlinks panel shows "linked from 3 pages." This is Obsidian's core feature — notes are connected, not isolated.
+- **`[[Wiki links]]` + backlinks** — type `[[auth]]`, resolves to `pages/authentication.md`. Backlinks panel shows "linked from 3 pages." This is Obsidian's core feature — notes are connected, not isolated.
 - **Knowledge graph** — visual map of all pages and their connections (Sigma.js + ForceAtlas2). Same organic clustering as Obsidian's graph view.
 - **Cmd+K search** — full-text with highlighted matches
-- **Breadcrumbs** — `Knowledge > Concepts > Authentication`
+- **Breadcrumbs** — `Knowledge > Pages > Authentication`
 - **Table of contents** — auto-generated, sticky sidebar, scroll tracking
 - **Inline comments** — select text, add annotation. Stored in `.kiwi/comments/`, not in the markdown
 - **Dark mode** — toggle a CSS class
@@ -154,10 +160,10 @@ Built on shadcn/ui + Radix. Accessible. Beautiful by default. Fully customizable
 When your agent has a real filesystem mount:
 
 ```bash
-cat /kiwi/concepts/authentication.md
+cat /kiwi/pages/authentication.md
 grep -r "timeout" /kiwi/
-ls /kiwi/reports/
-echo "# New finding" > /kiwi/reports/finding-042.md
+ls /kiwi/pages/
+echo "# New finding" > /kiwi/pages/finding-042.md
 ```
 
 When a real mount isn't available, agents use the REST API or MCP tools instead.
@@ -165,11 +171,12 @@ When a real mount isn't available, agents use the REST API or MCP tools instead.
 ### MCP (Model Context Protocol)
 
 ```bash
-kiwifs mcp --root ~/knowledge          # in-process, no server needed
+kiwifs mcp --root ~/knowledge          # stdio (default), in-process, no server needed
+kiwifs mcp --root ~/knowledge --http   # Streamable HTTP transport on :8080
 kiwifs mcp --remote http://host:3333   # proxy to a running KiwiFS server
 ```
 
-20 tools: `kiwi_read`, `kiwi_write`, `kiwi_search`, `kiwi_tree`, `kiwi_query_meta`, `kiwi_delete`, `kiwi_bulk_write`, `kiwi_rename`, `kiwi_query`, `kiwi_aggregate`, `kiwi_import`, `kiwi_export`, `kiwi_analytics`, `kiwi_memory_report`, `kiwi_view_refresh`, `kiwi_health_check`, `kiwi_changes`, `kiwi_append`, `kiwi_search_semantic`, `kiwi_backlinks`. Plus resources (`kiwi://schema`, `kiwi://file/{path}`, `kiwi://tree/{path}`).
+21 tools: `kiwi_context`, `kiwi_read`, `kiwi_write`, `kiwi_search`, `kiwi_tree`, `kiwi_query_meta`, `kiwi_delete`, `kiwi_bulk_write`, `kiwi_rename`, `kiwi_query`, `kiwi_aggregate`, `kiwi_import`, `kiwi_export`, `kiwi_analytics`, `kiwi_memory_report`, `kiwi_view_refresh`, `kiwi_health_check`, `kiwi_changes`, `kiwi_append`, `kiwi_search_semantic`, `kiwi_backlinks`. Plus resources (`kiwi://schema`, `kiwi://file/{path}`, `kiwi://tree/{path}`).
 
 **Claude Desktop / Cursor:**
 ```json
@@ -188,7 +195,7 @@ kiwifs mcp --remote http://host:3333   # proxy to a running KiwiFS server
 ```bash
 kiwifs serve --search grep      # Tier 1: zero deps, exact match
 kiwifs serve --search sqlite    # Tier 2: SQLite FTS5, BM25 ranked (default)
-kiwifs serve                    # Tier 3: + vector search (if configured)
+kiwifs serve                    # Tier 2 + vector: enable [search.vector] in config.toml
 ```
 
 ```
@@ -210,9 +217,9 @@ Default (sqlite-vec + OpenAI) needs one env var and zero infrastructure. For ful
 Every write is an atomic git commit. Users never see Git — the API abstracts it.
 
 ```
-GET /api/kiwi/versions?path=concepts/auth.md   → commit history
+GET /api/kiwi/versions?path=pages/auth.md      → commit history
 GET /api/kiwi/diff?path=auth.md&from=a1b&to=c3d → unified diff
-GET /api/kiwi/blame?path=concepts/auth.md       → per-line attribution
+GET /api/kiwi/blame?path=pages/auth.md          → per-line attribution
 ```
 
 What Git gives you for free: crash recovery, immutable audit trail (SHA-1 hash chain), point-in-time restore, tamper detection, replication via `git push`.
@@ -255,11 +262,11 @@ GET /api/kiwi/meta?where=$.status=published&where=$.priority=high&sort=$.updated
 A query language for your knowledge base — think Obsidian Dataview, but server-side:
 
 ```bash
-kiwifs query 'TABLE title, status, priority FROM "concepts" WHERE status = "draft" SORT priority DESC'
+kiwifs query 'TABLE title, status, priority FROM "pages" WHERE status = "draft" SORT priority DESC'
 ```
 
 ```
-GET /api/kiwi/query?q=TABLE title, status FROM "reports" WHERE priority = "high"
+GET /api/kiwi/query?q=TABLE title, status FROM "pages" WHERE priority = "high"
 ```
 
 Supports `TABLE`, `LIST`, `COUNT`, `DISTINCT` queries with `WHERE`, `SORT`, `GROUP BY`, `FLATTEN`, and implicit fields (`_path`, `_updated`, `_size`). Expressions, functions, and boolean logic all work.
@@ -267,7 +274,7 @@ Supports `TABLE`, `LIST`, `COUNT`, `DISTINCT` queries with `WHERE`, `SORT`, `GRO
 **Computed views** — markdown files with `kiwi-view: true` in frontmatter auto-refresh their body from a DQL query:
 
 ```bash
-kiwifs view create --query 'TABLE title, status FROM "concepts"' --output views/concepts.md
+kiwifs view create --query 'TABLE title, status FROM "pages"' --output views/pages.md
 kiwifs view refresh   # re-run all view queries
 ```
 
@@ -344,7 +351,7 @@ kiwifs analytics --format json       # structured output
 
 ```
 GET /api/kiwi/analytics → { total_pages, stale_pages, orphans, broken_links, ... }
-GET /api/kiwi/health-check?path=concepts/auth.md → per-page health
+GET /api/kiwi/health-check?path=pages/auth.md    → per-page health
 ```
 
 Reports: total pages, stale page count + paths, orphan pages, broken links, empty pages, pages without frontmatter, link coverage percentage, recently updated pages.
@@ -383,7 +390,7 @@ Each space has its own root directory, git repo, search index. Spaces map to NFS
 GET /api/kiwi/events → SSE stream
 
 event: write
-data: {"path":"reports/finding-042.md","actor":"agent:exec_abc"}
+data: {"path":"pages/finding-042.md","actor":"agent:exec_abc"}
 ```
 
 UI updates live when knowledge changes. No polling.
@@ -393,7 +400,7 @@ UI updates live when knowledge changes. No polling.
 Set `public_url` in config and every API response includes stable, shareable URLs:
 
 ```
-https://wiki.mycompany.com/page/concepts/authentication.md
+https://wiki.mycompany.com/page/pages/authentication.md
 ```
 
 - **SPA deep linking** — `/page/{path}` routes via HTML5 history (no `#` fragments)
@@ -418,7 +425,7 @@ Every feature is accessible via `kiwifs <command>`:
 | Command | What it does |
 |---|---|
 | `kiwifs serve` | Start the server (REST API + web UI + optional NFS/S3/WebDAV) |
-| `kiwifs init` | Scaffold a knowledge base from a template (`knowledge`, `wiki`, `runbook`, `research`, or blank) |
+| `kiwifs init` | Scaffold a knowledge base from a template (`knowledge`, `wiki`, `runbook`, `research`, or `blank`) |
 | `kiwifs mcp` | Start a Model Context Protocol server (for Claude, Cursor, etc.) |
 | `kiwifs query` | Run a DQL query against the local index |
 | `kiwifs import` | Bulk-import from 18 data sources (Postgres, CSV, Notion, etc.) |
@@ -465,7 +472,7 @@ go build -o kiwifs .
 
 ```bash
 kiwifs init --template knowledge --root ./knowledge
-# Creates SCHEMA.md, index.md, log.md, concepts/, entities/, reports/, episodes/
+# Creates SCHEMA.md, index.md, log.md, pages/, episodes/, .kiwi/playbook.md
 ```
 
 ### 3. Serve
@@ -479,17 +486,17 @@ kiwifs serve --root ./knowledge
 
 ```bash
 # Via filesystem (if mounted):
-echo "# Authentication\n\nOAuth2 + JWT..." > ./knowledge/concepts/auth.md
+echo "# Authentication\n\nOAuth2 + JWT..." > ./knowledge/pages/auth.md
 
 # Via API:
-curl -X PUT 'localhost:3333/api/kiwi/file?path=concepts/auth.md' \
+curl -X PUT 'localhost:3333/api/kiwi/file?path=pages/auth.md' \
   -H "X-Actor: my-agent" \
   -d "# Authentication\n\nOAuth2 + JWT..."
 ```
 
 ### 5. Browse in the web UI
 
-Open `http://localhost:3333`. See `concepts/auth.md` rendered as a styled page with wiki links, backlinks, and table of contents.
+Open `http://localhost:3333`. See `pages/auth.md` rendered as a styled page with wiki links, backlinks, and table of contents.
 
 ---
 
@@ -507,7 +514,7 @@ public_url = "https://wiki.mycompany.com"  # enables permalinks
 root = "/data/knowledge"
 
 [search]
-engine = "sqlite"                # grep | sqlite | vector
+engine = "sqlite"                # grep | sqlite
 
 [search.vector]
 enabled = true
@@ -552,7 +559,7 @@ docker run -v ./knowledge:/data -p 3333:3333 kiwifs
 
 ### Docker Compose (with vector search)
 
-See `docker-compose.yml` in the repo for a ready-to-use setup with optional pgvector sidecar.
+For vector search with pgvector, add a pgvector sidecar alongside KiwiFS. Configure `[search.vector.store] provider = "pgvector"` in `.kiwi/config.toml`.
 
 ### Embedded in your app (Go library)
 
@@ -629,6 +636,7 @@ POST   /api/kiwi/import                    → bulk import from data source
 GET    /api/kiwi/export                    → export to JSONL/CSV stream
 GET    /api/kiwi/analytics                 → knowledge health dashboard
 GET    /api/kiwi/health-check?path=        → per-page health metrics
+GET    /api/kiwi/context                   → schema + playbook + index in one call
 
 POST   /api/kiwi/share                     → create a share link (password-protected)
 GET    /api/kiwi/share                     → list active share links

@@ -692,6 +692,17 @@ func (b *LocalBackend) HealthCheckPage(ctx context.Context, path string) (json.R
 	return json.Marshal(resp)
 }
 
+func (b *LocalBackend) Context(_ context.Context) (string, string, string, error) {
+	read := func(rel string) string {
+		data, err := os.ReadFile(filepath.Join(b.root, rel))
+		if err != nil {
+			return ""
+		}
+		return string(data)
+	}
+	return read("SCHEMA.md"), read(filepath.Join(".kiwi", "playbook.md")), read("index.md"), nil
+}
+
 func (b *LocalBackend) Health(_ context.Context) error {
 	return b.init()
 }

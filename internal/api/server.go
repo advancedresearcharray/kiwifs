@@ -319,6 +319,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/export", h.Export)
 	api.GET("/analytics", h.Analytics)
 	api.GET("/health-check", h.HealthCheck)
+	api.GET("/context", h.Context)
 
 	api.POST("/share", h.CreateShareLink)
 	api.GET("/share", h.ListShareLinks)

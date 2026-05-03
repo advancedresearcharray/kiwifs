@@ -15,7 +15,7 @@ const meta: Meta<typeof KiwiPage> = {
   component: KiwiPage,
   parameters: { layout: "fullscreen" },
   args: {
-    path: "concepts/frontmatter.md",
+    path: "pages/frontmatter.md",
     tree: mockTree,
     onNavigate: action("navigate"),
     onEdit: action("edit"),

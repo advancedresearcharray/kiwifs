@@ -41,6 +41,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := copyEmbedDir("templates/"+template, root); err != nil {
 			return err
 		}
+	case "memory":
+		return fmt.Errorf("the 'memory' template has been merged into 'knowledge' — use --template knowledge instead")
 	case "blank":
 		// just the directory
 	default:
@@ -74,6 +76,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		data, _ := fs.ReadFile(templates, "templates/config.toml")
 		if err := os.WriteFile(configPath, data, 0644); err != nil {
 			return fmt.Errorf("write config: %w", err)
+		}
+	}
+
+	playbookSrc := "templates/" + template + "/playbook.md"
+	if data, err := fs.ReadFile(templates, playbookSrc); err == nil {
+		playbookDest := filepath.Join(kiwiDir, "playbook.md")
+		if _, err := os.Stat(playbookDest); os.IsNotExist(err) {
+			_ = os.WriteFile(playbookDest, data, 0644)
 		}
 	}
 

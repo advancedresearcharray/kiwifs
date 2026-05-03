@@ -9,8 +9,8 @@
 // <img>, <video>, <audio>, or <iframe> based on file extension.
 //
 // Resolution is fuzzy:
-//   [[authentication]]         → concepts/authentication.md
-//   [[concepts/auth]]          → concepts/auth.md  (exact first, then fuzzy)
+//   [[authentication]]         → pages/authentication.md
+//   [[pages/auth]]             → pages/auth.md  (exact first, then fuzzy)
 //   [[Authentication]]         → case-insensitive match on the stem
 //
 // The resolver is built once from the file tree and re-built whenever the

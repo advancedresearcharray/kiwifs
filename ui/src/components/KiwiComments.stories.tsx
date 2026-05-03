@@ -19,7 +19,7 @@ function CommentsWrapper({
           {mockMarkdownRichBody}
         </StoryMarkdown>
         <KiwiComments
-          path="concepts/frontmatter.md"
+          path="pages/frontmatter.md"
           containerRef={containerRef as React.RefObject<HTMLElement>}
           renderKey={mockMarkdownRichBody}
         />

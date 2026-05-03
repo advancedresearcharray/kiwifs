@@ -16,20 +16,13 @@ export const mockTree: TreeEntry = {
     { path: "index.md", name: "index.md", isDir: false, size: 420 },
     { path: "welcome.md", name: "welcome.md", isDir: false, size: 1280 },
     {
-      path: "concepts",
-      name: "concepts",
+      path: "pages",
+      name: "pages",
       isDir: true,
       children: [
-        { path: "concepts/frontmatter.md", name: "frontmatter.md", isDir: false, size: 2100 },
-        { path: "concepts/wikilinks.md", name: "wikilinks.md", isDir: false, size: 1800 },
-      ],
-    },
-    {
-      path: "decisions",
-      name: "decisions",
-      isDir: true,
-      children: [
-        { path: "decisions/use-sqlite-for-search.md", name: "use-sqlite-for-search.md", isDir: false, size: 3200 },
+        { path: "pages/frontmatter.md", name: "frontmatter.md", isDir: false, size: 2100 },
+        { path: "pages/wikilinks.md", name: "wikilinks.md", isDir: false, size: 1800 },
+        { path: "pages/use-sqlite-for-search.md", name: "use-sqlite-for-search.md", isDir: false, size: 3200 },
       ],
     },
     {
@@ -39,12 +32,6 @@ export const mockTree: TreeEntry = {
       children: [
         { path: "episodes/example-episode.md", name: "example-episode.md", isDir: false, size: 5400 },
       ],
-    },
-    {
-      path: "reports",
-      name: "reports",
-      isDir: true,
-      children: [],
     },
   ],
 };
@@ -328,19 +315,19 @@ Link to [[wikilinks]] and a missing page [[nonexistent-page]].
 
 export const mockSearchResults: SearchResult[] = [
   {
-    path: "concepts/frontmatter.md",
+    path: "pages/frontmatter.md",
     score: 0.95,
     snippet: "Frontmatter is YAML metadata placed at the top of a <mark>Markdown</mark> file",
     matches: [{ line: 12, text: "Frontmatter is YAML metadata..." }],
   },
   {
-    path: "concepts/wikilinks.md",
+    path: "pages/wikilinks.md",
     score: 0.82,
     snippet: "Wiki links use double brackets to create connections between <mark>pages</mark>",
     matches: [{ line: 5, text: "Wiki links use double brackets..." }],
   },
   {
-    path: "decisions/use-sqlite-for-search.md",
+    path: "pages/use-sqlite-for-search.md",
     score: 0.71,
     snippet: "SQLite FTS5 provides full-text <mark>search</mark> with ranking",
     matches: [{ line: 20, text: "SQLite FTS5 provides..." }],
@@ -375,20 +362,20 @@ export const mockVersions: Version[] = [
     hash: "m0n1o2p",
     author: "charlie",
     date: "2025-12-12T14:00:00Z",
-    message: "Create concepts directory",
+    message: "Create pages directory",
   },
 ];
 
 export const mockBacklinks: BacklinkEntry[] = [
   { path: "welcome.md", count: 2 },
-  { path: "concepts/wikilinks.md", count: 1 },
-  { path: "decisions/use-sqlite-for-search.md", count: 1 },
+  { path: "pages/wikilinks.md", count: 1 },
+  { path: "pages/use-sqlite-for-search.md", count: 1 },
 ];
 
 export const mockComments: Comment[] = [
   {
     id: "c1",
-    path: "concepts/frontmatter.md",
+    path: "pages/frontmatter.md",
     anchor: {
       quote: "Frontmatter is YAML metadata",
       prefix: "",
@@ -401,7 +388,7 @@ export const mockComments: Comment[] = [
   },
   {
     id: "c2",
-    path: "concepts/frontmatter.md",
+    path: "pages/frontmatter.md",
     anchor: {
       quote: "Tags can be a single value or a list",
       prefix: "### Tags\n\n",
@@ -414,7 +401,7 @@ export const mockComments: Comment[] = [
   },
   {
     id: "c3",
-    path: "concepts/frontmatter.md",
+    path: "pages/frontmatter.md",
     anchor: {
       quote: "Invalid YAML in frontmatter",
       prefix: "> ⚠️ ",
@@ -430,16 +417,16 @@ export const mockComments: Comment[] = [
 export const mockGraphNodes: GraphNode[] = [
   { path: "index.md", tags: [] },
   { path: "welcome.md", tags: [] },
-  { path: "concepts/frontmatter.md", tags: ["documentation", "guide"] },
-  { path: "concepts/wikilinks.md", tags: ["documentation"] },
-  { path: "decisions/use-sqlite-for-search.md", tags: ["architecture"] },
+  { path: "pages/frontmatter.md", tags: ["documentation", "guide"] },
+  { path: "pages/wikilinks.md", tags: ["documentation"] },
+  { path: "pages/use-sqlite-for-search.md", tags: ["architecture"] },
   { path: "episodes/example-episode.md", tags: ["episode"] },
 ];
 
 export const mockGraphEdges: GraphEdge[] = [
-  { source: "concepts/frontmatter.md", target: "concepts/wikilinks.md" },
-  { source: "concepts/frontmatter.md", target: "decisions/use-sqlite-for-search.md" },
-  { source: "welcome.md", target: "concepts/frontmatter.md" },
-  { source: "welcome.md", target: "concepts/wikilinks.md" },
+  { source: "pages/frontmatter.md", target: "pages/wikilinks.md" },
+  { source: "pages/frontmatter.md", target: "pages/use-sqlite-for-search.md" },
+  { source: "welcome.md", target: "pages/frontmatter.md" },
+  { source: "welcome.md", target: "pages/wikilinks.md" },
   { source: "index.md", target: "welcome.md" },
 ];

@@ -20,7 +20,7 @@ No. Git runs under the hood — every write is an atomic commit — but users ne
 
 ### Is KiwiFS production-ready?
 
-KiwiFS is in active development (v0.2). The core is stable — file CRUD, search, versioning, web UI, MCP, data import/export, DQL queries, and all access protocols work. We use it in production internally. That said, APIs may evolve before v1.0.
+KiwiFS is in active development (v0.4). The core is stable — file CRUD, search, versioning, web UI, MCP, data import/export, DQL queries, and all access protocols work. We use it in production internally. That said, APIs may evolve before v1.0.
 
 ---
 
@@ -79,7 +79,7 @@ Three ways, depending on what your agent has access to:
 
 ### What is MCP and why does KiwiFS support it?
 
-[Model Context Protocol](https://modelcontextprotocol.io) is a standard for connecting AI agents to external tools. KiwiFS's MCP server exposes 16 tools and 3 resources, so any MCP-compatible agent can read, write, search, and query your knowledge base without custom integration code.
+[Model Context Protocol](https://modelcontextprotocol.io) is a standard for connecting AI agents to external tools. KiwiFS's MCP server exposes 21 tools and 3 resources, so any MCP-compatible agent can read, write, search, and query your knowledge base without custom integration code. Call `kiwi_context` first to get the schema, playbook, and index in one shot.
 
 ### Can agents use KiwiFS without a running server?
 
@@ -101,7 +101,7 @@ Three tiers, configurable at startup:
 |---|---|---|
 | 1 | `grep` | Zero deps, exact match, tiny knowledge bases |
 | 2 | `sqlite` (default) | SQLite FTS5, BM25 ranked, handles thousands of files |
-| 3 | `vector` | Semantic similarity via embeddings, on top of tier 2 |
+| 3 | `vector` | Semantic similarity via embeddings, on top of tier 2. Enable via `[search.vector]` in config |
 
 ### Can I run vector search without an API key?
 
@@ -121,7 +121,7 @@ This rebuilds FTS5, vector embeddings, metadata, and wiki link indexes from the 
 
 ### Can I embed the UI in my own app?
 
-The web UI is built as React components (`<KiwiTree />`, `<KiwiPage />`, `<KiwiEditor />`, `<KiwiSearch />`, `<KiwiGraph />`), currently embedded in the binary via `go:embed`. A standalone `kiwifs-ui` npm package for embedding in your own React app is on the roadmap — see [ROADMAP.md](ROADMAP.md).
+The web UI is built as React components (`<KiwiTree />`, `<KiwiPage />`, `<KiwiEditor />`, `<KiwiSearch />`), currently embedded in the binary via `go:embed`. A standalone `kiwifs-ui` npm package for embedding in your own React app is on the roadmap — see [ROADMAP.md](ROADMAP.md).
 
 ### Can I customize the theme?
 
@@ -253,7 +253,7 @@ Yes. The JSONL export with `--include-embeddings` produces ML-ready datasets. Th
 DataView Query Language — a query language for frontmatter. If you've used the Obsidian Dataview plugin, it's the same idea but runs server-side:
 
 ```
-TABLE title, status, priority FROM "concepts" WHERE status = "draft" SORT priority DESC
+TABLE title, status, priority FROM "pages" WHERE status = "draft" SORT priority DESC
 ```
 
 Supports `TABLE`, `LIST`, `COUNT`, `DISTINCT` modes, `WHERE` filters with boolean logic, `SORT`, `GROUP BY`, `FLATTEN`, and implicit fields like `_path`, `_updated`, `_size`.
@@ -271,7 +271,7 @@ kiwifs aggregate --group status --calc count,avg:priority
 Markdown files whose body is auto-generated from a DQL query. Set `kiwi-view: true` and `kiwi-query: "..."` in frontmatter, and KiwiFS will regenerate the body on refresh or when the file is read.
 
 ```bash
-kiwifs view create --query 'TABLE title, status FROM "concepts"' --output views/overview.md
+kiwifs view create --query 'TABLE title, status FROM "pages"' --output views/overview.md
 kiwifs view refresh   # re-run all view queries
 ```
 
@@ -314,7 +314,7 @@ docker run -d --restart always \
   kiwifs serve --root /data --search sqlite --versioning git
 ```
 
-For persistent vector search with pgvector, see the `docker-compose.yml` in the repo.
+For persistent vector search with pgvector, configure `[search.vector.store] provider = "pgvector"` in `.kiwi/config.toml` and run a pgvector instance alongside KiwiFS.
 
 ### Can I run multiple knowledge bases on one server?
 

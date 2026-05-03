@@ -13,7 +13,7 @@ const meta: Meta<typeof KiwiEditor> = {
   component: KiwiEditor,
   parameters: { layout: "fullscreen" },
   args: {
-    path: "concepts/frontmatter.md",
+    path: "pages/frontmatter.md",
     tree: mockTree,
     onClose: action("close"),
     onSaved: action("saved"),

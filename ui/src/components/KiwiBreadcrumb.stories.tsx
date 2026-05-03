@@ -26,7 +26,7 @@ export const RootLevel: Story = {
 };
 
 export const OneLevelDeep: Story = {
-  args: { path: "concepts/frontmatter.md" },
+  args: { path: "pages/frontmatter.md" },
 };
 
 export const TwoLevelsDeep: Story = {

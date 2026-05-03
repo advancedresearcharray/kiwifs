@@ -43,7 +43,7 @@ kiwifs/
 │   ├── storage/      Filesystem abstraction
 │   ├── vectorstore/  Vector search backends (sqlite-vec, Qdrant, pgvector, Pinecone, Weaviate, Milvus)
 │   ├── versioning/   Git, copy-on-write, noop
-│   ├── mcpserver/    MCP server (local + remote backends, 16 tools)
+│   ├── mcpserver/    MCP server (local + remote backends, 21 tools)
 │   ├── nfs/          NFS server
 │   ├── s3/           S3-compatible API (gofakes3)
 │   ├── webdav/       WebDAV server

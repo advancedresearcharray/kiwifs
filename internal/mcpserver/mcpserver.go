@@ -98,7 +98,7 @@ func tracingMiddleware(em tracing.Emitter) server.ToolHandlerMiddleware {
 func registerTools(s *server.MCPServer, b Backend, opts Options) {
 	pathOpts := []mcp.PropertyOption{
 		mcp.Required(),
-		mcp.Description("Relative path like concepts/auth.md"),
+		mcp.Description("Relative path like pages/auth.md"),
 		mcp.MaxLength(500),
 		mcp.Pattern(`^[^.][a-zA-Z0-9/_\-. ]+$`),
 	}
@@ -342,6 +342,14 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithDestructiveHintAnnotation(false),
 			),
 			Handler: handleMemoryReport(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_context",
+				mcp.WithDescription("Get the knowledge base's schema, agent playbook, and current index in one call. Call this first when connecting to understand structure and conventions."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleContext(b),
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_health_check",
@@ -902,6 +910,36 @@ func handleAnalytics(b Backend) server.ToolHandlerFunc {
 			for _, p := range data.TopUpdated {
 				fmt.Fprintf(&sb, "  %s  %s\n", p.Path, p.UpdatedAt)
 			}
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleContext(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		schema, playbook, index, err := b.Context(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Context failed: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString("=== SCHEMA ===\n")
+		if schema != "" {
+			sb.WriteString(schema)
+		} else {
+			sb.WriteString("(no SCHEMA.md found)")
+		}
+		sb.WriteString("\n\n=== PLAYBOOK ===\n")
+		if playbook != "" {
+			sb.WriteString(playbook)
+		} else {
+			sb.WriteString("(no playbook found)")
+		}
+		sb.WriteString("\n\n=== CURRENT INDEX ===\n")
+		if index != "" {
+			sb.WriteString(index)
+		} else {
+			sb.WriteString("(no index.md found)")
 		}
 		return mcp.NewToolResultText(sb.String()), nil
 	}

@@ -16,7 +16,7 @@ This document describes the conventions, configuration, and tooling KiwiFS provi
 | `derived-from` | Injected on **write** from HTTP headers. Records which run / job **produced** this file. Same structure as before: `type` + `id` (+ `date`, `actor`, …). |
 | `merged-from` | You (or a consolidation job) set this on a **downstream** page. It says: “this semantic or summary page was built **from** these episodes (or other units).” |
 
-You can have both: an episode has `derived-from: run:…` from the API, and a `concepts/foo.md` page has `merged-from` listing the episode ids that were folded into the concept.
+You can have both: an episode has `derived-from: run:…` from the API, and a `pages/foo.md` page has `merged-from` listing the episode ids that were folded into the page.
 
 ---
 
@@ -123,7 +123,7 @@ out, err := memory.InjectMergedFrom(inputBytes, []memory.MergedFromEntry{
 ## Suggested operator workflow
 
 1. Agents (or the API) write under `episodes/` with `X-Provenance` and optional `episode_id` in frontmatter.
-2. A scheduled job or on-demand script reads unmerged episodes (`kiwifs memory report` or `memory.Scan` + JSON), calls your LLM or rules engine, and writes/updates `concepts/` (or `semantic/`) with **`merged-from`** set via the API, MCP, or `InjectMergedFrom`.
+2. A scheduled job or on-demand script reads unmerged episodes (`kiwifs memory report` or `memory.Scan` + JSON), calls your LLM or rules engine, and writes/updates `pages/` with **`merged-from`** set via the API, MCP, or `InjectMergedFrom`.
 3. `kiwifs memory report` goes green (no unmerged rows) for your id strategy, or you use the unmerged list as a queue.
 
 That keeps **git** as the audit trail, **files** as the source of truth, and **merged-from** as the explicit “this central page subsumes these episodes” edge from episodic to semantic memory.

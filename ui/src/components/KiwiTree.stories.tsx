@@ -43,7 +43,7 @@ export const Default: Story = {
 
 export const WithActiveFile: Story = {
   args: {
-    activePath: "concepts/frontmatter.md",
+    activePath: "pages/frontmatter.md",
   },
   decorators: [
     (Story) => (

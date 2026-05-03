@@ -23,7 +23,7 @@ The foundation. A single Go binary that serves markdown files with a web UI, git
 
 ---
 
-## v0.2 — Embeddable (current)
+## v0.2 — Embeddable
 
 Make KiwiFS easy to plug into other apps. This is what turns it from a tool into a platform.
 
@@ -59,7 +59,7 @@ You can't replace Confluence if you can't migrate from it.
 - [x] `kiwifs export --format jsonl` / `--format csv` — export with optional embeddings, content, and link graph
 - [ ] `kiwifs export --format mkdocs` / `--format docusaurus` — generate static doc sites
 
-## v0.4 — Webhooks & analytics
+## v0.4 — Webhooks & analytics (current)
 
 Outbound integration and content health signals.
 

@@ -8,7 +8,7 @@ const meta: Meta<typeof KiwiHistory> = {
   component: KiwiHistory,
   parameters: { layout: "fullscreen" },
   args: {
-    path: "concepts/frontmatter.md",
+    path: "pages/frontmatter.md",
     onClose: action("close"),
     onRestored: action("restored"),
   },

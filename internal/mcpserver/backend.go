@@ -89,6 +89,7 @@ type Backend interface {
 	RenameWithLinks(ctx context.Context, from, to, actor string, updateLinks bool) (string, []string, error)
 	Backlinks(ctx context.Context, path string) ([]Backlink, error)
 	ResolveWikiLinks(ctx context.Context, content string) string
+	Context(ctx context.Context) (schema, playbook, index string, err error)
 	PublicURL() string
 	Health(ctx context.Context) error
 	Close() error

@@ -96,7 +96,7 @@ export function NewPageDialog({ open, onOpenChange, onCreated, defaultFolder }: 
               autoFocus
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              placeholder="concepts/new-topic.md"
+              placeholder="pages/new-topic.md"
               className="font-mono"
               onKeyDown={(e) => {
                 if (e.key === "Enter") create();

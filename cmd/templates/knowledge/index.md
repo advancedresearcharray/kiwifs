@@ -1,12 +1,9 @@
 # Knowledge Base
 
-Auto-maintained table of contents. Updated by the agent on each ingest.
+Auto-maintained table of contents. Updated by the agent on each operation.
 
-## Concepts
-<!-- Agent adds links here as concepts are created -->
+## Pages
+- [[pages/getting-started|Getting Started]]
 
-## Entities
-<!-- Agent adds links here as entities are created -->
-
-## Reports
-<!-- Agent adds links here as reports are created -->
+## Recent Episodes
+<!-- Agent adds links here as episodes are created -->

@@ -1,40 +1,82 @@
-# Schema — Agent Knowledge Base
+# Schema — Knowledge Base
 
-This knowledge base follows the LLM Wiki pattern: raw sources in,
-compiled wiki out, agent maintains it over time.
+Agent-maintained knowledge base following the LLM Wiki pattern:
+raw sources in, compiled wiki out, agent maintains it over time.
+Includes episodic memory with consolidation into durable pages.
 
-## Structure
+## Directory Structure
 
-- `concepts/` — One page per concept (agent-created, durable knowledge)
-- `entities/` — One page per named entity
-- `reports/` — Chronological reports
-- `episodes/` — Per-run episodic notes (`memory_kind: episodic`, `episode_id`)
+    pages/           Durable knowledge — one page per concept, entity, or topic
+    episodes/        Per-session episodic notes (transient, consolidate later)
+    index.md         Auto-maintained table of contents
+    log.md           Append-only chronological record of all operations
+    SCHEMA.md        This file — structure and conventions
+
+## Frontmatter Fields
+
+Every `.md` file should have YAML frontmatter. Required fields marked *.
+
+### Pages (`pages/*.md`)
+
+| Field           | Type       | Required | Values / Notes                              |
+|-----------------|------------|----------|---------------------------------------------|
+| title           | string     | *        | Human-readable page title                   |
+| description     | string     |          | One-line summary for search results         |
+| tags            | string[]   | *        | Topic tags, lowercase, hyphenated           |
+| status          | string     |          | `active` · `draft` · `review` · `deprecated` |
+| last-reviewed   | date       |          | ISO 8601 date of last quality review        |
+| derived-from    | object[]   |          | Provenance: `type`, `id`, `date`, `actor`   |
+| merged-from     | object[]   |          | Episode paths this page was consolidated from. Each entry: `type`, `id`, optional `path`, `date` |
+| confidence      | float      |          | 0.0–1.0, certainty level of this knowledge  |
+
+### Episodes (`episodes/*.md`)
+
+| Field           | Type       | Required | Values / Notes                              |
+|-----------------|------------|----------|---------------------------------------------|
+| memory_kind     | string     | *        | Always `episodic`                           |
+| episode_id      | string     | *        | Unique session/episode identifier           |
+| session_id      | string     |          | Groups episodes from the same session       |
+| confidence      | float      |          | 0.0–1.0, how certain is this observation    |
+| tags            | string[]   |          | Topic tags                                  |
+| consolidated    | boolean    |          | `true` when merged into a page              |
+| merged-into     | string[]   |          | Paths of pages this was merged into         |
 
 ## Operations
 
+See `.kiwi/playbook.md` for step-by-step MCP tool sequences.
+
 ### Ingest
-Read a raw source, create or update wiki pages in `concepts/` or
-`entities/`, then update `index.md` and `log.md`.
+Read a raw source → create/update pages in `pages/` →
+update `index.md` and `log.md`. Always deduplicate first.
 
 ### Query
-Search the wiki to answer a question. Optionally save the answer
-as a new page.
+Search the wiki to answer questions. Use `kiwi_search` +
+`kiwi_read` + `kiwi_backlinks`.
 
 ### Lint
-Audit for orphan pages, broken `[[wiki links]]`, contradictions,
-stale content, and coverage gaps.
+Audit for orphans, broken links, stale content, missing
+frontmatter, and coverage gaps. Use `kiwi_analytics`.
 
-## Episodic memory
+### Remember
+Write a new episodic note under `episodes/` during a session.
+Include `memory_kind: episodic` and a unique `episode_id`.
+Append a summary to `log.md`.
 
-Files under `episodes/` are treated as episodic by default. Set
-`memory_kind: episodic` and `episode_id` in frontmatter. A
-consolidation job merges episodes into `concepts/` pages using
-`merged-from` in frontmatter. Run `kiwifs memory report` to see
-which episodes haven't been consolidated yet.
+### Consolidate
+Merge related `episodes/` notes into durable `pages/` entries.
+Set `merged-from` on the page, `consolidated: true` on the episode.
+Run `kiwi_memory_report` to find unconsolidated episodes.
 
-See [docs/MEMORY.md](../../docs/MEMORY.md) for full reference.
+### Recall
+Search memory for past observations. Use `kiwi_search` for keyword
+recall or `kiwi_search_semantic` for conceptual recall. Prefer
+durable pages over raw episodes when both exist.
 
 ## Conventions
-- Link between pages with `[[wiki links]]`.
-- Keep pages focused. One concept per page.
-- Use YAML frontmatter for structured metadata.
+
+- Link between pages with `[[wiki links]]`
+- Keep pages focused — one concept per page
+- Split pages over 300 lines
+- Use YAML frontmatter for all structured metadata
+- Append to `log.md` after every write operation
+- Every page reachable from `index.md` within 2 hops
