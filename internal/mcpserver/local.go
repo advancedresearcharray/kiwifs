@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/bootstrap"
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/dataview"
+	"github.com/kiwifs/kiwifs/internal/graphutil"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/memory"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
@@ -896,7 +898,7 @@ func buildLocalHealthCheck(ctx context.Context, sq *search.SQLite, sched *janito
 		if v, ok := parsed["_backlink_count"]; ok {
 			resp.BacklinkCount = localToInt(v)
 		}
-		if v, ok := parsed["quality_score"]; ok {
+		if v, ok := parsed["_quality_score"]; ok {
 			f := localToFloat64(v)
 			resp.QualityScore = &f
 		}
@@ -953,4 +955,430 @@ func formatSize(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
+}
+
+func (b *LocalBackend) Suggestions(ctx context.Context, path string, limit int) ([]SuggestionResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if b.stack.Vectors == nil {
+		return nil, fmt.Errorf("semantic search is not enabled")
+	}
+
+	content, err := b.stack.Store.Read(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	results, serr := b.stack.Vectors.Search(ctx, string(content), 20)
+	if serr != nil {
+		return nil, serr
+	}
+
+	linked := make(map[string]bool)
+	linked[path] = true
+	if b.stack.Linker != nil {
+		edges, _ := b.stack.Linker.AllEdges(ctx)
+		for _, e := range edges {
+			if e.Source == path {
+				linked[e.Target] = true
+			}
+			if e.Target == path {
+				linked[e.Source] = true
+			}
+		}
+		backlinks, _ := b.stack.Linker.Backlinks(ctx, path)
+		for _, bl := range backlinks {
+			linked[bl.Path] = true
+		}
+	}
+
+	if limit <= 0 {
+		limit = 10
+	}
+	var out []SuggestionResult
+	for _, r := range results {
+		if linked[r.Path] {
+			continue
+		}
+		out = append(out, SuggestionResult{
+			Target:     r.Path,
+			Similarity: r.Score,
+			Snippet:    r.Snippet,
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (b *LocalBackend) Embeddings(ctx context.Context, path string) (*EmbeddingsResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if b.stack.Vectors == nil {
+		return nil, fmt.Errorf("semantic search is not enabled")
+	}
+
+	chunks, err := b.stack.Vectors.GetVectors(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("no embeddings found for %s", path)
+	}
+
+	out := &EmbeddingsResult{
+		Path:   path,
+		Model:  b.stack.Config.Search.Vector.Embedder.Model,
+		Chunks: make([]EmbeddingChunk, len(chunks)),
+	}
+	for i, c := range chunks {
+		out.Chunks[i] = EmbeddingChunk{
+			ChunkIdx: c.ChunkIdx,
+			Text:     c.Text,
+			Vector:   c.Vector,
+		}
+		if i == 0 && len(c.Vector) > 0 {
+			out.Dimensions = len(c.Vector)
+		}
+	}
+	return out, nil
+}
+
+func (b *LocalBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAnalyticsResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if b.stack.Linker == nil {
+		return nil, fmt.Errorf("link indexing is not enabled")
+	}
+
+	edges, err := b.stack.Linker.AllEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	r := graphutil.Analyze(edges, limit)
+	topPages := make([]PageRankEntry, len(r.TopPages))
+	for i, p := range r.TopPages {
+		topPages[i] = PageRankEntry{
+			Path:      p.Path,
+			PageRank:  p.PageRank,
+			InDegree:  p.InDegree,
+			OutDegree: p.OutDegree,
+		}
+	}
+	return &GraphAnalyticsResult{
+		TotalNodes:           r.TotalNodes,
+		TotalEdges:           r.TotalEdges,
+		Components:           r.Components,
+		TopPages:             topPages,
+		Orphans:              r.Orphans,
+		LargestComponentSize: r.LargestComponentSize,
+	}, nil
+}
+
+func (b *LocalBackend) Velocity(ctx context.Context, period string, limit int, pathPrefix string) (*VelocityResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	if period == "" {
+		period = "30d"
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	sinceArg := "--since=" + parsePeriod(period)
+
+	cmd := exec.CommandContext(ctx, "git", "log", "--numstat", "--format=%H|%an|%at", sinceArg)
+	cmd.Dir = b.root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+
+	type fileChange struct {
+		adds, dels int
+		authors    map[string]bool
+		timestamps []time.Time
+	}
+	files := make(map[string]*fileChange)
+	var currentAuthor string
+	var currentTime time.Time
+
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.Contains(line, "|") && !strings.Contains(line, "\t") {
+			parts := strings.SplitN(line, "|", 3)
+			if len(parts) >= 3 {
+				currentAuthor = parts[1]
+				ts, _ := strconv.ParseInt(parts[2], 10, 64)
+				currentTime = time.Unix(ts, 0)
+			}
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) != 3 {
+			continue
+		}
+		adds, _ := strconv.Atoi(parts[0])
+		dels, _ := strconv.Atoi(parts[1])
+		path := parts[2]
+		if !strings.HasSuffix(path, ".md") {
+			continue
+		}
+		if pathPrefix != "" && !strings.HasPrefix(path, pathPrefix) {
+			continue
+		}
+		fc, ok := files[path]
+		if !ok {
+			fc = &fileChange{authors: make(map[string]bool)}
+			files[path] = fc
+		}
+		fc.adds += adds
+		fc.dels += dels
+		fc.authors[currentAuthor] = true
+		fc.timestamps = append(fc.timestamps, currentTime)
+	}
+
+	type scored struct {
+		path    string
+		changes int
+		authors int
+		lines   int
+	}
+	var items []scored
+	totalChanges := 0
+	for path, fc := range files {
+		changes := len(fc.timestamps)
+		totalChanges += changes
+		items = append(items, scored{
+			path:    path,
+			changes: changes,
+			authors: len(fc.authors),
+			lines:   fc.adds + fc.dels,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].changes > items[j].changes })
+
+	topN := limit
+	if topN > len(items) {
+		topN = len(items)
+	}
+	hotSpots := make([]HotSpotEntry, topN)
+	for i := 0; i < topN; i++ {
+		hotSpots[i] = HotSpotEntry{
+			Path:         items[i].path,
+			Changes:      items[i].changes,
+			Authors:      items[i].authors,
+			LinesChanged: items[i].lines,
+		}
+	}
+
+	// Cold spots: files not touched in the period
+	var coldSpots []ColdSpotEntry
+	walkErr := storage.Walk(ctx, b.stack.Store, "/", func(e storage.Entry) error {
+		if !strings.HasSuffix(e.Path, ".md") {
+			return nil
+		}
+		if pathPrefix != "" && !strings.HasPrefix(e.Path, pathPrefix) {
+			return nil
+		}
+		if _, ok := files[e.Path]; !ok {
+			coldSpots = append(coldSpots, ColdSpotEntry{Path: e.Path, DaysSinceChange: parsePeriodDays(period)})
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+
+	// Burst detection: files with >3x average change rate in last 7 days
+	var bursts []BurstEntry
+	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+	periodDays := parsePeriodDays(period)
+	for _, item := range items {
+		fc := files[item.path]
+		recentCount := 0
+		for _, ts := range fc.timestamps {
+			if ts.After(sevenDaysAgo) {
+				recentCount++
+			}
+		}
+		recentRate := float64(recentCount) / 7.0
+		avgRate := float64(item.changes) / float64(periodDays)
+		if avgRate > 0 && recentRate > 3*avgRate {
+			bursts = append(bursts, BurstEntry{
+				Path:       item.path,
+				RecentRate: recentRate,
+				AvgRate:    avgRate,
+			})
+		}
+	}
+
+	// Single-author pages
+	var singleAuthor []string
+	for path, fc := range files {
+		if len(fc.authors) == 1 {
+			singleAuthor = append(singleAuthor, path)
+		}
+	}
+
+	if hotSpots == nil {
+		hotSpots = []HotSpotEntry{}
+	}
+	if coldSpots == nil {
+		coldSpots = []ColdSpotEntry{}
+	}
+	if bursts == nil {
+		bursts = []BurstEntry{}
+	}
+	if singleAuthor == nil {
+		singleAuthor = []string{}
+	}
+
+	return &VelocityResult{
+		Period:            period,
+		TotalChanges:      totalChanges,
+		HotSpots:          hotSpots,
+		ColdSpots:         coldSpots,
+		Bursts:            bursts,
+		SingleAuthorPages: singleAuthor,
+	}, nil
+}
+
+func parsePeriod(period string) string {
+	period = strings.TrimSpace(period)
+	if strings.HasSuffix(period, "d") {
+		return period[:len(period)-1] + " days ago"
+	}
+	if strings.HasSuffix(period, "w") {
+		return period[:len(period)-1] + " weeks ago"
+	}
+	if strings.HasSuffix(period, "m") {
+		return period[:len(period)-1] + " months ago"
+	}
+	return "30 days ago"
+}
+
+func parsePeriodDays(period string) int {
+	period = strings.TrimSpace(period)
+	if strings.HasSuffix(period, "d") {
+		n, _ := strconv.Atoi(period[:len(period)-1])
+		if n > 0 {
+			return n
+		}
+	}
+	if strings.HasSuffix(period, "w") {
+		n, _ := strconv.Atoi(period[:len(period)-1])
+		if n > 0 {
+			return n * 7
+		}
+	}
+	if strings.HasSuffix(period, "m") {
+		n, _ := strconv.Atoi(period[:len(period)-1])
+		if n > 0 {
+			return n * 30
+		}
+	}
+	return 30
+}
+
+func (b *LocalBackend) Eval(ctx context.Context, queries []EvalQuery) (*EvalResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	topK := 5
+	var ftsHitCount, semHitCount int
+	var ftsMRRSum, semMRRSum float64
+	var ftsPrecSum, semPrecSum float64
+	perQuery := make([]EvalQueryResult, len(queries))
+
+	for i, q := range queries {
+		expected := make(map[string]bool, len(q.ExpectedPaths))
+		for _, p := range q.ExpectedPaths {
+			expected[p] = true
+		}
+
+		pq := EvalQueryResult{
+			Question:     q.Question,
+			FTSHits:      []string{},
+			SemanticHits: []string{},
+		}
+
+		// FTS search
+		ftsResults, _ := b.stack.Searcher.Search(ctx, q.Question, topK, 0, "")
+		ftsRank := 0
+		ftsPrec := 0
+		for j, r := range ftsResults {
+			if expected[r.Path] {
+				pq.FTSHits = append(pq.FTSHits, r.Path)
+				if ftsRank == 0 {
+					ftsRank = j + 1
+				}
+				ftsPrec++
+			}
+		}
+		pq.FTSRank = ftsRank
+		if ftsRank > 0 {
+			ftsHitCount++
+			ftsMRRSum += 1.0 / float64(ftsRank)
+		}
+		if len(ftsResults) > 0 {
+			ftsPrecSum += float64(ftsPrec) / float64(len(ftsResults))
+		}
+
+		// Semantic search
+		if b.stack.Vectors != nil {
+			semResults, _ := b.stack.Vectors.Search(ctx, q.Question, topK)
+			semRank := 0
+			semPrec := 0
+			for j, r := range semResults {
+				if expected[r.Path] {
+					pq.SemanticHits = append(pq.SemanticHits, r.Path)
+					if semRank == 0 {
+						semRank = j + 1
+					}
+					semPrec++
+				}
+			}
+			pq.SemanticRank = semRank
+			if semRank > 0 {
+				semHitCount++
+				semMRRSum += 1.0 / float64(semRank)
+			}
+			if len(semResults) > 0 {
+				semPrecSum += float64(semPrec) / float64(len(semResults))
+			}
+		}
+
+		perQuery[i] = pq
+	}
+
+	total := float64(len(queries))
+	if total == 0 {
+		total = 1
+	}
+
+	return &EvalResult{
+		FTS: EvalMetrics{
+			HitRate:      float64(ftsHitCount) / total,
+			MRR:          ftsMRRSum / total,
+			PrecisionAtK: ftsPrecSum / total,
+		},
+		Semantic: EvalMetrics{
+			HitRate:      float64(semHitCount) / total,
+			MRR:          semMRRSum / total,
+			PrecisionAtK: semPrecSum / total,
+		},
+		PerQuery: perQuery,
+	}, nil
 }

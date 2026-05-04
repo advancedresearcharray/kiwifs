@@ -14,8 +14,8 @@ func (h *Handlers) Export(c echo.Context) error {
 	if format == "" {
 		format = "jsonl"
 	}
-	if format != "jsonl" && format != "csv" {
-		return echo.NewHTTPError(http.StatusBadRequest, "format must be jsonl or csv")
+	if format != "jsonl" && format != "csv" && format != "parquet" {
+		return echo.NewHTTPError(http.StatusBadRequest, "format must be jsonl, csv, or parquet")
 	}
 
 	pathPrefix := c.QueryParam("path")
@@ -35,10 +35,16 @@ func (h *Handlers) Export(c echo.Context) error {
 	if limit < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "limit must be non-negative")
 	}
+	if format == "parquet" && includeEmb {
+		return echo.NewHTTPError(http.StatusBadRequest, "embeddings are not supported in Parquet format; use format=jsonl instead")
+	}
 
 	contentType := "application/x-ndjson"
-	if format == "csv" {
+	switch format {
+	case "csv":
 		contentType = "text/csv"
+	case "parquet":
+		contentType = "application/vnd.apache.parquet"
 	}
 
 	opts := exporter.Options{

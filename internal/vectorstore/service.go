@@ -222,7 +222,12 @@ func (s *Service) Index(ctx context.Context, path string, content []byte) error 
 	if !storage.IsKnowledgeFile(path) {
 		return nil
 	}
-	parts := chunk(string(content), s.chunkSize, s.chunkOverlap)
+	var parts []string
+	if isMarkdown(path) {
+		parts = chunkMarkdown(string(content), s.chunkSize, defaultMinChunkSize)
+	} else {
+		parts = chunk(string(content), s.chunkSize, s.chunkOverlap)
+	}
 	if len(parts) == 0 {
 		return s.store.RemoveByPath(ctx, path)
 	}
@@ -310,5 +315,10 @@ func (s *Service) GetVectors(ctx context.Context, path string) ([]Chunk, error) 
 // Count reports the number of vectors currently in the store.
 func (s *Service) Count(ctx context.Context) (int, error) {
 	return s.store.Count(ctx)
+}
+
+func isMarkdown(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".mdx")
 }
 

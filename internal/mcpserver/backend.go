@@ -90,7 +90,99 @@ type Backend interface {
 	Backlinks(ctx context.Context, path string) ([]Backlink, error)
 	ResolveWikiLinks(ctx context.Context, content string) string
 	Context(ctx context.Context) (schema, playbook, index string, err error)
+	Suggestions(ctx context.Context, path string, limit int) ([]SuggestionResult, error)
+	Embeddings(ctx context.Context, path string) (*EmbeddingsResult, error)
+	GraphAnalytics(ctx context.Context, limit int) (*GraphAnalyticsResult, error)
+	Velocity(ctx context.Context, period string, limit int, pathPrefix string) (*VelocityResult, error)
+	Eval(ctx context.Context, queries []EvalQuery) (*EvalResult, error)
 	PublicURL() string
 	Health(ctx context.Context) error
 	Close() error
+}
+
+type SuggestionResult struct {
+	Target     string  `json:"target"`
+	Similarity float64 `json:"similarity"`
+	Snippet    string  `json:"snippet"`
+}
+
+type EmbeddingsResult struct {
+	Path       string          `json:"path"`
+	Model      string          `json:"model"`
+	Dimensions int             `json:"dimensions"`
+	Chunks     []EmbeddingChunk `json:"chunks"`
+}
+
+type EmbeddingChunk struct {
+	ChunkIdx int       `json:"chunk_idx"`
+	Text     string    `json:"text"`
+	Vector   []float32 `json:"vector"`
+}
+
+type GraphAnalyticsResult struct {
+	TotalNodes           int              `json:"total_nodes"`
+	TotalEdges           int              `json:"total_edges"`
+	Components           int              `json:"components"`
+	TopPages             []PageRankEntry  `json:"top_pages"`
+	Orphans              []string         `json:"orphans"`
+	LargestComponentSize int              `json:"largest_component_size"`
+}
+
+type PageRankEntry struct {
+	Path      string  `json:"path"`
+	PageRank  float64 `json:"pagerank"`
+	InDegree  int     `json:"in_degree"`
+	OutDegree int     `json:"out_degree"`
+}
+
+type VelocityResult struct {
+	Period            string              `json:"period"`
+	TotalChanges      int                 `json:"total_changes"`
+	HotSpots          []HotSpotEntry      `json:"hot_spots"`
+	ColdSpots         []ColdSpotEntry     `json:"cold_spots"`
+	Bursts            []BurstEntry        `json:"bursts"`
+	SingleAuthorPages []string            `json:"single_author_pages"`
+}
+
+type HotSpotEntry struct {
+	Path         string `json:"path"`
+	Changes      int    `json:"changes"`
+	Authors      int    `json:"authors"`
+	LinesChanged int    `json:"lines_changed"`
+}
+
+type ColdSpotEntry struct {
+	Path            string `json:"path"`
+	DaysSinceChange int    `json:"days_since_change"`
+}
+
+type BurstEntry struct {
+	Path       string  `json:"path"`
+	RecentRate float64 `json:"recent_rate"`
+	AvgRate    float64 `json:"avg_rate"`
+}
+
+type EvalQuery struct {
+	Question      string   `json:"question"`
+	ExpectedPaths []string `json:"expected_paths"`
+}
+
+type EvalResult struct {
+	FTS      EvalMetrics      `json:"fts"`
+	Semantic EvalMetrics      `json:"semantic"`
+	PerQuery []EvalQueryResult `json:"per_query"`
+}
+
+type EvalMetrics struct {
+	HitRate      float64 `json:"hit_rate"`
+	MRR          float64 `json:"mrr"`
+	PrecisionAtK float64 `json:"precision_at_5"`
+}
+
+type EvalQueryResult struct {
+	Question     string   `json:"question"`
+	FTSRank      int      `json:"fts_rank"`
+	SemanticRank int      `json:"semantic_rank"`
+	FTSHits      []string `json:"fts_hits"`
+	SemanticHits []string `json:"semantic_hits"`
 }

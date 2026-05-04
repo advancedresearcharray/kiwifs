@@ -270,8 +270,8 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_export",
-				mcp.WithDescription("Export knowledge base files to JSONL or CSV format. Streams all files (or a subset) with their frontmatter, content, and link data. Optionally include vector embeddings for ML pipelines."),
-				mcp.WithString("format", mcp.Required(), mcp.Description(`Output format: "jsonl" | "csv"`)),
+				mcp.WithDescription("Export knowledge base files to JSONL, CSV, or Parquet format. Streams all files (or a subset) with their frontmatter, content, and link data. Optionally include vector embeddings for ML pipelines."),
+				mcp.WithString("format", mcp.Required(), mcp.Description(`Output format: "jsonl" | "csv" | "parquet"`)),
 				mcp.WithString("path", mcp.Description("Scope to a subdirectory (e.g. students/)")),
 				mcp.WithArray("columns", mcp.Description("Frontmatter fields for CSV mode"), mcp.WithStringItems()),
 				mcp.WithBoolean("include_content", mcp.Description("Include full markdown content")),
@@ -344,6 +344,45 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleMemoryReport(b),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_suggestions",
+				mcp.WithDescription("Find semantically similar pages that aren't already linked to the given page. Useful for discovering connections and suggesting new wiki-links."),
+				mcp.WithString("path", pathOpts...),
+				mcp.WithNumber("limit", mcp.Description("Max suggestions (default 10)")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleSuggestions(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_embeddings",
+				mcp.WithDescription("Get pre-computed vector embeddings for a page. Returns chunk texts and their embedding vectors."),
+				mcp.WithString("path", pathOpts...),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleEmbeddings(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_graph_analytics",
+				mcp.WithDescription("Get link graph analytics: PageRank scores, connected components, orphan pages, and hub detection."),
+				mcp.WithNumber("limit", mcp.Description("Max top pages to return (default 20)")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleGraphAnalytics(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_velocity",
+				mcp.WithDescription("Change velocity analytics from git history: hot spots, cold spots, burst detection, authorship patterns."),
+				mcp.WithString("period", mcp.Description("Time period like 30d, 7d, 90d (default 30d)")),
+				mcp.WithNumber("limit", mcp.Description("Max results per category (default 20)")),
+				mcp.WithString("path_prefix", mcp.Description("Scope to a subdirectory")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleVelocity(b),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_context",
 				mcp.WithDescription("Get the knowledge base's schema, agent playbook, and current index in one call. Call this first when connecting to understand structure and conventions."),
 				mcp.WithReadOnlyHintAnnotation(true),
@@ -359,6 +398,24 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithDestructiveHintAnnotation(false),
 			),
 			Handler: handleHealthCheck(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_eval",
+				mcp.WithDescription("Evaluate retrieval quality: send queries with expected paths, get Hit Rate, MRR, and Precision@5 for both FTS and semantic search."),
+				mcp.WithArray("queries", mcp.Required(), mcp.Description("Array of {question, expected_paths} evaluation queries"),
+					mcp.Items(map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"question":       map[string]any{"type": "string"},
+							"expected_paths": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						},
+						"required": []string{"question", "expected_paths"},
+					}),
+				),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleEval(b),
 		},
 	)
 }
@@ -1399,8 +1456,8 @@ func handleExport(b Backend, _ Options) server.ToolHandlerFunc {
 		if format == "" {
 			format = "jsonl"
 		}
-		if format != "jsonl" && format != "csv" {
-			return mcp.NewToolResultError("format must be jsonl or csv"), nil
+		if format != "jsonl" && format != "csv" && format != "parquet" {
+			return mcp.NewToolResultError("format must be jsonl, csv, or parquet"), nil
 		}
 
 		lb, ok := b.(*LocalBackend)
@@ -1439,6 +1496,10 @@ func handleExport(b Backend, _ Options) server.ToolHandlerFunc {
 			IncludeEmbeddings: includeEmb,
 			Output:            &buf,
 			Limit:             limit,
+		}
+
+		if format == "parquet" {
+			return mcp.NewToolResultText("Parquet export is binary and cannot be returned via MCP text. Use the HTTP endpoint instead: GET /api/kiwi/export?format=parquet"), nil
 		}
 
 		count, err := exporter.Export(ctx, lb.stack.Store, lb.stack.Searcher, lb.stack.Vectors, opts)
@@ -1485,6 +1546,167 @@ func extractFrontmatterFromContent(content string) map[string]any {
 		return map[string]any{}
 	}
 	return fm
+}
+
+func handleSuggestions(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		limit := intArg(args, "limit", 10)
+		results, err := b.Suggestions(ctx, path, limit)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Suggestions failed: %v", err)), nil
+		}
+		if len(results) == 0 {
+			return mcp.NewToolResultText("No unlinked similar pages found."), nil
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Suggested links for %s:\n\n", path)
+		for i, r := range results {
+			fmt.Fprintf(&sb, "%d. %s (similarity: %.3f)\n", i+1, r.Target, r.Similarity)
+			if r.Snippet != "" {
+				fmt.Fprintf(&sb, "   %s\n", r.Snippet)
+			}
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleEmbeddings(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		result, err := b.Embeddings(ctx, path)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Embeddings failed: %v", err)), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func handleGraphAnalytics(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		limit := intArg(args, "limit", 20)
+		result, err := b.GraphAnalytics(ctx, limit)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Graph analytics failed: %v", err)), nil
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Graph Analytics\n")
+		fmt.Fprintf(&sb, "  Nodes: %d\n", result.TotalNodes)
+		fmt.Fprintf(&sb, "  Edges: %d\n", result.TotalEdges)
+		fmt.Fprintf(&sb, "  Components: %d\n", result.Components)
+		fmt.Fprintf(&sb, "  Largest component: %d nodes\n", result.LargestComponentSize)
+		fmt.Fprintf(&sb, "  Orphans: %d\n\n", len(result.Orphans))
+		if len(result.TopPages) > 0 {
+			sb.WriteString("Top Pages (by PageRank):\n")
+			for i, p := range result.TopPages {
+				fmt.Fprintf(&sb, "  %d. %s (rank: %.4f, in: %d, out: %d)\n", i+1, p.Path, p.PageRank, p.InDegree, p.OutDegree)
+			}
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleVelocity(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		period, _ := args["period"].(string)
+		if period == "" {
+			period = "30d"
+		}
+		limit := intArg(args, "limit", 20)
+		pathPrefix, _ := args["path_prefix"].(string)
+
+		result, err := b.Velocity(ctx, period, limit, pathPrefix)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Velocity failed: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Change Velocity (%s)\n", result.Period)
+		fmt.Fprintf(&sb, "Total changes: %d\n\n", result.TotalChanges)
+
+		if len(result.HotSpots) > 0 {
+			sb.WriteString("Hot Spots:\n")
+			for _, h := range result.HotSpots {
+				fmt.Fprintf(&sb, "  %s — %d changes, %d authors, %d lines\n", h.Path, h.Changes, h.Authors, h.LinesChanged)
+			}
+			sb.WriteString("\n")
+		}
+		if len(result.Bursts) > 0 {
+			sb.WriteString("Burst Activity:\n")
+			for _, b := range result.Bursts {
+				fmt.Fprintf(&sb, "  %s — recent: %.1f/day, avg: %.1f/day\n", b.Path, b.RecentRate, b.AvgRate)
+			}
+			sb.WriteString("\n")
+		}
+		if len(result.ColdSpots) > 0 {
+			sb.WriteString("Cold Spots:\n")
+			for _, c := range result.ColdSpots {
+				fmt.Fprintf(&sb, "  %s — %d+ days\n", c.Path, c.DaysSinceChange)
+			}
+			sb.WriteString("\n")
+		}
+		if len(result.SingleAuthorPages) > 0 {
+			fmt.Fprintf(&sb, "Single-author pages: %d\n", len(result.SingleAuthorPages))
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleEval(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		var queries []EvalQuery
+		if raw, ok := args["queries"]; ok {
+			switch v := raw.(type) {
+			case []any:
+				for _, item := range v {
+					if m, ok := item.(map[string]any); ok {
+						q := EvalQuery{}
+						q.Question, _ = m["question"].(string)
+						if paths, ok := m["expected_paths"].([]any); ok {
+							for _, p := range paths {
+								if s, ok := p.(string); ok {
+									q.ExpectedPaths = append(q.ExpectedPaths, s)
+								}
+							}
+						}
+						if q.Question != "" {
+							queries = append(queries, q)
+						}
+					}
+				}
+			}
+		}
+		if len(queries) == 0 {
+			return mcp.NewToolResultError("queries is required — array of {question, expected_paths} objects"), nil
+		}
+
+		result, err := b.Eval(ctx, queries)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Eval failed: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Retrieval Evaluation (%d queries)\n\n", len(queries))
+		fmt.Fprintf(&sb, "FTS:      hit_rate=%.2f  mrr=%.2f  precision@5=%.2f\n", result.FTS.HitRate, result.FTS.MRR, result.FTS.PrecisionAtK)
+		fmt.Fprintf(&sb, "Semantic: hit_rate=%.2f  mrr=%.2f  precision@5=%.2f\n\n", result.Semantic.HitRate, result.Semantic.MRR, result.Semantic.PrecisionAtK)
+		for _, pq := range result.PerQuery {
+			fmt.Fprintf(&sb, "Q: %s\n", pq.Question)
+			fmt.Fprintf(&sb, "  FTS rank: %d, Semantic rank: %d\n", pq.FTSRank, pq.SemanticRank)
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
 }
 
 func isNotFound(err error) bool {

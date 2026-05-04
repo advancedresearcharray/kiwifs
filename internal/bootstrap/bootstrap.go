@@ -13,13 +13,16 @@ import (
 	"github.com/kiwifs/kiwifs/internal/events"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/links"
+	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/kiwifs/kiwifs/internal/rbac"
+	"github.com/kiwifs/kiwifs/internal/schema"
 	"github.com/kiwifs/kiwifs/internal/search"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/kiwifs/kiwifs/internal/tracing"
 	"github.com/kiwifs/kiwifs/internal/vectorstore"
 	"github.com/kiwifs/kiwifs/internal/versioning"
+	"github.com/kiwifs/kiwifs/internal/webhooks"
 )
 
 func janitorInterval(cfg *config.Config) time.Duration {
@@ -39,21 +42,22 @@ func janitorInterval(cfg *config.Config) time.Duration {
 }
 
 type Stack struct {
-	Name         string
-	Root         string
-	Config       *config.Config
-	Store        storage.Storage
-	Versioner    versioning.Versioner
-	Searcher     search.Searcher
-	Linker       links.Linker
-	LinkResolver *links.Resolver
-	Hub          *events.Hub
-	Pipeline     *pipeline.Pipeline
-	Vectors      *vectorstore.Service
-	Comments     *comments.Store
-	Server       *api.Server
-	JanitorSched *janitor.Scheduler
-	Emitter      tracing.Emitter
+	Name                string
+	Root                string
+	Config              *config.Config
+	Store               storage.Storage
+	Versioner           versioning.Versioner
+	Searcher            search.Searcher
+	Linker              links.Linker
+	LinkResolver        *links.Resolver
+	Hub                 *events.Hub
+	Pipeline            *pipeline.Pipeline
+	Vectors             *vectorstore.Service
+	Comments            *comments.Store
+	Server              *api.Server
+	JanitorSched        *janitor.Scheduler
+	Emitter             tracing.Emitter
+	WebhookDispatcher   *webhooks.Dispatcher
 }
 
 func Build(name, root string, cfg *config.Config) (*Stack, error) {
@@ -115,6 +119,48 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 
 	pipe.OnInvalidate = func() { linkResolver.MarkDirty() }
 
+	var webhookStore *webhooks.Store
+	var webhookDispatcher *webhooks.Dispatcher
+	if cfg.Webhooks.Enabled {
+		ws, werr := webhooks.NewStoreFromRoot(root)
+		if werr != nil {
+			log.Printf("%swebhooks disabled (%v)", prefix, werr)
+		} else {
+			webhookStore = ws
+			webhookDispatcher = webhooks.NewDispatcher(ws, webhooks.Config{
+				Enabled:    true,
+				MaxWorkers: cfg.Webhooks.MaxWorkers,
+				MaxRetries: cfg.Webhooks.MaxRetries,
+			})
+			pipe.OnWebhook = func(op, path, actor string) {
+				webhookDispatcher.Dispatch(context.Background(), webhooks.Event{
+					Type:      op,
+					Path:      path,
+					Actor:     actor,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				})
+			}
+			log.Printf("%swebhooks enabled", prefix)
+		}
+	}
+
+	var schemaReload func()
+	if cfg.Schema.Enforce {
+		sv := schema.NewValidator(root)
+		pipe.ValidateWrite = func(path string, content []byte) error {
+			fm, ferr := markdown.Frontmatter(content)
+			if ferr != nil || fm == nil {
+				return nil
+			}
+			if verr := sv.Validate(fm); verr != nil {
+				return verr
+			}
+			return nil
+		}
+		schemaReload = sv.Reload
+		log.Printf("%sschema validation enabled", prefix)
+	}
+
 	cstore, err := comments.New(root)
 	if err != nil {
 		if vectors != nil {
@@ -132,7 +178,14 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 
 	em := tracing.NewEmitter(cfg.Tracing.IsEnabled(), cfg.Tracing.Output, cfg.Tracing.File)
 
-	server := api.NewServer(cfg, pipe, vectors, cstore, shares, linkResolver, em)
+	var serverOpts []api.ServerOption
+	if webhookStore != nil {
+		serverOpts = append(serverOpts, api.WithWebhookStore(webhookStore))
+	}
+	if schemaReload != nil {
+		serverOpts = append(serverOpts, api.WithSchemaReload(schemaReload))
+	}
+	server := api.NewServer(cfg, pipe, vectors, cstore, shares, linkResolver, em, serverOpts...)
 
 	var janitorSched *janitor.Scheduler
 	if iv := janitorInterval(cfg); iv > 0 {
@@ -151,21 +204,22 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 	}
 
 	stack := &Stack{
-		Name:         name,
-		Root:         root,
-		Config:       cfg,
-		Store:        store,
-		Versioner:    ver,
-		Searcher:     searcher,
-		Linker:       linker,
-		LinkResolver: linkResolver,
-		Hub:          hub,
-		Pipeline:     pipe,
-		Vectors:      vectors,
-		Comments:     cstore,
-		Server:       server,
-		JanitorSched: janitorSched,
-		Emitter:      em,
+		Name:              name,
+		Root:              root,
+		Config:            cfg,
+		Store:             store,
+		Versioner:         ver,
+		Searcher:          searcher,
+		Linker:            linker,
+		LinkResolver:      linkResolver,
+		Hub:               hub,
+		Pipeline:          pipe,
+		Vectors:           vectors,
+		Comments:          cstore,
+		Server:            server,
+		JanitorSched:      janitorSched,
+		Emitter:           em,
+		WebhookDispatcher: webhookDispatcher,
 	}
 
 	pipe.DrainUncommitted(context.Background())
@@ -197,6 +251,9 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 
 func (s *Stack) Close() error {
 	var firstErr error
+	if s.WebhookDispatcher != nil {
+		s.WebhookDispatcher.Close()
+	}
 	// Flush async indexer before closing the searcher it writes to.
 	if s.Pipeline != nil && s.Pipeline.AsyncIdx != nil {
 		if err := s.Pipeline.AsyncIdx.Close(); err != nil && firstErr == nil {

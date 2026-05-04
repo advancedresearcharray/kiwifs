@@ -24,10 +24,22 @@ type Config struct {
 	Dataview   DataviewConfig   `toml:"dataview"`
 	Memory     MemoryConfig     `toml:"memory"`
 	Tracing    TracingConfig    `toml:"tracing"`
+	Webhooks   WebhooksConfig   `toml:"webhooks"`
+	Schema     SchemaConfig     `toml:"schema"`
 	// Spaces enables multi-tenant mode: each entry becomes an
 	// independent knowledge base mapped under /api/kiwi/{name}/...
 	// When empty, the server runs single-space against Storage.Root.
 	Spaces []SpaceConfig `toml:"spaces"`
+}
+
+type WebhooksConfig struct {
+	Enabled    bool `toml:"enabled"`
+	MaxWorkers int  `toml:"max_workers"`
+	MaxRetries int  `toml:"max_retries"`
+}
+
+type SchemaConfig struct {
+	Enforce bool `toml:"enforce"`
 }
 
 type JanitorConfig struct {
