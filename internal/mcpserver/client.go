@@ -508,3 +508,52 @@ func (r *RemoteBackend) Health(ctx context.Context) error {
 }
 
 func (r *RemoteBackend) Close() error { return nil }
+
+func (r *RemoteBackend) Suggestions(ctx context.Context, path string, limit int) ([]SuggestionResult, error) {
+	q := fmt.Sprintf("%s/suggestions?path=%s&limit=%d", r.apiPrefix, url.QueryEscape(path), limit)
+	var result struct {
+		Suggestions []SuggestionResult `json:"suggestions"`
+	}
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return result.Suggestions, nil
+}
+
+func (r *RemoteBackend) Embeddings(ctx context.Context, path string) (*EmbeddingsResult, error) {
+	q := fmt.Sprintf("%s/embeddings?path=%s", r.apiPrefix, url.QueryEscape(path))
+	var result EmbeddingsResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAnalyticsResult, error) {
+	q := fmt.Sprintf("%s/graph/analytics?limit=%d", r.apiPrefix, limit)
+	var result GraphAnalyticsResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) Velocity(ctx context.Context, period string, limit int, pathPrefix string) (*VelocityResult, error) {
+	q := fmt.Sprintf("%s/velocity?period=%s&limit=%d", r.apiPrefix, url.QueryEscape(period), limit)
+	if pathPrefix != "" {
+		q += "&path_prefix=" + url.QueryEscape(pathPrefix)
+	}
+	var result VelocityResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) Eval(ctx context.Context, queries []EvalQuery) (*EvalResult, error) {
+	var result EvalResult
+	if err := r.postJSON(ctx, r.apiPrefix+"/eval", map[string]any{"queries": queries}, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}

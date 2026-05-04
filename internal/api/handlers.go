@@ -21,6 +21,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/kiwifs/kiwifs/internal/vectorstore"
 	"github.com/kiwifs/kiwifs/internal/versioning"
+	"github.com/kiwifs/kiwifs/internal/webhooks"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/sync/singleflight"
 )
@@ -49,6 +50,10 @@ type Handlers struct {
 	janitorStaleDays int
 
 	memoryEpisodesPrefix string
+
+	webhookStore *webhooks.Store
+
+	schemaReload func()
 
 	graphCache atomic.Pointer[graphResponse]
 	graphGroup singleflight.Group

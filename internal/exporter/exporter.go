@@ -69,6 +69,10 @@ func Export(ctx context.Context, store storage.Storage, searcher search.Searcher
 		return 0, fmt.Errorf("output writer is required")
 	}
 
+	if opts.Format == "parquet" {
+		return ExportParquet(ctx, store, searcher, opts.Output, opts)
+	}
+
 	var bq backlinkQuerier
 	if opts.IncludeLinks {
 		bq, _ = searcher.(backlinkQuerier)

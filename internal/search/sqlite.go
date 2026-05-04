@@ -608,6 +608,19 @@ func (s *SQLite) IndexMeta(ctx context.Context, path string, content []byte) err
 			fm["_backlink_count"] = blCount
 		}
 	}
+	if s.computedFields {
+		daysSinceUpdate := 0.0
+		var existingUpdatedAt string
+		err := s.readDB.QueryRowContext(ctx,
+			`SELECT updated_at FROM file_meta WHERE path = ?`, path,
+		).Scan(&existingUpdatedAt)
+		if err == nil && existingUpdatedAt != "" {
+			if t, perr := time.Parse(time.RFC3339, existingUpdatedAt); perr == nil {
+				daysSinceUpdate = time.Since(t).Hours() / 24
+			}
+		}
+		fm["_quality_score"] = QualityScore(fm, daysSinceUpdate)
+	}
 	for key, expr := range s.customComputedFields {
 		if v := EvalComputedField(expr, fm); v != nil {
 			fm[key] = v
@@ -1363,6 +1376,9 @@ func (s *SQLite) reindexLocked(ctx context.Context) (int, error) {
 				fm["_link_count"] = len(links.Extract(content))
 				fm["_heading_count"] = len(parsed.Headings)
 				fm["_has_frontmatter"] = len(parsed.Frontmatter) > 0
+			}
+			if s.computedFields {
+				fm["_quality_score"] = QualityScore(fm, 0)
 			}
 			for key, expr := range s.customComputedFields {
 				if v := EvalComputedField(expr, fm); v != nil {

@@ -62,6 +62,15 @@ type Pipeline struct {
 	// computed views as stale.
 	OnPathChange func(path string)
 
+	// OnWebhook, when set, fires after every write/delete with the
+	// operation type, path, and actor. Used to dispatch webhook events.
+	OnWebhook func(op, path, actor string)
+
+	// ValidateWrite, when set, is called before writing content. If it
+	// returns a non-nil error, the write is rejected. Used for schema
+	// validation of frontmatter against JSON Schema definitions.
+	ValidateWrite func(path string, content []byte) error
+
 	// writeMu serialises the whole Store.Write → Versioner.Commit sequence
 	// across concurrent Write / BulkWrite / Delete / Observe* callers.
 	// Without it, a REST-origin Write could race with an fsnotify-origin
@@ -291,6 +300,14 @@ func (p *Pipeline) broadcast(ev events.Event) {
 		}
 		for _, pa := range ev.Paths {
 			p.OnPathChange(pa)
+		}
+	}
+	if p.OnWebhook != nil {
+		if ev.Path != "" {
+			p.OnWebhook(ev.Op, ev.Path, ev.Actor)
+		}
+		for _, pa := range ev.Paths {
+			p.OnWebhook(ev.Op, pa, ev.Actor)
 		}
 	}
 }
@@ -524,6 +541,11 @@ func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byt
 	// If-Match: * means "match any existing representation" per RFC 7232 §3.1.
 	// We skip the ETag comparison — the precondition succeeds as long as the
 	// resource exists. For new files (create), * is a no-op.
+	if p.ValidateWrite != nil {
+		if err := p.ValidateWrite(path, content); err != nil {
+			return Result{}, err
+		}
+	}
 	// Mark before the disk write so the fsnotify event fires while the
 	// entry is already visible — otherwise a fast watcher could observe
 	// before we record it. We stamp the etag so a delayed fsnotify batch
@@ -621,6 +643,12 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 		return Result{}, fmt.Errorf("result exceeds %d-byte limit", maxFileSize)
 	}
 
+	if p.ValidateWrite != nil {
+		if err := p.ValidateWrite(path, newContent); err != nil {
+			return Result{}, err
+		}
+	}
+
 	p.markInflightEtag(path, ETag(newContent))
 	if err := p.Store.Write(ctx, path, newContent); err != nil {
 		return Result{}, err
@@ -648,6 +676,13 @@ func (p *Pipeline) BulkWrite(ctx context.Context, files []struct {
 	for i, f := range files {
 		if f.Path == "" {
 			return nil, fmt.Errorf("files[%d].path is required", i)
+		}
+	}
+	if p.ValidateWrite != nil {
+		for i, f := range files {
+			if err := p.ValidateWrite(f.Path, f.Content); err != nil {
+				return nil, fmt.Errorf("files[%d] (%s): %w", i, f.Path, err)
+			}
 		}
 	}
 	p.writeMu.Lock()

@@ -25,10 +25,21 @@ import (
 	"github.com/kiwifs/kiwifs/internal/search"
 	"github.com/kiwifs/kiwifs/internal/tracing"
 	"github.com/kiwifs/kiwifs/internal/vectorstore"
+	"github.com/kiwifs/kiwifs/internal/webhooks"
 	"github.com/kiwifs/kiwifs/internal/webui"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
+
+type ServerOption func(*Server)
+
+func WithWebhookStore(store *webhooks.Store) ServerOption {
+	return func(s *Server) { s.webhookStore = store }
+}
+
+func WithSchemaReload(fn func()) ServerOption {
+	return func(s *Server) { s.schemaReload = fn }
+}
 
 type Server struct {
 	cfg          *config.Config
@@ -39,6 +50,9 @@ type Server struct {
 	linkResolver *links.Resolver
 	emitter      tracing.Emitter
 	echo         *echo.Echo
+
+	webhookStore  *webhooks.Store
+	schemaReload  func()
 
 	janitorSched  *janitor.Scheduler
 	janitorCancel context.CancelFunc
@@ -66,6 +80,7 @@ func NewServer(
 	shares *rbac.ShareStore,
 	lr *links.Resolver,
 	em tracing.Emitter,
+	opts ...ServerOption,
 ) *Server {
 	if em == nil {
 		em = tracing.NoopEmitter{}
@@ -79,6 +94,9 @@ func NewServer(
 		linkResolver: lr,
 		emitter:      em,
 		echo:         echo.New(),
+	}
+	for _, o := range opts {
+		o(s)
 	}
 	s.echo.HideBanner = true
 	s.echo.HidePort = true
@@ -250,6 +268,8 @@ func (s *Server) setupRoutes() {
 		memoryEpisodesPrefix: s.cfg.Memory.EpisodesPathPrefix,
 		publicURL:            s.cfg.ResolvedPublicURL(),
 		linkResolver:         s.linkResolver,
+		webhookStore:         s.webhookStore,
+		schemaReload:         s.schemaReload,
 	}
 	prev := s.pipe.OnInvalidate
 	s.pipe.OnInvalidate = func() {
@@ -320,6 +340,17 @@ func (s *Server) setupRoutes() {
 	api.GET("/analytics", h.Analytics)
 	api.GET("/health-check", h.HealthCheck)
 	api.GET("/context", h.Context)
+	api.GET("/suggestions", h.Suggestions)
+	api.GET("/embeddings", h.Embeddings)
+	api.GET("/graph/analytics", h.GraphAnalytics)
+	api.GET("/velocity", h.Velocity)
+	api.POST("/eval", h.Eval)
+	api.POST("/webhooks", h.CreateWebhook)
+	api.GET("/webhooks", h.ListWebhooks)
+	api.DELETE("/webhooks/:id", h.DeleteWebhook)
+	api.GET("/schemas", h.ListSchemas)
+	api.GET("/schemas/:type", h.GetSchema)
+	api.PUT("/schemas/:type", h.PutSchema)
 
 	api.POST("/share", h.CreateShareLink)
 	api.GET("/share", h.ListShareLinks)
