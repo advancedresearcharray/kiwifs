@@ -1,0 +1,39 @@
+name: Deploy to Cloud
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & deploy to kiwifs EC2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.KIWIFS_EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.KIWIFS_EC2_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+            TAG="${GITHUB_REF_NAME:-latest}"
+
+            cd /tmp
+            rm -rf kiwifs-build
+            git clone --depth 1 --branch "$TAG" https://github.com/kiwifs/kiwifs.git kiwifs-build || \
+              git clone --depth 1 https://github.com/kiwifs/kiwifs.git kiwifs-build
+
+            cd kiwifs-build
+            sed -i 's/RUN npm run build/ENV NODE_OPTIONS=--max-old-space-size=3072\nRUN npm run build/' Dockerfile
+            docker build -t kiwifs:latest -t "kiwifs:$TAG" .
+
+            cd /opt/kiwifs
+            docker compose up -d kiwifs
+            docker image prune -f
+            rm -rf /tmp/kiwifs-build
+
+            echo "Deployed kiwifs:$TAG"
