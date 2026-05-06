@@ -184,6 +184,68 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
   return "unknown";
 }
 
+function MermaidDiagram({ chart }: { chart: string }) {
+  const [svg, setSvg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const renderId = useMemo(() => `kiwi-mermaid-${Math.random().toString(36).slice(2)}`, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderDiagram() {
+      setSvg(null);
+      setError(null);
+
+      try {
+        const { default: mermaid } = await import("mermaid");
+        const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: isDark ? "dark" : "default",
+        });
+
+        const rendered = await mermaid.render(renderId, chart);
+        if (cancelled) return;
+
+        setSvg(rendered.svg);
+        queueMicrotask(() => {
+          if (containerRef.current) rendered.bindFunctions?.(containerRef.current);
+        });
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    renderDiagram();
+    return () => { cancelled = true; };
+  }, [chart, renderId]);
+
+  if (error) {
+    return (
+      <figure className="kiwi-mermaid rounded-md border border-destructive/30 bg-destructive/5 p-4">
+        <figcaption className="mb-2 text-sm font-medium text-destructive">Mermaid render error</figcaption>
+        <pre className="overflow-x-auto text-xs"><code>{error}</code></pre>
+      </figure>
+    );
+  }
+
+  return (
+    <figure className="kiwi-mermaid overflow-x-auto rounded-md border border-border bg-card p-4">
+      {svg ? (
+        <div
+          ref={containerRef}
+          className="min-w-fit [&_svg]:mx-auto [&_svg]:max-w-full"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : (
+        <div className="text-sm text-muted-foreground">Rendering Mermaid diagram…</div>
+      )}
+    </figure>
+  );
+}
+
 export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey }: Props) {
   const [content, setContent] = useState<string | null>(null);
   const [lastModified, setLastModified] = useState<string | null>(null);
@@ -474,6 +536,9 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                       const raw = String(children).replace(/\n$/, "");
                       if (lang === "kiwi-query") {
                         return <KiwiQuery source={raw} onNavigate={onNavigate} isComputedView={parsed.meta?.["kiwi-view"] === true} />;
+                      }
+                      if (lang === "mermaid") {
+                        return <MermaidDiagram chart={raw} />;
                       }
                       if (!lang || !raw.includes("\n")) {
                         return <code className={className} {...rest}>{children}</code>;
