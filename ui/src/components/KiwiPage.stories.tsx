@@ -7,6 +7,7 @@ import {
   mockMarkdownSimple,
   mockMarkdownRich,
   mockMarkdownExcalidraw,
+  mockMarkdownMermaid,
   mockMarkdownRenderingTest,
 } from "./__mocks__/data";
 
@@ -99,6 +100,21 @@ export const WithExcalidraw: Story = {
   decorators: [
     (Story) => (
       <MockApiProvider overrides={{ fileContent: mockMarkdownExcalidraw }}>
+        <div className="h-screen bg-background text-foreground">
+          <Story />
+        </div>
+      </MockApiProvider>
+    ),
+  ],
+};
+
+export const WithMermaid: Story = {
+  args: {
+    path: "diagrams/architecture.md",
+  },
+  decorators: [
+    (Story) => (
+      <MockApiProvider overrides={{ fileContent: mockMarkdownMermaid }}>
         <div className="h-screen bg-background text-foreground">
           <Story />
         </div>
