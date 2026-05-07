@@ -442,7 +442,9 @@ function GraphInteractions({
         if (hovered) {
           if (!neighbors.has(node)) {
             if (node !== activePath) {
-              out.color = colors.nodeDim;
+              // Keep community colors visible while hovering.  The graph can contain many
+              // isolated nodes; dimming every non-neighbor makes the whole graph look
+              // monochrome when the pointer lands on one of them.
               out.label = "";
               out.zIndex = 0;
             }
