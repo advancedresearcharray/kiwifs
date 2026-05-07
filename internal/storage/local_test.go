@@ -304,3 +304,73 @@ func TestGuardPath_NormalGitFilesAllowed(t *testing.T) {
 		t.Fatalf("gitattributes-info.md should be allowed: %v", err)
 	}
 }
+
+func TestGuardPath_KiwiUserEditableFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	allowed := []string{
+		".kiwi/rules.md",
+		".kiwi/playbook.md",
+	}
+	for _, p := range allowed {
+		_, err := GuardPath(dir, p)
+		if err != nil {
+			t.Errorf("GuardPath(%q) should be allowed but got: %v", p, err)
+		}
+	}
+
+	blocked := []string{
+		".kiwi/config.toml",
+		".kiwi/state/index.db",
+		".kiwi/templates/default.md",
+		".kiwi/schemas/feature.json",
+		".kiwi/server.lock",
+		".git/config",
+		".git/HEAD",
+		".hidden/secret.md",
+	}
+	for _, p := range blocked {
+		_, err := GuardPath(dir, p)
+		if err == nil {
+			t.Errorf("GuardPath(%q) should be blocked but was allowed", p)
+		}
+	}
+}
+
+func TestGuardPath_KiwiEditableViaTraversalStillSafe(t *testing.T) {
+	dir := t.TempDir()
+
+	// normalizeUserPath collapses ".." before GuardPath runs, so
+	// "../.kiwi/rules.md" becomes ".kiwi/rules.md" (stays within root).
+	// This is safe — the file is the same allowed file, just reached
+	// via a redundant ".." that gets stripped.
+	safe := []string{
+		"../.kiwi/rules.md",
+		"foo/../../.kiwi/rules.md",
+	}
+	for _, p := range safe {
+		_, err := GuardPath(dir, p)
+		if err != nil {
+			t.Errorf("GuardPath(%q) normalizes to .kiwi/rules.md and should be allowed: %v", p, err)
+		}
+	}
+
+	// ".kiwi/../../../etc/passwd" normalizes to "etc/passwd" which is a
+	// normal (non-hidden) path inside root — harmless.
+	_, err := GuardPath(dir, ".kiwi/../../../etc/passwd")
+	if err != nil {
+		t.Errorf("GuardPath(.kiwi/../../../etc/passwd) normalizes to etc/passwd, should be allowed: %v", err)
+	}
+
+	// But .kiwi/config.toml is still blocked even via traversal tricks
+	blocked := []string{
+		"../.kiwi/config.toml",
+		"foo/../../.kiwi/state/index.db",
+	}
+	for _, p := range blocked {
+		_, err := GuardPath(dir, p)
+		if err == nil {
+			t.Errorf("GuardPath(%q) should be blocked but was allowed", p)
+		}
+	}
+}
