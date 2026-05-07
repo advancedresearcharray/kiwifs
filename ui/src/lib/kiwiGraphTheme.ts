@@ -56,6 +56,10 @@ export function colorForGraphCommunity(
   theme: KiwiGraphTheme,
 ): string {
   if (i < theme.palette.length) return theme.palette[i]!;
-  const l = 42 + (i % 18) * 1.1;
-  return `hsl(0 0% ${l}%)`;
+
+  // Use a golden-angle hue walk rather than grayscale fallback. Large vaults can
+  // produce dozens of Louvain communities, so falling back to neutral colors
+  // makes most clusters look black/gray on the dark graph background.
+  const hue = Math.round((i * 137.508) % 360);
+  return `hsl(${hue} 72% 58%)`;
 }
