@@ -141,9 +141,9 @@ Other templates: `wiki`, `runbook`, `research`, or start blank with `kiwifs init
 
 ### Web UI
 
-Embedded in the binary via `go:embed`. No separate frontend deploy, no Node runtime. Obsidian's knowledge features (wiki links, backlinks, graph view) with a Notion-style block editor.
+Embedded in the binary via `go:embed`. No separate frontend deploy, no Node runtime. Obsidian's knowledge features (wiki links, backlinks, graph view) with a source-preserving Markdown editor.
 
-- **WYSIWYG editor** — block-based (BlockNote), drag handles, 15+ block types, slash commands
+- **Markdown source editor** — CodeMirror-based, preserves frontmatter/tables, with Markdown slash commands
 - **`[[Wiki links]]` + backlinks** — type `[[auth]]`, resolves to `pages/authentication.md`. Backlinks panel shows "linked from 3 pages." This is Obsidian's core feature — notes are connected, not isolated.
 - **Knowledge graph** — visual map of all pages and their connections (Sigma.js + ForceAtlas2). Same organic clustering as Obsidian's graph view.
 - **Cmd+K search** — full-text with highlighted matches
@@ -761,7 +761,7 @@ KiwiFS stores real files on a real filesystem — not blobs in a database. The d
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  Web UI (embedded via go:embed)                    │  │
-│  │  shadcn/ui · BlockNote · react-markdown · Sigma.js │  │
+│  │  shadcn/ui · CodeMirror · react-markdown · Sigma.js │  │
 │  └────────────────────┬───────────────────────────────┘  │
 │                       │                                  │
 │  ┌────────────────────▼───────────────────────────────┐  │

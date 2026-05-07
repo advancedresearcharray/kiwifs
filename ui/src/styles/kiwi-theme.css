@@ -76,7 +76,6 @@
   --link-color: var(--foreground);
 
   --kiwi-shiki-filter: none;
-  --kiwi-blocknote-filter: none;
 
   /* Graph (hex — read by readKiwiGraphTheme()) */
   --kiwi-graph-default-node: #7c8a6e;

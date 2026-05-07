@@ -216,24 +216,6 @@
   @apply bg-border;
 }
 
-/* ─── BlockNote editor ─── */
-.kiwi-blocknote
-  :is(
-    .bn-block-content.ProseMirror-selectednode > *,
-    .ProseMirror-selectednode > .bn-block-content > *
-  ) {
-  outline: 2px solid hsl(var(--ring)) !important;
-}
-.kiwi-blocknote {
-  filter: var(--kiwi-blocknote-filter);
-}
-
-/* Wiki link pills in editor */
-.kiwi-editor-wikilink {
-  @apply bg-primary/15 text-foreground rounded px-1 py-0.5 font-medium;
-  border-bottom: 2px solid hsl(var(--primary) / 0.5);
-}
-
 /* ─── Mobile / responsive ─── */
 @media (max-width: 768px) {
   .kiwi-prose { padding-left: 1rem; padding-right: 1rem; }
