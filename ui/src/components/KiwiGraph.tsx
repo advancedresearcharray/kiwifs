@@ -14,6 +14,10 @@ import circular from "graphology-layout/circular";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import louvain from "graphology-communities-louvain";
 import { createNodeBorderProgram } from "@sigma/node-border";
+import type {
+  NodeHoverDrawingFunction,
+  NodeLabelDrawingFunction,
+} from "sigma/rendering";
 import {
   SigmaContainer,
   useRegisterEvents,
@@ -43,7 +47,91 @@ import {
   SelectValue,
 } from "./ui/select";
 
+const LABEL_BACKGROUND = "rgba(2, 6, 23, 0.84)";
+const LABEL_BORDER = "rgba(148, 163, 184, 0.4)";
+const LABEL_TEXT = "#f8fafc";
+
+const drawRoundedRect = (
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) => {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
+};
+
+const drawKiwiGraphNodeLabel: NodeLabelDrawingFunction = (
+  context,
+  data,
+  settings,
+) => {
+  if (!data.label) return;
+  const size = settings.labelSize;
+  const font = settings.labelFont;
+  const weight = settings.labelWeight;
+  const label = String(data.label);
+  const paddingX = 5;
+  const paddingY = 3;
+  const gap = 5;
+
+  context.save();
+  context.font = `${weight} ${size}px ${font}`;
+  const textWidth = context.measureText(label).width;
+  const boxHeight = size + paddingY * 2;
+  const x = data.x + data.size + gap;
+  const y = data.y - boxHeight / 2;
+
+  drawRoundedRect(context, x, y, textWidth + paddingX * 2, boxHeight, 4);
+  context.fillStyle = LABEL_BACKGROUND;
+  context.fill();
+  context.strokeStyle = LABEL_BORDER;
+  context.lineWidth = 1;
+  context.stroke();
+
+  context.fillStyle = LABEL_TEXT;
+  context.textBaseline = "middle";
+  context.fillText(label, x + paddingX, data.y);
+  context.restore();
+};
+
+const drawKiwiGraphNodeHover: NodeHoverDrawingFunction = (
+  context,
+  data,
+  settings,
+) => {
+  if (!data.label) {
+    context.save();
+    context.shadowOffsetX = 0;
+    context.shadowOffsetY = 0;
+    context.shadowBlur = 8;
+    context.shadowColor = "#000";
+    context.fillStyle = LABEL_BACKGROUND;
+    context.beginPath();
+    context.arc(data.x, data.y, data.size + 2, 0, Math.PI * 2);
+    context.closePath();
+    context.fill();
+    context.restore();
+    return;
+  }
+  drawKiwiGraphNodeLabel(context, data, settings);
+};
+
 const GraphNodeBorderProgram = createNodeBorderProgram({
+  drawLabel: drawKiwiGraphNodeLabel,
+  drawHover: drawKiwiGraphNodeHover,
   borders: [
     {
       color: { attribute: "borderColor", defaultValue: "#0b0b0b" },
@@ -315,6 +403,8 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
               nodeProgramClasses: {
                 border: GraphNodeBorderProgram,
               },
+              defaultDrawNodeLabel: drawKiwiGraphNodeLabel,
+              defaultDrawNodeHover: drawKiwiGraphNodeHover,
               defaultEdgeColor: built.theme.edge,
               zIndex: true,
             }}
