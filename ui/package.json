@@ -82,8 +82,5 @@
   },
   "overrides": {
     "prosemirror-view": "1.37.1"
-  },
-  "optionalDependencies": {
-    "prosemirror-view": "^1.37.1"
   }
 }
