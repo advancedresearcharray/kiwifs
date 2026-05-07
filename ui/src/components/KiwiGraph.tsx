@@ -13,6 +13,7 @@ import Graph from "graphology";
 import circular from "graphology-layout/circular";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import louvain from "graphology-communities-louvain";
+import { createNodeBorderProgram } from "@sigma/node-border";
 import {
   SigmaContainer,
   useRegisterEvents,
@@ -41,6 +42,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+
+const GraphNodeBorderProgram = createNodeBorderProgram({
+  borders: [
+    {
+      color: { attribute: "borderColor", defaultValue: "#0b0b0b" },
+      size: { attribute: "borderSize", defaultValue: 1.25, mode: "pixels" },
+    },
+    {
+      color: { attribute: "color" },
+      size: { fill: true },
+    },
+  ],
+});
 
 type Props = {
   tree: TreeEntry | null;
@@ -84,7 +98,10 @@ function buildGraph(
       dir: topDir(n.path),
       tags: n.tags || [],
       size: 4,
+      type: "border",
       color: theme.defaultNode,
+      borderColor: "#0b0b0b",
+      borderSize: 1.25,
     });
     if (n.tags) n.tags.forEach((t) => tagSet.add(t));
   }
@@ -294,6 +311,10 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
               labelWeight: "500",
               labelDensity: 0.7,
               labelGridCellSize: 80,
+              defaultNodeType: "border",
+              nodeProgramClasses: {
+                border: GraphNodeBorderProgram,
+              },
               defaultEdgeColor: built.theme.edge,
               zIndex: true,
             }}

@@ -59,7 +59,26 @@ export function colorForGraphCommunity(
 
   // Use a golden-angle hue walk rather than grayscale fallback. Large vaults can
   // produce dozens of Louvain communities, so falling back to neutral colors
-  // makes most clusters look black/gray on the dark graph background.
-  const hue = Math.round((i * 137.508) % 360);
-  return `hsl(${hue} 72% 58%)`;
+  // makes most clusters look black/gray on the dark graph background. Emit hex
+  // instead of CSS Color 4 HSL because Sigma/WebGL color parsers are stricter
+  // than the DOM and can render unsupported strings as black.
+  const hue = (i * 137.508) % 360;
+  const saturation = 0.72;
+  const lightness = 0.58;
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = lightness - chroma / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (hue < 60) [r, g, b] = [chroma, x, 0];
+  else if (hue < 120) [r, g, b] = [x, chroma, 0];
+  else if (hue < 180) [r, g, b] = [0, chroma, x];
+  else if (hue < 240) [r, g, b] = [0, x, chroma];
+  else if (hue < 300) [r, g, b] = [x, 0, chroma];
+  else [r, g, b] = [chroma, 0, x];
+
+  const toHex = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
