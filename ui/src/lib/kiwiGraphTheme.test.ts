@@ -16,10 +16,10 @@ describe("colorForGraphCommunity", () => {
     expect(colorForGraphCommunity(1, theme)).toBe("#222222");
   });
 
-  it("uses chromatic fallback colors beyond the configured palette", () => {
-    expect(colorForGraphCommunity(2, theme)).toMatch(/^hsl\(\d+ 72% 58%\)$/);
-    expect(colorForGraphCommunity(3, theme)).toMatch(/^hsl\(\d+ 72% 58%\)$/);
+  it("uses sigma-compatible chromatic fallback colors beyond the configured palette", () => {
+    expect(colorForGraphCommunity(2, theme)).toMatch(/^#[0-9a-f]{6}$/);
+    expect(colorForGraphCommunity(3, theme)).toMatch(/^#[0-9a-f]{6}$/);
     expect(colorForGraphCommunity(2, theme)).not.toBe(colorForGraphCommunity(3, theme));
-    expect(colorForGraphCommunity(2, theme)).not.toContain("0 0%");
+    expect(colorForGraphCommunity(2, theme)).not.toBe("#000000");
   });
 });
