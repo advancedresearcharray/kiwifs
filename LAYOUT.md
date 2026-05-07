@@ -55,7 +55,7 @@ Each section is collapsible (state saved to localStorage).
 Fills the remaining width (`flex-1`). Renders one of:
 
 - **Page view** (`KiwiPage`) — markdown render with ToC, backlinks, comments.
-- **Editor** (`KiwiEditor`) — BlockNote rich-text editor.
+- **Editor** (`KiwiEditor`) — source-preserving Markdown editor.
 - **Graph** (`KiwiGraph`) — Sigma.js force-directed knowledge graph.
 - **History** (`KiwiHistory`) — version diff viewer.
 - **Theme editor** (`KiwiThemeEditor`) — live color/font customization.
