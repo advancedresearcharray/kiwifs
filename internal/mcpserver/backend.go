@@ -100,7 +100,7 @@ type Backend interface {
 	RenameWithLinks(ctx context.Context, from, to, actor string, updateLinks bool) (string, []string, error)
 	Backlinks(ctx context.Context, path string) ([]Backlink, error)
 	ResolveWikiLinks(ctx context.Context, content string) string
-	Context(ctx context.Context) (schema, playbook, index string, err error)
+	Context(ctx context.Context) (schema, playbook, index, rules string, err error)
 	Suggestions(ctx context.Context, path string, limit int) ([]SuggestionResult, error)
 	Embeddings(ctx context.Context, path string) (*EmbeddingsResult, error)
 	GraphAnalytics(ctx context.Context, limit int) (*GraphAnalyticsResult, error)

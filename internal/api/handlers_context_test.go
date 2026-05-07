@@ -44,6 +44,36 @@ func TestContext_WithPlaybook(t *testing.T) {
 	}
 }
 
+func TestContext_WithRules(t *testing.T) {
+	s, dir := buildSQLiteTestServer(t)
+
+	kiwiDir := filepath.Join(dir, ".kiwi")
+	if err := os.MkdirAll(kiwiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(kiwiDir, "playbook.md"), []byte("# Playbook"), 0644)
+	os.WriteFile(filepath.Join(kiwiDir, "rules.md"), []byte("# Rules\n- Always update docs"), 0644)
+	os.WriteFile(filepath.Join(dir, "SCHEMA.md"), []byte("# Schema"), 0644)
+	os.WriteFile(filepath.Join(dir, "index.md"), []byte("# Index"), 0644)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/context", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if result["rules"] != "# Rules\n- Always update docs" {
+		t.Errorf("rules = %q", result["rules"])
+	}
+}
+
 func TestContext_NoPlaybook(t *testing.T) {
 	s := buildTestServer(t)
 

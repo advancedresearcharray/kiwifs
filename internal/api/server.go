@@ -347,6 +347,8 @@ func (s *Server) setupRoutes() {
 	api.GET("/analytics", h.Analytics)
 	api.GET("/health-check", h.HealthCheck)
 	api.GET("/context", h.Context)
+	api.GET("/rules", h.Rules)
+	api.PUT("/rules", h.PutRules)
 	api.GET("/suggestions", h.Suggestions)
 	api.GET("/embeddings", h.Embeddings)
 	api.GET("/graph/analytics", h.GraphAnalytics)

@@ -35,4 +35,5 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(restoreCmd)
+	rootCmd.AddCommand(rulesCmd)
 }

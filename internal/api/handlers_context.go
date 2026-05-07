@@ -21,5 +21,6 @@ func (h *Handlers) Context(c echo.Context) error {
 		"playbook": read(filepath.Join(".kiwi", "playbook.md")),
 		"schema":   read("SCHEMA.md"),
 		"index":    read("index.md"),
+		"rules":    read(filepath.Join(".kiwi", "rules.md")),
 	})
 }

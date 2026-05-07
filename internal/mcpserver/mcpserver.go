@@ -383,8 +383,8 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleVelocity(b),
 		},
 		server.ServerTool{
-			Tool: mcp.NewTool("kiwi_context",
-				mcp.WithDescription("Get the knowledge base's schema, agent playbook, and current index in one call. Call this first when connecting to understand structure and conventions."),
+		Tool: mcp.NewTool("kiwi_context",
+			mcp.WithDescription("Get the knowledge base's schema, agent playbook, current index, and rules in one call. Call this first when connecting to understand structure, conventions, and user-defined rules."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
@@ -1004,7 +1004,7 @@ func handleAnalytics(b Backend) server.ToolHandlerFunc {
 
 func handleContext(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		schema, playbook, index, err := b.Context(ctx)
+		schema, playbook, index, rules, err := b.Context(ctx)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Context failed: %v", err)), nil
 		}
@@ -1027,6 +1027,12 @@ func handleContext(b Backend) server.ToolHandlerFunc {
 			sb.WriteString(index)
 		} else {
 			sb.WriteString("(no index.md found)")
+		}
+		sb.WriteString("\n\n=== RULES ===\n")
+		if rules != "" {
+			sb.WriteString(rules)
+		} else {
+			sb.WriteString("(no .kiwi/rules.md found)")
 		}
 		return mcp.NewToolResultText(sb.String()), nil
 	}
