@@ -55,10 +55,19 @@ func (l *Local) AbsPath(path string) string {
 	return filepath.Join(l.root, filepath.FromSlash(clean))
 }
 
+// userEditableKiwiFiles lists .kiwi/ files that are user-facing content
+// and should be accessible through the normal file API. Everything else
+// under .kiwi/ (config.toml, state/, templates/, etc.) stays blocked.
+var userEditableKiwiFiles = map[string]bool{
+	".kiwi/rules.md":    true,
+	".kiwi/playbook.md": true,
+}
+
 // GuardPath resolves userPath against root and rejects any result that
 // escapes root via ".." or other traversal. It also blocks access to
-// internal directories (.git, .kiwi, and any other dot-prefixed dirs)
-// that must never be exposed through the API. Returns the absolute path.
+// internal directories (.git and most of .kiwi/) that must never be
+// exposed through the API. User-editable .kiwi files (rules.md,
+// playbook.md) are explicitly allowed.
 func GuardPath(root, userPath string) (string, error) {
 	if err := validatePathChars(userPath); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrPathDenied, err)
@@ -69,7 +78,7 @@ func GuardPath(root, userPath string) (string, error) {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("%w: path traversal denied: %s", ErrPathDenied, userPath)
 	}
-	if hasHiddenComponent(rel) {
+	if hasHiddenComponent(rel) && !userEditableKiwiFiles[filepath.ToSlash(rel)] {
 		return "", fmt.Errorf("%w: access to internal path denied: %s", ErrPathDenied, userPath)
 	}
 	if isDangerousFile(clean) {
