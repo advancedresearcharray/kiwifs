@@ -340,47 +340,106 @@ WHERE docs MATCH ?`
 
 func generateSnippet(content []byte, queryTerms []string, maxLen int) string {
 	lines := strings.Split(string(content), "\n")
+
+	// Score each line by number of distinct query terms it contains,
+	// skipping frontmatter, headings, and very short lines.
+	inFrontmatter := false
+	bestScore := 0
 	bestIdx := -1
 	for i, line := range lines {
-		lower := strings.ToLower(line)
+		trimmed := strings.TrimSpace(line)
+		if i == 0 && trimmed == "---" {
+			inFrontmatter = true
+			continue
+		}
+		if inFrontmatter {
+			if trimmed == "---" {
+				inFrontmatter = false
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") || len(trimmed) < 20 {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		score := 0
 		for _, term := range queryTerms {
 			clean := strings.Trim(term, `"`)
 			if clean != "" && strings.Contains(lower, clean) {
-				bestIdx = i
-				break
+				score++
 			}
 		}
-		if bestIdx >= 0 {
-			break
+		if score > bestScore {
+			bestScore = score
+			bestIdx = i
 		}
 	}
+
 	if bestIdx < 0 {
-		if len(lines) > 0 {
-			s := strings.TrimSpace(lines[0])
-			if len(s) > maxLen {
-				return s[:maxLen] + "…"
+		// Fallback: first non-empty, non-heading body line
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" && !strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "---") && len(trimmed) > 10 {
+				if len(trimmed) > maxLen {
+					return trimmed[:maxLen] + "…"
+				}
+				return trimmed
 			}
-			return s
 		}
 		return ""
 	}
-	line := strings.TrimSpace(lines[bestIdx])
-	if len(line) > maxLen {
-		line = line[:maxLen] + "…"
+
+	// Build a paragraph around the best line (±2 lines of context)
+	start := bestIdx
+	end := bestIdx
+	for start > 0 && strings.TrimSpace(lines[start-1]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[start-1]), "#") {
+		start--
+		if bestIdx-start >= 2 {
+			break
+		}
 	}
+	for end < len(lines)-1 && strings.TrimSpace(lines[end+1]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[end+1]), "#") {
+		end++
+		if end-bestIdx >= 2 {
+			break
+		}
+	}
+
+	var para strings.Builder
+	for i := start; i <= end; i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if para.Len() > 0 {
+			para.WriteByte(' ')
+		}
+		para.WriteString(trimmed)
+		if para.Len() >= maxLen {
+			break
+		}
+	}
+
+	result := para.String()
+	if len(result) > maxLen {
+		result = result[:maxLen]
+		if idx := strings.LastIndex(result, " "); idx > maxLen/2 {
+			result = result[:idx]
+		}
+		result += "…"
+	}
+
+	// Highlight query terms
 	for _, term := range queryTerms {
 		clean := strings.Trim(term, `"`)
 		if clean == "" {
 			continue
 		}
-		lower := strings.ToLower(line)
+		lower := strings.ToLower(result)
 		idx := strings.Index(lower, clean)
 		if idx >= 0 {
-			matched := line[idx : idx+len(clean)]
-			line = line[:idx] + "<mark>" + matched + "</mark>" + line[idx+len(clean):]
+			matched := result[idx : idx+len(clean)]
+			result = result[:idx] + "<mark>" + matched + "</mark>" + result[idx+len(clean):]
 		}
 	}
-	return line
+	return result
 }
 
 func (s *SQLite) Index(ctx context.Context, path string, content []byte) error {

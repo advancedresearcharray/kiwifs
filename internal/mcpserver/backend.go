@@ -77,6 +77,61 @@ type ChangesResult struct {
 	LastSeq string   `json:"last_seq"`
 }
 
+// PeekResult is a lightweight summary of a file.
+type PeekResult struct {
+	Path        string          `json:"path"`
+	Title       string          `json:"title"`
+	Frontmatter json.RawMessage `json:"frontmatter,omitempty"`
+	Snippet     string          `json:"snippet"`
+	LinksOut    []string        `json:"links_out"`
+	LinksIn     []string        `json:"links_in"`
+	WordCount   int             `json:"word_count"`
+	Headings    []string        `json:"headings"`
+}
+
+// SectionResult is a single heading section extracted from a markdown file.
+type SectionResult struct {
+	Path      string `json:"path"`
+	Heading   string `json:"heading"`
+	Level     int    `json:"level"`
+	Content   string `json:"content"`
+	LineStart int    `json:"line_start"`
+	LineEnd   int    `json:"line_end"`
+}
+
+// GraphWalkResult is one-hop graph traversal from a page.
+type GraphWalkResult struct {
+	Path      string     `json:"path"`
+	LinksOut  []string   `json:"links_out"`
+	LinksIn   []string   `json:"links_in"`
+	Siblings  []Neighbor `json:"siblings"`
+	HubScore  float64    `json:"hub_score"`
+	InDegree  int        `json:"in_degree"`
+	OutDegree int        `json:"out_degree"`
+}
+
+// Neighbor is a related page discovered via graph walk.
+type Neighbor struct {
+	Path      string `json:"path"`
+	Relation  string `json:"relation"`
+	SharedTag string `json:"shared_tag,omitempty"`
+}
+
+// Cluster is a connected component in the link graph.
+type Cluster struct {
+	ID       int      `json:"id"`
+	Size     int      `json:"size"`
+	Pages    []string `json:"pages"`
+	TopPage  string   `json:"top_page"`
+	Keywords []string `json:"keywords"`
+}
+
+// Bridge is a page with high betweenness centrality.
+type Bridge struct {
+	Path        string  `json:"path"`
+	Betweenness float64 `json:"betweenness"`
+}
+
 type Backend interface {
 	Changes(ctx context.Context, since string, limit int) (*ChangesResult, error)
 	ReadFile(ctx context.Context, path string) (content string, etag string, err error)
@@ -100,6 +155,9 @@ type Backend interface {
 	RenameWithLinks(ctx context.Context, from, to, actor string, updateLinks bool) (string, []string, error)
 	Backlinks(ctx context.Context, path string) ([]Backlink, error)
 	ResolveWikiLinks(ctx context.Context, content string) string
+	Peek(ctx context.Context, path string) (*PeekResult, error)
+	Section(ctx context.Context, path, heading string, index int) (*SectionResult, error)
+	GraphWalk(ctx context.Context, path string, includeSiblings bool) (*GraphWalkResult, error)
 	Context(ctx context.Context) (schema, playbook, index string, err error)
 	Suggestions(ctx context.Context, path string, limit int) ([]SuggestionResult, error)
 	Embeddings(ctx context.Context, path string) (*EmbeddingsResult, error)
@@ -155,6 +213,8 @@ type GraphAnalyticsResult struct {
 	TopPages             []PageRankEntry  `json:"top_pages"`
 	Orphans              []string         `json:"orphans"`
 	LargestComponentSize int              `json:"largest_component_size"`
+	Clusters             []Cluster        `json:"clusters"`
+	Bridges              []Bridge         `json:"bridges"`
 }
 
 type PageRankEntry struct {

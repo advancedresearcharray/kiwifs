@@ -540,6 +540,37 @@ func (r *RemoteBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAn
 	return &result, nil
 }
 
+func (r *RemoteBackend) Peek(ctx context.Context, path string) (*PeekResult, error) {
+	var result PeekResult
+	if err := r.getJSON(ctx, r.apiPrefix+"/peek?path="+url.QueryEscape(path), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) Section(ctx context.Context, path, heading string, index int) (*SectionResult, error) {
+	q := r.apiPrefix + "/section?path=" + url.QueryEscape(path)
+	if heading != "" {
+		q += "&heading=" + url.QueryEscape(heading)
+	} else {
+		q += "&index=" + strconv.Itoa(index)
+	}
+	var result SectionResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) GraphWalk(ctx context.Context, path string, includeSiblings bool) (*GraphWalkResult, error) {
+	q := fmt.Sprintf("%s/graph/walk?path=%s&include_siblings=%t", r.apiPrefix, url.QueryEscape(path), includeSiblings)
+	var result GraphWalkResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (r *RemoteBackend) Velocity(ctx context.Context, period string, limit int, pathPrefix string) (*VelocityResult, error) {
 	q := fmt.Sprintf("%s/velocity?period=%s&limit=%d", r.apiPrefix, url.QueryEscape(period), limit)
 	if pathPrefix != "" {

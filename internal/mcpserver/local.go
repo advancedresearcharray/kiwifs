@@ -22,6 +22,8 @@ import (
 	"github.com/kiwifs/kiwifs/internal/dataview"
 	"github.com/kiwifs/kiwifs/internal/graphutil"
 	"github.com/kiwifs/kiwifs/internal/janitor"
+	"github.com/kiwifs/kiwifs/internal/links"
+	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/memory"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/kiwifs/kiwifs/internal/search"
@@ -1050,6 +1052,277 @@ func (b *LocalBackend) Embeddings(ctx context.Context, path string) (*Embeddings
 	return out, nil
 }
 
+func (b *LocalBackend) Peek(ctx context.Context, path string) (*PeekResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	raw, err := b.stack.Store.Read(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	content := raw
+
+	_, body, _ := markdown.SplitFrontmatter(content)
+	if body == nil {
+		body = content
+	}
+
+	parsed, _ := markdown.Parse(content)
+
+	title := ""
+	if parsed != nil && len(parsed.Headings) > 0 {
+		title = parsed.Headings[0].Text
+	}
+	if title == "" {
+		title = filepath.Base(path)
+	}
+
+	snippet := extractFirstParagraph(body, 300)
+
+	linksOut := links.Extract(body)
+	linksOut = links.Unique(linksOut)
+	if linksOut == nil {
+		linksOut = []string{}
+	}
+
+	var linksIn []string
+	if b.stack.Linker != nil {
+		entries, _ := b.stack.Linker.Backlinks(ctx, path)
+		for _, e := range entries {
+			linksIn = append(linksIn, e.Path)
+		}
+	}
+	if linksIn == nil {
+		linksIn = []string{}
+	}
+
+	var headings []string
+	if parsed != nil {
+		for _, h := range parsed.Headings {
+			headings = append(headings, h.Text)
+		}
+	}
+	if headings == nil {
+		headings = []string{}
+	}
+
+	var fm json.RawMessage
+	if parsed != nil && len(parsed.Frontmatter) > 0 {
+		fm, _ = json.Marshal(parsed.Frontmatter)
+	}
+
+	wordCount := len(strings.Fields(string(body)))
+
+	return &PeekResult{
+		Path:        path,
+		Title:       title,
+		Frontmatter: fm,
+		Snippet:     snippet,
+		LinksOut:    linksOut,
+		LinksIn:     linksIn,
+		WordCount:   wordCount,
+		Headings:    headings,
+	}, nil
+}
+
+func (b *LocalBackend) Section(ctx context.Context, path, heading string, index int) (*SectionResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	raw, err := b.stack.Store.Read(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	_, body, _ := markdown.SplitFrontmatter(raw)
+	if body == nil {
+		body = raw
+	}
+
+	var section *markdown.Section
+	if heading != "" {
+		section, err = markdown.ExtractSection(body, heading)
+	} else {
+		section, err = markdown.ExtractSectionByIndex(body, index)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &SectionResult{
+		Path:      path,
+		Heading:   section.Heading,
+		Level:     section.Level,
+		Content:   section.Content,
+		LineStart: section.LineStart,
+		LineEnd:   section.LineEnd,
+	}, nil
+}
+
+func (b *LocalBackend) GraphWalk(ctx context.Context, path string, includeSiblings bool) (*GraphWalkResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	raw, err := b.stack.Store.Read(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	_, body, _ := markdown.SplitFrontmatter(raw)
+	if body == nil {
+		body = raw
+	}
+
+	result := &GraphWalkResult{Path: path}
+
+	outLinks := links.Extract(body)
+	result.LinksOut = links.Unique(outLinks)
+	if result.LinksOut == nil {
+		result.LinksOut = []string{}
+	}
+	result.OutDegree = len(result.LinksOut)
+
+	if b.stack.Linker != nil {
+		entries, _ := b.stack.Linker.Backlinks(ctx, path)
+		for _, e := range entries {
+			result.LinksIn = append(result.LinksIn, e.Path)
+		}
+	}
+	if result.LinksIn == nil {
+		result.LinksIn = []string{}
+	}
+	result.InDegree = len(result.LinksIn)
+
+	if includeSiblings {
+		dir := filepath.Dir(path)
+		var fileTags []string
+		fm, _ := markdown.Frontmatter(raw)
+		if fm != nil {
+			fileTags = extractTagsFromMap(fm)
+		}
+
+		_ = storage.Walk(ctx, b.stack.Store, "/", func(e storage.Entry) error {
+			if e.Path == path {
+				return nil
+			}
+			if filepath.Dir(e.Path) == dir {
+				result.Siblings = append(result.Siblings, Neighbor{
+					Path:     e.Path,
+					Relation: "sibling_dir",
+				})
+			}
+			if len(fileTags) > 0 {
+				raw2, err2 := b.stack.Store.Read(ctx, e.Path)
+				if err2 == nil {
+					fm2, _ := markdown.Frontmatter(raw2)
+					if fm2 != nil {
+						otherTags := extractTagsFromMap(fm2)
+						for _, ft := range fileTags {
+							for _, ot := range otherTags {
+								if strings.EqualFold(ft, ot) {
+									result.Siblings = append(result.Siblings, Neighbor{
+										Path:      e.Path,
+										Relation:  "sibling_tag",
+										SharedTag: ft,
+									})
+								}
+							}
+						}
+					}
+				}
+			}
+			return nil
+		})
+	}
+	if result.Siblings == nil {
+		result.Siblings = []Neighbor{}
+	}
+
+	if b.stack.Linker != nil {
+		edges, _ := b.stack.Linker.AllEdges(ctx)
+		if len(edges) > 0 {
+			nodeSet := make(map[string]struct{})
+			inCount := 0
+			for _, e := range edges {
+				nodeSet[e.Source] = struct{}{}
+				nodeSet[e.Target] = struct{}{}
+				for _, form := range links.TargetForms(path) {
+					if strings.EqualFold(e.Target, form) {
+						inCount++
+						break
+					}
+				}
+			}
+			if len(nodeSet) > 0 {
+				result.HubScore = float64(inCount) / float64(len(nodeSet))
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func extractTagsFromMap(fm map[string]any) []string {
+	val, ok := fm["tags"]
+	if !ok {
+		val, ok = fm["labels"]
+	}
+	if !ok {
+		return nil
+	}
+	switch v := val.(type) {
+	case []any:
+		tags := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				tags = append(tags, s)
+			}
+		}
+		return tags
+	case string:
+		if v != "" {
+			return []string{v}
+		}
+	}
+	return nil
+}
+
+func collectClusterTags(ctx context.Context, members []string, store storage.Storage) []string {
+	tagCount := make(map[string]int)
+	for _, m := range members {
+		raw, err := store.Read(ctx, m)
+		if err != nil {
+			continue
+		}
+		fm, _ := markdown.Frontmatter(raw)
+		if fm == nil {
+			continue
+		}
+		for _, tag := range extractTagsFromMap(fm) {
+			tagCount[tag]++
+		}
+	}
+	type tc struct {
+		tag   string
+		count int
+	}
+	var sorted []tc
+	for t, c := range tagCount {
+		sorted = append(sorted, tc{t, c})
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].count > sorted[j].count })
+	maxTags := 5
+	result := make([]string, 0, maxTags)
+	for i, s := range sorted {
+		if i >= maxTags {
+			break
+		}
+		result = append(result, s.tag)
+	}
+	return result
+}
+
 func (b *LocalBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAnalyticsResult, error) {
 	if err := b.init(); err != nil {
 		return nil, err
@@ -1073,6 +1346,49 @@ func (b *LocalBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAna
 			OutDegree: p.OutDegree,
 		}
 	}
+
+	var clusters []Cluster
+	components := graphutil.FindComponents(edges)
+	for id, members := range components {
+		if len(members) < 2 {
+			continue
+		}
+		cl := Cluster{
+			ID:      id,
+			Size:    len(members),
+			Pages:   members,
+			TopPage: graphutil.FindTopInCluster(members, edges),
+		}
+		cl.Keywords = collectClusterTags(ctx, members, b.stack.Store)
+		clusters = append(clusters, cl)
+	}
+	sort.Slice(clusters, func(i, j int) bool {
+		return clusters[i].Size > clusters[j].Size
+	})
+	if len(clusters) > limit {
+		clusters = clusters[:limit]
+	}
+	if clusters == nil {
+		clusters = []Cluster{}
+	}
+
+	var bridges []Bridge
+	betweenness := graphutil.ComputeBetweenness(edges)
+	for path, score := range betweenness {
+		if score > 0.01 {
+			bridges = append(bridges, Bridge{Path: path, Betweenness: score})
+		}
+	}
+	sort.Slice(bridges, func(i, j int) bool {
+		return bridges[i].Betweenness > bridges[j].Betweenness
+	})
+	if len(bridges) > limit {
+		bridges = bridges[:limit]
+	}
+	if bridges == nil {
+		bridges = []Bridge{}
+	}
+
 	return &GraphAnalyticsResult{
 		TotalNodes:           r.TotalNodes,
 		TotalEdges:           r.TotalEdges,
@@ -1080,6 +1396,8 @@ func (b *LocalBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAna
 		TopPages:             topPages,
 		Orphans:              r.Orphans,
 		LargestComponentSize: r.LargestComponentSize,
+		Clusters:             clusters,
+		Bridges:              bridges,
 	}, nil
 }
 

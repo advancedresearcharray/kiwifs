@@ -269,6 +269,21 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleImport(b, opts),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_ingest",
+				mcp.WithDescription("Ingest a document (PDF, DOCX, PPTX, Excel, HTML, EPUB) into the knowledge base. Converts to markdown via MarkItDown, then runs post-processing: section splitting, TF-IDF keyword extraction, cross-reference→wiki-link conversion, and frontmatter generation. Distinct from kiwi_import which handles structured data sources (databases, CSV)."),
+				mcp.WithString("file", mcp.Required(), mcp.Description("Path to the document file to ingest")),
+				mcp.WithString("split_mode", mcp.Description(`"single" (one big file, default) or "sections" (one file per top-level heading)`)),
+				mcp.WithString("prefix", mcp.Description("Output path prefix in kiwifs (e.g. imports/financial-report/). Auto-derived from filename if omitted.")),
+				mcp.WithBoolean("extract_keywords", mcp.Description("Run TF-IDF keyword extraction and add to frontmatter (default false)")),
+				mcp.WithNumber("max_keywords", mcp.Description("Max keywords per section (default 10)")),
+				mcp.WithBoolean("convert_crossrefs", mcp.Description("Convert 'See Section X.Y' references to [[wiki-links]] (default false)")),
+				mcp.WithString("actor", mcp.Description("Who is ingesting — defaults to kiwi-ingest")),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+			),
+			Handler: handleIngest(b),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_export",
 				mcp.WithDescription("Export knowledge base files to JSONL, CSV, or Parquet format. Streams all files (or a subset) with their frontmatter, content, and link data. Optionally include vector embeddings for ML pipelines."),
 				mcp.WithString("format", mcp.Required(), mcp.Description(`Output format: "jsonl" | "csv" | "parquet"`)),
@@ -364,12 +379,42 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_graph_analytics",
-				mcp.WithDescription("Get link graph analytics: PageRank scores, connected components, orphan pages, and hub detection."),
+				mcp.WithDescription("Get link graph analytics: PageRank scores, connected components, orphan pages, hub detection, topic clusters (groups of connected pages with keywords), and bridge pages (high betweenness centrality connecting clusters). Use this for the big-picture map of the knowledge graph."),
 				mcp.WithNumber("limit", mcp.Description("Max top pages to return (default 20)")),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
 			Handler: handleGraphAnalytics(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_peek",
+				mcp.WithDescription("Quick glance at a file — returns title, frontmatter, first paragraph snippet, outbound wiki links, inbound backlinks, heading outline, and word count. Use this to decide if a page is worth reading fully. Costs ~200 tokens vs reading the whole file."),
+				mcp.WithString("path", pathOpts...),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handlePeek(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_section",
+				mcp.WithDescription("Read a single heading section from a file. Specify either a heading text (fuzzy match) or a section index (0-based). Returns only that section's content — much cheaper than reading the whole file. Use after kiwi_peek tells you which heading is relevant."),
+				mcp.WithString("path", pathOpts...),
+				mcp.WithString("heading", mcp.Description("Heading text to find (case-insensitive partial match)")),
+				mcp.WithNumber("index", mcp.Description("Section index (0-based)")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleSection(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_graph_walk",
+				mcp.WithDescription("One-hop knowledge graph traversal from a page. Returns outbound wiki links, inbound backlinks, sibling pages (same directory or shared tags), and the page's hub score. Use this to explore connections."),
+				mcp.WithString("path", pathOpts...),
+				mcp.WithBoolean("include_siblings", mcp.Description("Include directory siblings and tag siblings (default true). Set false for faster response when you only need links.")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleGraphWalk(b),
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_velocity",
@@ -1091,6 +1136,19 @@ func handleContext(b Backend) server.ToolHandlerFunc {
 		} else {
 			sb.WriteString("(no index.md found)")
 		}
+
+		if ga, gaErr := b.GraphAnalytics(ctx, 3); gaErr == nil && ga != nil {
+			sb.WriteString("\n\n=== GRAPH ===\n")
+			fmt.Fprintf(&sb, "Pages: %d | Links: %d | Clusters: %d\n", ga.TotalNodes, ga.TotalEdges, ga.Components)
+			if len(ga.TopPages) > 0 {
+				hubs := make([]string, 0, len(ga.TopPages))
+				for _, p := range ga.TopPages {
+					hubs = append(hubs, p.Path)
+				}
+				fmt.Fprintf(&sb, "Hubs: %s\n", strings.Join(hubs, ", "))
+			}
+		}
+
 		return mcp.NewToolResultText(sb.String()), nil
 	}
 }
@@ -1440,6 +1498,69 @@ func handleImport(b Backend, opts Options) server.ToolHandlerFunc {
 	}
 }
 
+func handleIngest(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		filePath, _ := args["file"].(string)
+		if filePath == "" {
+			return mcp.NewToolResultError("file is required"), nil
+		}
+
+		ext := filepath.Ext(filePath)
+		if !importer.IsMarkItDownFormat(ext) {
+			return mcp.NewToolResultError(fmt.Sprintf("unsupported format %q — supported: pdf, docx, pptx, xlsx, html, epub, etc.", ext)), nil
+		}
+
+		lb, ok := b.(*LocalBackend)
+		if !ok {
+			return mcp.NewToolResultError("ingest is only supported in local mode"), nil
+		}
+		if err := lb.init(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("init: %v", err)), nil
+		}
+
+		splitMode, _ := args["split_mode"].(string)
+		if splitMode == "" {
+			splitMode = "single"
+		}
+		prefix, _ := args["prefix"].(string)
+		extractKW, _ := args["extract_keywords"].(bool)
+		maxKW := intArg(args, "max_keywords", 10)
+		convertXRefs, _ := args["convert_crossrefs"].(bool)
+		actor, _ := args["actor"].(string)
+
+		opts := importer.IngestOptions{
+			SplitMode:        splitMode,
+			Prefix:           prefix,
+			ExtractKeywords:  extractKW,
+			MaxKeywords:      maxKW,
+			ConvertCrossRefs: convertXRefs,
+			Actor:            actor,
+		}
+
+		result, err := importer.Ingest(ctx, filePath, lb.stack.Pipeline, opts)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Ingest failed: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Ingested %s (%s)\n", result.SourceFile, result.Format)
+		fmt.Fprintf(&sb, "Sections: %d\n", result.TotalPages)
+		fmt.Fprintf(&sb, "Output files:\n")
+		for _, f := range result.OutputFiles {
+			fmt.Fprintf(&sb, "  - %s\n", f)
+		}
+		if len(result.Keywords) > 0 {
+			max := 15
+			if len(result.Keywords) < max {
+				max = len(result.Keywords)
+			}
+			fmt.Fprintf(&sb, "Top keywords: %s\n", strings.Join(result.Keywords[:max], ", "))
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
 func buildMCPSource(args map[string]any, from string) (importer.Source, error) {
 	str := func(key string) string {
 		s, _ := args[key].(string)
@@ -1704,8 +1825,88 @@ func handleGraphAnalytics(b Backend) server.ToolHandlerFunc {
 			for i, p := range result.TopPages {
 				fmt.Fprintf(&sb, "  %d. %s (rank: %.4f, in: %d, out: %d)\n", i+1, p.Path, p.PageRank, p.InDegree, p.OutDegree)
 			}
+			sb.WriteString("\n")
+		}
+		if len(result.Clusters) > 0 {
+			sb.WriteString("Topic Clusters:\n")
+			for _, c := range result.Clusters {
+				fmt.Fprintf(&sb, "  Cluster %d: %d pages, hub: %s", c.ID, c.Size, c.TopPage)
+				if len(c.Keywords) > 0 {
+					fmt.Fprintf(&sb, " [%s]", strings.Join(c.Keywords, ", "))
+				}
+				sb.WriteString("\n")
+			}
+			sb.WriteString("\n")
+		}
+		if len(result.Bridges) > 0 {
+			sb.WriteString("Bridge Pages:\n")
+			for _, br := range result.Bridges {
+				fmt.Fprintf(&sb, "  %s (betweenness: %.4f)\n", br.Path, br.Betweenness)
+			}
+			sb.WriteString("\n")
 		}
 		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handlePeek(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		path, _ := req.GetArguments()["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		result, err := b.Peek(ctx, path)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func handleSection(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		heading, _ := args["heading"].(string)
+		index := -1
+		if idx, ok := args["index"].(float64); ok {
+			index = int(idx)
+		}
+		if heading == "" && index < 0 {
+			return mcp.NewToolResultError("heading or index is required"), nil
+		}
+		result, err := b.Section(ctx, path, heading, index)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func handleGraphWalk(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		path, _ := req.GetArguments()["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		includeSiblings := true
+		if v, ok := req.GetArguments()["include_siblings"].(bool); ok {
+			includeSiblings = v
+		}
+		result, err := b.GraphWalk(ctx, path, includeSiblings)
+		if err != nil {
+			if isNotFound(err) {
+				return mcp.NewToolResultError(fmt.Sprintf("File not found at %s.", path)), nil
+			}
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 

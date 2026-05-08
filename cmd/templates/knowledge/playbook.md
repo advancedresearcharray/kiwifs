@@ -44,6 +44,47 @@ When given new information to add:
 4. Synthesize an answer citing `[[page]]` links.
 5. If the answer reveals a gap, run Ingest to fill it.
 
+## Deep Retrieval (Graph Navigation)
+
+When answering complex questions that span multiple topics:
+
+1. **Find entry points** — `kiwi_search` with keywords from the question (fast, lexical)
+2. **Peek at candidates** — `kiwi_peek` on top 2-3 results. Read title + snippet + headings.
+   Decide which page is most relevant.
+3. **Walk the graph** — `kiwi_graph_walk` on the best candidate. See what it links to.
+   If a link's name matches your query, peek at it.
+4. **Read targeted sections** — `kiwi_section` to read only the relevant heading.
+   Never read entire files unless they're short (< 500 words per kiwi_peek word_count).
+5. **Check the map** — if stuck or need overview, `kiwi_graph_analytics` shows hub pages,
+   topic clusters, and bridge pages. Hub pages are good starting points.
+
+### Cost efficiency
+
+| Tool | Typical tokens | When to use |
+|------|---------------|-------------|
+| `kiwi_search` | ~50 per result | Always first — find entry points |
+| `kiwi_peek` | ~200 | Before reading — check if page is relevant |
+| `kiwi_section` | ~500 | After peek confirms the right heading |
+| `kiwi_read` | ~2000+ | Only when you need the complete file |
+| `kiwi_graph_walk` | ~300 | When exploring connections |
+| `kiwi_graph_analytics` | ~500 | When lost or need the big picture |
+
+### Example: Multi-hop retrieval
+
+Question: "How does payment retry interact with the circuit breaker?"
+
+```
+kiwi_search("payment retry")        → pages/payments.md (rank 1)
+kiwi_search("circuit breaker")      → pages/resilience.md (rank 1)
+kiwi_graph_walk("pages/payments.md")
+  → links_out: ["resilience", "billing", "error-handling"]
+  → AHA: payments links to resilience directly!
+kiwi_section("pages/payments.md", "Retry Logic")    → 400 tokens
+kiwi_section("pages/resilience.md", "Circuit Breaker") → 350 tokens
+
+Total: ~1500 tokens. Full reads would have cost ~8000 tokens.
+```
+
 ## Remember (save observations during a session)
 
 1. `kiwi_write` to `episodes/<session-id>-<slug>.md` with:
