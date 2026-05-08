@@ -162,6 +162,8 @@ function slashCompletionSource(context: CompletionContext) {
   };
 }
 
+export { slashCompletionSource };
+
 export function markdownSlashCommandExtension(): Extension {
   return autocompletion({
     override: [slashCompletionSource],
