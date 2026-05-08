@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
+import { autocompletion, type CompletionSource } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { type Extension } from "@codemirror/state";
@@ -6,7 +8,11 @@ import { keymap } from "@codemirror/view";
 import { cn } from "@/lib/cn";
 import { markdownEditorExtensions } from "./markdownLanguage";
 import { markdownEditorTheme } from "./markdownEditorTheme";
-import { markdownSlashCommandExtension } from "./markdownSlashCommands";
+import { slashCompletionSource } from "./markdownSlashCommands";
+import {
+  wikiLinkCompletionSource,
+  type WikiPage,
+} from "./wikiLinkCompletion";
 
 export type MarkdownSourceEditorProps = {
   value: string;
@@ -16,6 +22,7 @@ export type MarkdownSourceEditorProps = {
   minHeight?: string;
   className?: string;
   onSaveShortcut?: () => void;
+  pages?: WikiPage[];
 };
 
 export function MarkdownSourceEditor({
@@ -26,25 +33,41 @@ export function MarkdownSourceEditor({
   minHeight = "60vh",
   className,
   onSaveShortcut,
+  pages = [],
 }: MarkdownSourceEditorProps) {
-  const saveKeymap = keymap.of([
-    {
-      key: "Mod-s",
-      preventDefault: true,
-      run: () => {
-        onSaveShortcut?.();
-        return true;
+  const extensions = useMemo(() => {
+    const saveKeymap = keymap.of([
+      {
+        key: "Mod-s",
+        preventDefault: true,
+        run: () => {
+          onSaveShortcut?.();
+          return true;
+        },
       },
-    },
-  ]);
-  const extensions: Extension[] = [
-    history(),
-    ...markdownEditorExtensions(),
-    highlightSelectionMatches(),
-    markdownSlashCommandExtension(),
-    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-    saveKeymap,
-  ];
+    ]);
+
+    const completionSources: CompletionSource[] = [slashCompletionSource];
+    if (pages.length > 0) {
+      completionSources.push(wikiLinkCompletionSource(pages));
+    }
+
+    const exts: Extension[] = [
+      history(),
+      ...markdownEditorExtensions(),
+      highlightSelectionMatches(),
+      autocompletion({
+        override: completionSources,
+        activateOnTyping: true,
+        closeOnBlur: true,
+      }),
+      keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      saveKeymap,
+    ];
+    return exts;
+  }, [onSaveShortcut, pages]);
+
+  const theme = useMemo(() => markdownEditorTheme({ dark }), [dark]);
 
   return (
     <div className={cn("overflow-hidden rounded-md border bg-background shadow-sm", className)} data-testid="markdown-source-editor">
@@ -57,7 +80,7 @@ export function MarkdownSourceEditor({
           foldGutter: true,
           highlightActiveLine: true,
           highlightSelectionMatches: false,
-          autocompletion: true,
+          autocompletion: false,
           bracketMatching: true,
           closeBrackets: true,
           defaultKeymap: false,
@@ -66,7 +89,7 @@ export function MarkdownSourceEditor({
         }}
         editable={!readOnly}
         readOnly={readOnly}
-        theme={markdownEditorTheme({ dark })}
+        theme={theme}
         extensions={extensions}
         onChange={onChange}
       />

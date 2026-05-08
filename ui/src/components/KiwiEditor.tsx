@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Check, Circle, Loader2, Save, User, X, XCircle } from "lucide-react";
 import matter from "gray-matter";
-import { api } from "../lib/api";
+import { api, type TreeEntry } from "../lib/api";
 import { Button } from "./ui/button";
 import { titleize } from "../lib/paths";
 import { KiwiBreadcrumb } from "./KiwiBreadcrumb";
 import { ExcalidrawMarkdownEditor, isExcalidrawMarkdown } from "./ExcalidrawMarkdownPreview";
 import { MarkdownSourceEditor } from "./editor/MarkdownSourceEditor";
+import type { WikiPage } from "./editor/wikiLinkCompletion";
 import { formatDistanceToNow } from "date-fns";
 
 type SaveStatus = "clean" | "dirty" | "saving" | "saved" | "error";
@@ -23,11 +24,24 @@ type Props = {
   saveRef?: React.MutableRefObject<SaveHandle | null>;
 };
 
+function collectPages(node: TreeEntry): WikiPage[] {
+  const pages: WikiPage[] = [];
+  function walk(n: TreeEntry) {
+    if (!n.isDir && n.path.toLowerCase().endsWith(".md")) {
+      pages.push({ path: n.path, title: titleize(n.path) });
+    }
+    if (n.children) n.children.forEach(walk);
+  }
+  walk(node);
+  return pages;
+}
+
 export function KiwiEditor({ path, onClose, onSaved, onNavigate, saveRef }: Props) {
   const [initialMd, setInitialMd] = useState<string | null>(null);
   const etagRef = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pages, setPages] = useState<WikiPage[]>([]);
   const [isDark, setIsDark] = useState<boolean>(() =>
     typeof document !== "undefined" &&
     document.documentElement.classList.contains("dark")
@@ -60,6 +74,14 @@ export function KiwiEditor({ path, onClose, onSaved, onNavigate, saveRef }: Prop
       cancelled = true;
     };
   }, [path]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.tree("/").then((tree) => {
+      if (!cancelled) setPages(collectPages(tree));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   if (error) {
     return (
@@ -102,6 +124,7 @@ export function KiwiEditor({ path, onClose, onSaved, onNavigate, saveRef }: Prop
       onSaved={onSaved}
       onNavigate={onNavigate}
       saveRef={saveRef}
+      pages={pages}
     />
   );
 }
@@ -200,6 +223,7 @@ function MarkdownEditorInner({
   onSaved,
   onNavigate,
   saveRef,
+  pages,
 }: {
   path: string;
   initialMd: string;
@@ -212,6 +236,7 @@ function MarkdownEditorInner({
   onSaved: (p: string) => void;
   onNavigate?: (path: string) => void;
   saveRef?: React.MutableRefObject<SaveHandle | null>;
+  pages: WikiPage[];
 }) {
   const [markdown, setMarkdown] = useState(initialMd);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("clean");
@@ -298,6 +323,7 @@ function MarkdownEditorInner({
             dark={isDark}
             minHeight="60vh"
             onSaveShortcut={() => onSaveRef.current()}
+            pages={pages}
           />
         </ErrorBoundary>
       </div>
