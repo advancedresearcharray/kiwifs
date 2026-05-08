@@ -11,7 +11,7 @@ This is a living document — not a promise. If you want to work on something he
 The foundation. A single Go binary that serves markdown files with a web UI, git versioning, full-text + vector search, and multi-protocol access.
 
 - [x] REST API (file CRUD, tree, search, versions, diff, blame, SSE)
-- [x] Web UI (BlockNote editor, wiki links, backlinks, graph view, Cmd+K search, ToC, comments)
+- [x] Web UI (Markdown editor, wiki links, backlinks, graph view, Cmd+K search, ToC, comments)
 - [x] Git versioning (atomic commits, audit trail, conflict detection via ETags)
 - [x] SQLite FTS5 search (BM25 ranked) + pluggable vector search
 - [x] NFS, S3, WebDAV, FUSE access protocols

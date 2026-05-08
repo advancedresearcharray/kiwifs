@@ -53,7 +53,6 @@ export interface KiwiTokens {
   "ghost-hover-foreground"?: string;
   "link-hover-opacity"?: string;
   "kiwi-shiki-filter"?: string;
-  "kiwi-blocknote-filter"?: string;
   "kiwi-graph-default-node"?: string;
   "kiwi-graph-edge"?: string;
   "kiwi-graph-node-dim"?: string;
