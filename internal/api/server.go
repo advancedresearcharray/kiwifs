@@ -18,6 +18,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/comments"
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/dataview"
+	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/events"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/links"
@@ -46,6 +47,10 @@ func WithSchemaReload(fn func()) ServerOption {
 	return func(s *Server) { s.schemaReload = fn }
 }
 
+func WithDraftManager(mgr *draft.Manager) ServerOption {
+	return func(s *Server) { s.draftMgr = mgr }
+}
+
 type Server struct {
 	cfg          *config.Config
 	pipe         *pipeline.Pipeline
@@ -58,6 +63,7 @@ type Server struct {
 
 	webhookStore  *webhooks.Store
 	claimStore    *claims.Store
+	draftMgr      *draft.Manager
 	schemaReload  func()
 
 	janitorSched  *janitor.Scheduler
@@ -276,6 +282,7 @@ func (s *Server) setupRoutes() {
 		linkResolver:         s.linkResolver,
 		webhookStore:         s.webhookStore,
 		claimStore:           s.claimStore,
+		draftMgr:             s.draftMgr,
 		schemaReload:         s.schemaReload,
 	}
 	prev := s.pipe.OnInvalidate
@@ -368,6 +375,18 @@ func (s *Server) setupRoutes() {
 	api.POST("/share", h.CreateShareLink)
 	api.GET("/share", h.ListShareLinks)
 	api.DELETE("/share/:id", h.RevokeShareLink)
+
+	draftGrp := api.Group("/drafts")
+	draftGrp.POST("", h.CreateDraft)
+	draftGrp.GET("", h.ListDrafts)
+	draftGrp.GET("/:id", h.GetDraft)
+	draftGrp.GET("/:id/diff", h.DraftDiff)
+	draftGrp.POST("/:id/merge", h.MergeDraft)
+	draftGrp.DELETE("/:id", h.DiscardDraft)
+	draftGrp.GET("/:id/file", h.DraftReadFile)
+	draftGrp.PUT("/:id/file", h.DraftWriteFile)
+	draftGrp.DELETE("/:id/file", h.DraftDeleteFile)
+	draftGrp.GET("/:id/tree", h.DraftTree)
 
 	s.echo.GET("/api/kiwi/public/:token", h.PublicPage)
 	s.echo.GET("/api/kiwi/public/file", h.PublicFile)

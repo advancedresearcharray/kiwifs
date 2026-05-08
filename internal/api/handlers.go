@@ -13,6 +13,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/comments"
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/dataview"
+	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/events"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/links"
@@ -54,6 +55,7 @@ type Handlers struct {
 
 	webhookStore *webhooks.Store
 	claimStore   *claims.Store
+	draftMgr     *draft.Manager
 
 	schemaReload func()
 

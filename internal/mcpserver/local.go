@@ -18,6 +18,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/bootstrap"
 	"github.com/kiwifs/kiwifs/internal/claims"
 	"github.com/kiwifs/kiwifs/internal/config"
+	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/dataview"
 	"github.com/kiwifs/kiwifs/internal/graphutil"
 	"github.com/kiwifs/kiwifs/internal/janitor"
@@ -30,9 +31,10 @@ import (
 )
 
 type LocalBackend struct {
-	root   string
-	stack  *bootstrap.Stack
-	dvExec *dataview.Executor
+	root     string
+	stack    *bootstrap.Stack
+	dvExec   *dataview.Executor
+	draftMgr *draft.Manager
 
 	once sync.Once
 	err  error

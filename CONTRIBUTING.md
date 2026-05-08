@@ -1,6 +1,6 @@
 # Contributing to KiwiFS
 
-Thanks for your interest in contributing! KiwiFS is early-stage and we welcome all kinds of help — bug reports, feature requests, docs improvements, and code.
+Thanks for your interest in contributing to KiwiFS — the markdown filesystem for agents and teams. We're early-stage and welcome all kinds of help — bug reports, feature requests, docs improvements, and code.
 
 ## Getting started
 

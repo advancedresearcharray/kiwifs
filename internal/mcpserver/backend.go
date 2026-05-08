@@ -110,9 +110,23 @@ type Backend interface {
 	Claim(ctx context.Context, path, claimedBy string, leaseDuration time.Duration) (*claims.Claim, error)
 	Release(ctx context.Context, path, claimedBy string) error
 	ListClaims(ctx context.Context) ([]claims.Claim, error)
+	DraftCreate(ctx context.Context, actor string) (*DraftInfo, error)
+	DraftList(ctx context.Context) ([]DraftInfo, error)
+	DraftRead(ctx context.Context, draftID, path string) (string, string, error)
+	DraftWrite(ctx context.Context, draftID, path, content, actor string) (string, error)
+	DraftDiff(ctx context.Context, draftID string) (string, error)
+	DraftMerge(ctx context.Context, draftID string) error
+	DraftDiscard(ctx context.Context, draftID string) error
 	PublicURL() string
 	Health(ctx context.Context) error
 	Close() error
+}
+
+type DraftInfo struct {
+	ID        string `json:"id"`
+	Branch    string `json:"branch"`
+	Actor     string `json:"actor"`
+	CreatedAt string `json:"created_at"`
 }
 
 type SuggestionResult struct {

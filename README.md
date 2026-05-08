@@ -5,11 +5,11 @@
 <h1 align="center">KiwiFS</h1>
 
 <p align="center">
-  <strong>Knowledge filesystem agents can write to, search, query, and trust.</strong>
+  <strong>Markdown filesystem for agents and teams.</strong>
 </p>
 
 <p align="center">
-  Agents write with <code>cat</code>. Humans read in a wiki. Git versions everything. One binary, zero config.
+  Searchable. Structured. Versioned. One binary, zero config.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker run -p 3333:3333 -v ./knowledge:/data ameliaanhlam/kiwifs
 
 ## The problem
 
-Knowledge filesystems for agents are an emerging primitive — but files are just files. Or are they?
+Markdown is the lingua franca of agents and developers — but raw `.md` files are just files. Or are they?
 
 Current solutions fall into one of these camps:
 
@@ -50,7 +50,7 @@ Current solutions fall into one of these camps:
 - **Ephemeral sandboxes** — agent dies, files die. No persistence across sessions.
 - **Proprietary SaaS** — locked to a vendor's ecosystem. Can't self-host, can't extend.
 
-A real knowledge filesystem needs to be all of these at once:
+A real markdown filesystem needs to be all of these at once:
 
 - **Writable** — agents write with `cat`, `echo`, `curl`, or MCP tools. Not read-only, not API-only.
 - **Searchable** — full-text (BM25) and semantic (vector) over the same files.
@@ -141,13 +141,13 @@ Other templates: `wiki`, `runbook`, `research`, or start blank with `kiwifs init
 
 ### Web UI
 
-Embedded in the binary via `go:embed`. No separate frontend deploy, no Node runtime. Obsidian's knowledge features (wiki links, backlinks, graph view) with a source-preserving Markdown editor.
+Embedded in the binary via `go:embed`. No separate frontend deploy, no Node runtime. Obsidian-style navigation (wiki links, backlinks, graph view) with a Notion-style block editor.
 
 - **Markdown source editor** — CodeMirror-based, preserves frontmatter/tables, with Markdown slash commands
 - **`[[Wiki links]]` + backlinks** — type `[[auth]]`, resolves to `pages/authentication.md`. Backlinks panel shows "linked from 3 pages." This is Obsidian's core feature — notes are connected, not isolated.
-- **Knowledge graph** — visual map of all pages and their connections (Sigma.js + ForceAtlas2). Same organic clustering as Obsidian's graph view.
+- **Page graph** — visual map of all pages and their connections (Sigma.js + ForceAtlas2). Same organic clustering as Obsidian's graph view.
 - **Cmd+K search** — full-text with highlighted matches
-- **Breadcrumbs** — `Knowledge > Pages > Authentication`
+- **Breadcrumbs** — `Home > Pages > Authentication`
 - **Table of contents** — auto-generated, sticky sidebar, scroll tracking
 - **Inline comments** — select text, add annotation. Stored in `.kiwi/comments/`, not in the markdown
 - **Dark mode** — toggle a CSS class
@@ -176,7 +176,7 @@ kiwifs mcp --root ~/knowledge --http   # Streamable HTTP transport on :8080
 kiwifs mcp --remote http://host:3333   # proxy to a running KiwiFS server
 ```
 
-21 tools: `kiwi_context`, `kiwi_read`, `kiwi_write`, `kiwi_search`, `kiwi_tree`, `kiwi_query_meta`, `kiwi_delete`, `kiwi_bulk_write`, `kiwi_rename`, `kiwi_query`, `kiwi_aggregate`, `kiwi_import`, `kiwi_export`, `kiwi_analytics`, `kiwi_memory_report`, `kiwi_view_refresh`, `kiwi_health_check`, `kiwi_changes`, `kiwi_append`, `kiwi_search_semantic`, `kiwi_backlinks`. Plus resources (`kiwi://schema`, `kiwi://file/{path}`, `kiwi://tree/{path}`).
+29 tools including `kiwi_read`, `kiwi_write`, `kiwi_search`, `kiwi_tree`, `kiwi_query`, `kiwi_import`, `kiwi_export`, `kiwi_context`, `kiwi_bulk_write`, `kiwi_search_semantic`, `kiwi_backlinks`, `kiwi_analytics`, `kiwi_suggestions`, `kiwi_velocity`, and more. Plus resources (`kiwi://schema`, `kiwi://file/{path}`, `kiwi://tree/{path}`).
 
 **Claude Desktop / Cursor:**
 ```json
@@ -259,7 +259,7 @@ GET /api/kiwi/meta?where=$.status=published&where=$.priority=high&sort=$.updated
 
 ### DataView Query Language (DQL)
 
-A query language for your knowledge base — think Obsidian Dataview, but server-side:
+A query language for your markdown — think Obsidian Dataview, but server-side:
 
 ```bash
 kiwifs query 'TABLE title, status, priority FROM "pages" WHERE status = "draft" SORT priority DESC'
@@ -308,7 +308,7 @@ These fields appear in DQL queries and meta API responses alongside real frontma
 
 ### Data import
 
-Bulk-import data from 18 sources into your knowledge base. Each row becomes a markdown file with structured frontmatter:
+Bulk-import data from 18 sources. Each row becomes a markdown file with structured frontmatter:
 
 ```bash
 kiwifs import --from postgres --dsn "postgres://..." --table users --root ./knowledge
@@ -327,7 +327,7 @@ Features: idempotent upserts (re-importing skips unchanged rows), `--dry-run`, `
 
 ### Data export
 
-Export your knowledge base to machine-readable formats for ML pipelines, backups, or analysis:
+Export to machine-readable formats for ML pipelines, backups, or analysis:
 
 ```bash
 kiwifs export --format jsonl --output knowledge.jsonl
@@ -342,7 +342,7 @@ Formats: JSONL, CSV. Optional: `--include-content` (full markdown body), `--incl
 
 ### Analytics dashboard
 
-Knowledge health metrics at a glance:
+Content health metrics at a glance:
 
 ```bash
 kiwifs analytics                     # text summary
@@ -354,11 +354,11 @@ GET /api/kiwi/analytics → { total_pages, stale_pages, orphans, broken_links, .
 GET /api/kiwi/health-check?path=pages/auth.md    → per-page health
 ```
 
-Reports: total pages, stale page count + paths, orphan pages, broken links, empty pages, pages without frontmatter, link coverage percentage, recently updated pages.
+Reports: total pages, stale pages, orphans, broken links, empty pages, pages without frontmatter, link coverage, and recently updated pages.
 
 ### Provenance tracking
 
-Know which agent run produced which knowledge:
+Know which agent or process wrote which page:
 
 ```bash
 curl -X PUT localhost:3333/api/kiwi/file?path=report.md \
@@ -375,14 +375,14 @@ Model **per-run / episodic** notes separately from **semantic** concept pages, a
 
 ### Multi-space
 
-One server, multiple independent knowledge bases:
+One server, multiple independent workspaces:
 
 ```
 GET /api/kiwi/{space}/tree
 GET /api/kiwi/{space}/file?path=...
 ```
 
-Each space has its own root directory, git repo, search index. Spaces map to NFS exports and S3 buckets.
+Each space has its own root directory, git repo, and search index. Spaces map to NFS exports and S3 buckets.
 
 ### Real-time events
 
@@ -393,7 +393,7 @@ event: write
 data: {"path":"pages/finding-042.md","actor":"agent:exec_abc"}
 ```
 
-UI updates live when knowledge changes. No polling.
+UI updates live when content changes. No polling.
 
 ### Permalinks
 
@@ -408,9 +408,9 @@ https://wiki.mycompany.com/page/pages/authentication.md
 - **X-Permalink header** — every file read returns the permalink in the response header
 - **`KIWI_PUBLIC_URL` env var** — override config for Docker/CI without editing TOML
 
-### Knowledge health
+### Content health
 
-Built-in janitor scans your knowledge base for quality issues:
+Built-in janitor scans your workspace for quality issues:
 
 - **Stale page detection** — pages not reviewed within a configurable window (default 90 days)
 - **Contradiction finder** — pages with conflicting claims on the same topic
@@ -425,20 +425,20 @@ Every feature is accessible via `kiwifs <command>`:
 | Command | What it does |
 |---|---|
 | `kiwifs serve` | Start the server (REST API + web UI + optional NFS/S3/WebDAV) |
-| `kiwifs init` | Scaffold a knowledge base from a template (`knowledge`, `wiki`, `runbook`, `research`, or `blank`) |
+| `kiwifs init` | Scaffold a workspace from a template (`knowledge`, `wiki`, `runbook`, `research`, or `blank`) |
 | `kiwifs mcp` | Start a Model Context Protocol server (for Claude, Cursor, etc.) |
 | `kiwifs query` | Run a DQL query against the local index |
 | `kiwifs import` | Bulk-import from 18 data sources (Postgres, CSV, Notion, etc.) |
 | `kiwifs export` | Export knowledge base to JSONL or CSV |
 | `kiwifs aggregate` | Run SQL aggregates (count, avg, sum, min, max) over frontmatter |
-| `kiwifs analytics` | Knowledge health dashboard (stale, orphans, broken links) |
+| `kiwifs analytics` | Content health dashboard (stale, orphans, broken links) |
 | `kiwifs view` | Manage computed views (create, refresh, list) |
 | `kiwifs mount` | FUSE-mount a remote KiwiFS server as a local folder |
 | `kiwifs reindex` | Rebuild search indexes from files (FTS5 + vector + metadata) |
-| `kiwifs lint` | Validate knowledge base (orphan pages, broken links, missing frontmatter) |
+| `kiwifs lint` | Validate workspace (orphan pages, broken links, missing frontmatter) |
 | `kiwifs backup` | Push to a git remote for off-site backup |
 | `kiwifs restore` | Clone from a git remote and rebuild indexes |
-| `kiwifs janitor` | Run a knowledge health scan (stale pages, contradictions, orphans) |
+| `kiwifs janitor` | Run a content health scan (stale pages, contradictions, orphans) |
 | `kiwifs memory` | Report episodic vs `merged-from` coverage (see [docs/MEMORY.md](docs/MEMORY.md)) |
 
 All commands support `--help` for full flag reference.
@@ -626,7 +626,7 @@ POST   /api/kiwi/resolve-links             → resolve [[wiki-links]] to permali
 GET    /api/kiwi/stale                      → pages past their review date
 GET    /api/kiwi/contradictions             → pages with conflicting claims
 GET    /api/kiwi/search/verified            → trust-ranked search (verified pages boosted)
-GET    /api/kiwi/janitor                    → knowledge health scan
+GET    /api/kiwi/janitor                    → content health scan
 GET    /api/kiwi/memory/report              → episodic vs merged-from coverage (JSON)
 
 GET    /api/kiwi/query?q=                   → DQL query (TABLE, LIST, COUNT, DISTINCT)
@@ -634,7 +634,7 @@ GET    /api/kiwi/query/aggregate            → aggregation (count, avg, sum, mi
 POST   /api/kiwi/view/refresh              → refresh computed views
 POST   /api/kiwi/import                    → bulk import from data source
 GET    /api/kiwi/export                    → export to JSONL/CSV stream
-GET    /api/kiwi/analytics                 → knowledge health dashboard
+GET    /api/kiwi/analytics                 → content health dashboard
 GET    /api/kiwi/health-check?path=        → per-page health metrics
 GET    /api/kiwi/context                   → schema + playbook + index in one call
 
@@ -724,28 +724,27 @@ KiwiFS stores real files on a real filesystem — not blobs in a database. The d
 
 ## How it compares
 
-| | KiwiFS | agent-vfs | ChromaFS | Obsidian | Outline | Confluence |
-|---|---|---|---|---|---|---|
-| **Writable** (agents can create/update) | Yes | Yes | No (read-only) | Local only | API only | No |
-| **Agent-native** (`cat`/`grep`/NFS) | Yes | Virtual only | Read-only | Local only | API only | No |
-| **Web UI** (Notion-like) | Yes | No | No | Desktop | Yes | Yes |
-| **Versioned** (git audit trail) | Yes | No | No | No | Limited | Plugin ($$$) |
-| **Searchable** (FTS + vector) | Yes | No | Chroma | Plugins | Yes | Yes |
-| **Query language** (DQL) | Yes | No | No | Plugin | No | No |
-| **Data import** (18 sources) | Yes | No | No | No | API | No |
-| **Export** (JSONL/CSV + embeddings) | Yes | No | No | No | Markdown | PDF only |
-| **Single binary** | Yes | No | No | No | No | No (SaaS) |
-| **Embeddable** (Go library) | Yes | No | No | No | No | No |
-| **Self-hosted** | Yes | Yes | Yes | N/A | Yes | No |
-| **Files are the truth** | Yes | DB is truth | DB is truth | Yes | Postgres | Proprietary DB |
+The question for your use case: **"My agents need persistent, searchable, structured markdown. What do I use?"**
+
+| | KiwiFS | Git repo | Postgres | Obsidian | Chroma |
+|---|---|---|---|---|---|
+| **What it is** | Markdown filesystem | DIY files + git | Relational database | Local markdown editor | Vector store (OSS) |
+| **Agents can write** | MCP, REST, `cat` | `echo` + manual commit | SQL inserts | Local files only | Upsert embeddings |
+| **MCP support** | Native (29 tools) | No | No | No | No |
+| **Human-readable UI** | Built-in web UI | Raw files / GitHub | Needs custom UI | Desktop app | No |
+| **Search** | FTS (BM25) + vector | `grep` | SQL `LIKE` / pg_trgm | Plugins | Vector similarity |
+| **Structured queries** | DQL over frontmatter | No | SQL (full power) | Plugin (Dataview) | Metadata filters |
+| **Versioning** | Auto git commits | Manual | WAL / migrations | No | No |
+| **Data format** | Markdown (portable) | Markdown (portable) | Tables (locked in) | Markdown (portable) | Embeddings (opaque) |
+| **Best for** | Agent workspace + team wiki | Simple scripts | App backends | Personal notes | OSS semantic search |
 
 ---
 
 ## Who this is for
 
-**AI agent builders** — Give your agent persistent, searchable memory it accesses with `cat`. Users browse the same files in a web UI with wiki links and graph view. Knowledge compounds across sessions instead of vanishing.
+**AI agent builders** — Your agents write markdown via MCP, REST, or `cat`. Humans browse the same files in a web UI with wiki links and graph view. Context compounds across sessions instead of vanishing.
 
-**Teams replacing Confluence / Notion** — Obsidian's file-first philosophy with a web UI anyone on your team can use. `git clone` your entire wiki. Self-hosted. No vendor lock-in.
+**Teams replacing Confluence / Notion** — Markdown files on disk, wiki links, graph view, Notion-like editor — with a web UI anyone on your team can use. `git clone` your entire wiki. Self-hosted. No vendor lock-in.
 
 **Compliance-heavy industries** — Every change is a git commit with SHA-1 hash chain. Immutable audit trail. `git blame` for per-line attribution. An auditor can verify with standard tools.
 
@@ -788,11 +787,10 @@ KiwiFS stores real files on a real filesystem — not blobs in a database. The d
 
 ## Inspired by
 
-- **[PocketBase](https://pocketbase.io)** — single Go binary, zero config, just works. KiwiFS brings the same philosophy to knowledge infrastructure.
-- **[Obsidian](https://obsidian.md)** — files are the database. Wiki links. Graph view. KiwiFS is Obsidian for the web — plus an agent interface and an API.
+- **[PocketBase](https://pocketbase.io)** — single Go binary, zero config, just works. KiwiFS brings the same philosophy to markdown infrastructure.
+- **[Obsidian](https://obsidian.md)** — files are the database. Wiki links. Graph view. KiwiFS is Obsidian for the web — plus agents and an API.
 - **[Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)** — raw sources in, compiled wiki out, agent maintains it. KiwiFS is the production runtime for this pattern.
-- **[Mintlify ChromaFS](https://www.mintlify.com/blog/how-we-built-a-virtual-filesystem-for-our-assistant)** — the filesystem is the best agent interface. Agents already know `cat`/`grep`/`ls`.
-- **[Confluence](https://www.atlassian.com/software/confluence)** / **[Notion](https://notion.so)** — great UIs, but your content is locked in their database. KiwiFS gives you the editing experience without the lock-in.
+- **[Notion](https://notion.so)** / **[Confluence](https://www.atlassian.com/software/confluence)** — great UIs, but your content is locked in their database and agents can't use them. KiwiFS gives you the editing experience without the lock-in.
 
 ## License
 

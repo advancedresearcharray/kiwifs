@@ -26,6 +26,9 @@ secrets/
 .idea/
 *.tsbuildinfo
 
+# Draft worktrees (local/ephemeral)
+.kiwi/drafts/
+
 # Runtime data (created by `kiwifs init`)
 knowledge/
 !cmd/templates/knowledge/

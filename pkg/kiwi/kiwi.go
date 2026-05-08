@@ -1,4 +1,4 @@
-// Package kiwi provides an embeddable KiwiFS knowledge-base server.
+// Package kiwi provides an embeddable KiwiFS markdown filesystem server.
 //
 //	srv, err := kiwi.New("/data/knowledge",
 //	    kiwi.WithSearch("sqlite"),

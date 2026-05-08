@@ -27,6 +27,7 @@ type Config struct {
 	Webhooks   WebhooksConfig   `toml:"webhooks"`
 	Schema     SchemaConfig     `toml:"schema"`
 	Workflow   WorkflowConfig   `toml:"workflow"`
+	Drafts     DraftsConfig     `toml:"drafts"`
 	// Spaces enables multi-tenant mode: each entry becomes an
 	// independent knowledge base mapped under /api/kiwi/{name}/...
 	// When empty, the server runs single-space against Storage.Root.
@@ -46,6 +47,12 @@ type SchemaConfig struct {
 type WorkflowConfig struct {
 	Transitions        map[string][]string `toml:"transitions"`
 	EnforceTransitions bool                `toml:"enforce_transitions"`
+}
+
+type DraftsConfig struct {
+	Enabled     bool   `toml:"enabled"`
+	MaxActive   int    `toml:"max_active"`
+	AutoDiscard string `toml:"auto_discard"`
 }
 
 type JanitorConfig struct {

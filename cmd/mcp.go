@@ -15,12 +15,12 @@ var mcpCmd = &cobra.Command{
 	Short: "Start the KiwiFS MCP server",
 	Long: `Start a Model Context Protocol server for KiwiFS.
 
-The MCP server gives any AI agent (Claude, Cursor, custom) a structured
-tool interface to KiwiFS — read, write, search, query metadata — over
+The MCP server gives any AI agent (Claude, Cursor, Codex, custom) a structured
+tool interface to KiwiFS — read, write, search, query markdown — over
 the standard MCP protocol.
 
 Backend modes:
-  --root  <path>   In-process mode — opens the knowledge directory directly
+  --root  <path>   In-process mode — opens the directory directly
   --remote <url>   Proxy mode — talks to a running KiwiFS server over REST
 
 Transports:

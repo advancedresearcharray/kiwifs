@@ -4,7 +4,7 @@
 
 ### What is KiwiFS?
 
-KiwiFS is a knowledge server — a single Go binary that serves markdown files with a web UI, git versioning, full-text + vector search, and multi-protocol access (REST, NFS, S3, WebDAV, FUSE, MCP). Think PocketBase for knowledge, or Obsidian with a web UI and an agent interface.
+KiwiFS is a markdown filesystem for agents and teams — a single Go binary that serves markdown files with a web UI, git versioning, full-text + vector search, and multi-protocol access (REST, NFS, S3, WebDAV, FUSE, MCP). Think PocketBase for markdown, or Obsidian with a web UI and an agent interface.
 
 ### How is this different from Obsidian?
 

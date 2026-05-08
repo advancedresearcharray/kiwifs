@@ -1,7 +1,7 @@
 {
   "name": "kiwifs",
   "version": "0.1.0",
-  "description": "KiwiFS — The Knowledge Filesystem. Agents write with cat. Humans read in the web UI. Same files.",
+  "description": "KiwiFS — Markdown filesystem for agents and teams. Searchable. Structured. Versioned.",
   "main": "index.js",
   "bin": {
     "kiwifs": "./bin/kiwifs.js"

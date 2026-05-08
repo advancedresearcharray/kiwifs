@@ -1,8 +1,8 @@
-# KiwiFS — The Knowledge Filesystem
+# KiwiFS — Markdown Filesystem for Agents and Teams
 
-A filesystem-based knowledge system. Agents write with `cat`. Humans read in the web UI. Same files.
+Searchable. Structured. Versioned. One binary, zero config.
 
-One binary. Storage-agnostic. Git-versioned. Embeddable.
+Agents write markdown. Humans read in the web UI. Git versions everything.
 
 > **Note:** This npm package is not yet published. For now, build from source — see the [main README](https://github.com/kiwifs/kiwifs).
 

@@ -12,11 +12,11 @@ var Version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:   "kiwifs",
-	Short: "KiwiFS — the knowledge filesystem",
-	Long: `KiwiFS is a filesystem-based knowledge system.
-Agents write with cat. Humans read in the web UI. Same files.
+	Short: "KiwiFS — markdown filesystem for agents and teams",
+	Long: `KiwiFS is a markdown filesystem for agents and teams.
+Searchable. Structured. Versioned. One binary, zero config.
 
-One binary. Storage-agnostic. Git-versioned. Embeddable.`,
+Agents write markdown. Humans read in the web UI. Git versions everything.`,
 }
 
 func Execute() {

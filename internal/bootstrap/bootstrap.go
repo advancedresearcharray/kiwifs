@@ -11,6 +11,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/claims"
 	"github.com/kiwifs/kiwifs/internal/comments"
 	"github.com/kiwifs/kiwifs/internal/config"
+	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/events"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/links"
@@ -60,6 +61,7 @@ type Stack struct {
 	Emitter             tracing.Emitter
 	WebhookDispatcher   *webhooks.Dispatcher
 	ClaimStore          *claims.Store
+	DraftMgr            *draft.Manager
 	claimCancel         context.CancelFunc
 }
 
@@ -264,6 +266,21 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		log.Printf("%sclaims enabled", prefix)
 	}
 
+	var draftMgr *draft.Manager
+	if cfg.Drafts.Enabled {
+		maxActive := cfg.Drafts.MaxActive
+		if maxActive <= 0 {
+			maxActive = 10
+		}
+		dm, derr := draft.NewManager(root, maxActive)
+		if derr != nil {
+			log.Printf("%sdrafts disabled (%v)", prefix, derr)
+		} else {
+			draftMgr = dm
+			log.Printf("%sdrafts enabled (max_active=%d)", prefix, maxActive)
+		}
+	}
+
 	var serverOpts []api.ServerOption
 	if webhookStore != nil {
 		serverOpts = append(serverOpts, api.WithWebhookStore(webhookStore))
@@ -273,6 +290,9 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 	}
 	if schemaReload != nil {
 		serverOpts = append(serverOpts, api.WithSchemaReload(schemaReload))
+	}
+	if draftMgr != nil {
+		serverOpts = append(serverOpts, api.WithDraftManager(draftMgr))
 	}
 	server := api.NewServer(cfg, pipe, vectors, cstore, shares, linkResolver, em, serverOpts...)
 
@@ -310,6 +330,7 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		Emitter:           em,
 		WebhookDispatcher: webhookDispatcher,
 		ClaimStore:        claimStore,
+		DraftMgr:          draftMgr,
 		claimCancel:       claimCancel,
 	}
 
@@ -342,6 +363,9 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 
 func (s *Stack) Close() error {
 	var firstErr error
+	if s.DraftMgr != nil {
+		s.DraftMgr.Cleanup()
+	}
 	if s.WebhookDispatcher != nil {
 		s.WebhookDispatcher.Close()
 	}

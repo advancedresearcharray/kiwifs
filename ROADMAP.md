@@ -8,7 +8,7 @@ This is a living document — not a promise. If you want to work on something he
 
 ## v0.1 — "It works"
 
-The foundation. A single Go binary that serves markdown files with a web UI, git versioning, full-text + vector search, and multi-protocol access.
+The foundation. A markdown filesystem for agents and teams — single Go binary with web UI, git versioning, full-text + vector search, and multi-protocol access.
 
 - [x] REST API (file CRUD, tree, search, versions, diff, blame, SSE)
 - [x] Web UI (Markdown editor, wiki links, backlinks, graph view, Cmd+K search, ToC, comments)
