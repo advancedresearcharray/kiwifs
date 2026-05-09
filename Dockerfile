@@ -2,7 +2,7 @@
 FROM node:22-alpine AS ui
 
 WORKDIR /ui
-COPY ui/package.json ui/package-lock.json* ./
+COPY ui/package.json ui/package-lock.json* ui/.npmrc* ./
 RUN npm install --no-audit --no-fund --loglevel=error
 COPY ui ./
 RUN npm run build
