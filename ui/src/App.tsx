@@ -433,7 +433,7 @@ const handleSpaceSwitch = useCallback(() => {
           {/* Sidebar resize handle (desktop only) */}
           {sidebarOpen && !isMobile && (
             <div
-              className="w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors shrink-0 relative z-10"
+              className="kiwi-resize-handle w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors shrink-0 relative z-10"
               onMouseDown={(e) => {
                 e.preventDefault();
                 resizing.current = true;

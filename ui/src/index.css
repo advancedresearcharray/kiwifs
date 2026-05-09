@@ -463,13 +463,28 @@
 
 /* ─── Print / PDF export ─── */
 @media print {
+  /* ── Hide UI chrome ── */
   .kiwi-tree-sidebar,
   .kiwi-breadcrumb-sticky,
   .kiwi-page-actions,
   .kiwi-toc-sidebar,
   .kiwi-comments-section,
   .kiwi-backlinks-section,
+  .kiwi-resize-handle,
   nav, header, footer { display: none !important; }
+
+  /* ── Break out of the SPA viewport jail ──
+     The app uses height:100% / h-full / flex-1 + overflow:hidden/auto
+     on deeply nested containers. The print engine only renders what
+     fits inside each scroll-container viewport, clipping the rest.
+     Nuke every height / overflow constraint so the document flows
+     naturally across printed pages. */
+  html, body, #root,
+  #root * {
+    height: auto !important;
+    overflow: visible !important;
+    flex-shrink: 1 !important;
+  }
 
   .kiwi-prose { max-width: 100% !important; }
 

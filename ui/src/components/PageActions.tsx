@@ -141,7 +141,11 @@ export function PageActions({ path, onDeleted, onDuplicated, onMoved }: Props) {
           <MenuButton
             icon={<Printer className="h-3.5 w-3.5" />}
             label="Print / Save as PDF"
-            onClick={() => { setMenuOpen(false); window.print(); }}
+            onClick={() => {
+              setMenuOpen(false);
+              // Delay so the popover fully unmounts before the print dialog opens
+              setTimeout(() => window.print(), 300);
+            }}
           />
           <div className="h-px bg-border my-1" />
           <MenuButton
