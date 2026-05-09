@@ -149,6 +149,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    setError(null);
     api
       .graph()
       .then((r) => {
@@ -160,7 +161,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [tree]);
 
   useEffect(() => {
     const obs = new MutationObserver(() =>

@@ -129,11 +129,26 @@ const TEXT_TOKEN_GROUPS: TextTokenGroup[] = [
 ];
 
 function hslToHex(hsl: string): string {
-  const parts = hsl.trim().split(/\s+/);
+  const v = hsl.trim();
+
+  if (v.startsWith("#") && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  if (v.startsWith("#") && /^#[0-9a-fA-F]{3}$/.test(v)) {
+    return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
+  }
+
+  let inner = v;
+  const hslMatch = v.match(/^hsl\(?\s*(.+?)\s*\)?$/i);
+  if (hslMatch) inner = hslMatch[1];
+
+  const parts = inner.replace(/,/g, " ").split(/\s+/).filter(Boolean);
   if (parts.length < 3) return "#888888";
+
   const h = parseFloat(parts[0]);
   const s = parseFloat(parts[1]) / 100;
   const l = parseFloat(parts[2]) / 100;
+
+  if (isNaN(h) || isNaN(s) || isNaN(l)) return "#888888";
+
   const a = s * Math.min(l, 1 - l);
   const f = (n: number) => {
     const k = (n + h / 30) % 12;
@@ -184,10 +199,18 @@ interface Props {
 }
 
 export function KiwiThemeEditor({ onClose, onPresetReset }: Props) {
-  const isDark = document.documentElement.classList.contains("dark");
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [lightTokens, setLightTokens] = useState<KiwiTokens>({});
   const [darkTokens, setDarkTokens] = useState<KiwiTokens>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const existing = getCustomTheme();

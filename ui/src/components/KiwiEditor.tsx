@@ -46,10 +46,10 @@ function wikiLinkDecoPlugin() {
 
 function buildWikiDecos(doc: any): DecorationSet {
   const decos: Decoration[] = [];
-  const re = /\[\[([^\]]+)\]\]/g;
   doc.descendants((node: any, pos: number) => {
     if (!node.isText) return;
     const text = node.text || "";
+    const re = /\[\[([^\]]+)\]\]/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
       const from = pos + m.index;

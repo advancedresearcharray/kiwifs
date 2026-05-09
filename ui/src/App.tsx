@@ -213,7 +213,10 @@ const handleSpaceSwitch = useCallback(() => {
       if (pathname.startsWith("/page/")) {
         fromPopState.current = true;
         const raw = decodeURIComponent(pathname.slice("/page/".length));
-        setActivePath(raw || null);
+        const space = getCurrentSpace();
+        const prefix = space && space !== "default" ? space + "/" : "";
+        const stripped = prefix && raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+        setActivePath(stripped || null);
         setEditing(false);
         setGraphOpen(false);
         setHistoryOpen(false);
