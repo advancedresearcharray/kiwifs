@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock, Pin, Star } from "lucide-react";
-import { titleize } from "@/lib/paths";
+import { titleize } from "@kw/lib/paths";
 
 const RECENT_KEY = "kiwi-recent-pages";
 const FAVORITES_KEY = "kiwi-favorite-pages";

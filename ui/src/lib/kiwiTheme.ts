@@ -12,7 +12,7 @@
  *  4. applyKiwiThemeFromThemeUrl()        — ?theme-url=<url> (fetch JSON)
  *
  * Token format:
- *  - Colour tokens use HSL triplets without the `hsl()` wrapper: "65 80% 55%"
+ *  - Colour tokens use full HSL values: "hsl(65 80% 55%)"
  *  - Graph tokens use hex: "#8a8a8a"
  *  - radius uses rem: "0.625rem"
  *  - Filters use CSS filter syntax or "none"

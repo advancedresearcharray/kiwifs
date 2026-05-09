@@ -103,6 +103,17 @@ export type SpaceMeta = {
 
 const DEFAULT_ACTOR = "human:web-ui";
 
+let _baseOverride: string | null = null;
+let _extraHeaders: Record<string, string> = {};
+
+export function setBaseOverride(base: string | null) {
+  _baseOverride = base;
+}
+
+export function setExtraHeaders(headers: Record<string, string>) {
+  _extraHeaders = headers;
+}
+
 let _currentSpace: string | null = null;
 const _spaceListeners = new Set<() => void>();
 
@@ -134,6 +145,7 @@ try {
 } catch {}
 
 function kiwiBase(): string {
+  if (_baseOverride) return _baseOverride;
   if (_currentSpace && _currentSpace !== "default") {
     return `/api/kiwi/${_currentSpace}`;
   }
@@ -157,6 +169,7 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
     ...init,
     headers: {
       "X-Actor": actor(),
+      ..._extraHeaders,
       ...(init.headers || {}),
     },
   });
@@ -213,7 +226,7 @@ export const api = {
   async readFile(path: string): Promise<{ content: string; etag: string | null; lastModified: string | null }> {
     const qs = new URLSearchParams({ path });
     const res = await fetch(`${kiwiBase()}/file?${qs}`, {
-      headers: { "X-Actor": actor() },
+      headers: { "X-Actor": actor(), ..._extraHeaders },
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -255,7 +268,7 @@ export const api = {
     form.append("file", file);
     const res = await fetch(`${kiwiBase()}/assets?${qs}`, {
       method: "POST",
-      headers: { "X-Actor": actor() },
+      headers: { "X-Actor": actor(), ..._extraHeaders },
       body: form,
     });
     if (!res.ok) {
@@ -295,7 +308,7 @@ export const api = {
   async readVersion(path: string, version: string): Promise<string> {
     const qs = new URLSearchParams({ path, version });
     const res = await fetch(`${kiwiBase()}/version?${qs}`, {
-      headers: { "X-Actor": actor() },
+      headers: { "X-Actor": actor(), ..._extraHeaders },
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");

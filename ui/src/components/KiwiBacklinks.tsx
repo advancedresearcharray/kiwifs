@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { File } from "lucide-react";
-import { api, type BacklinkEntry } from "@/lib/api";
-import { titleize } from "@/lib/paths";
+import { api, type BacklinkEntry } from "@kw/lib/api";
+import { titleize } from "@kw/lib/paths";
 
 type Props = {
   path: string;

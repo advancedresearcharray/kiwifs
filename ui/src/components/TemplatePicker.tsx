@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { File, FileText, Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@kw/lib/api";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@kw/components/ui/dialog";
 
 type Template = { name: string; path: string };
 

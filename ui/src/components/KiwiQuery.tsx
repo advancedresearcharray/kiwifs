@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, type QueryResponse } from "@/lib/api";
+import { api, type QueryResponse } from "@kw/lib/api";
 
 // KiwiQuery renders a live table from a DQL (Dataview Query Language) query.
 //

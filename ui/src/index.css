@@ -1,9 +1,39 @@
+@import "tailwindcss";
 @import "./styles/kiwi-theme.css";
 @import "katex/dist/katex.min.css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@custom-variant dark (&:is(.dark *));
+@plugin "tailwindcss-animate";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ghost-hover-foreground: var(--ghost-hover-foreground);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
 
 @layer base {
   * {
@@ -19,8 +49,6 @@
     font-family: var(--font-sans);
     font-size: var(--font-size-base);
     font-feature-settings: "cv11", "ss01";
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
 }
 
@@ -54,7 +82,7 @@
   @apply my-3 text-foreground/90;
 }
 .kiwi-prose a {
-  color: hsl(var(--link-color));
+  color: var(--link-color);
   text-decoration: var(--link-decoration);
   @apply font-medium underline-offset-4 decoration-primary/60;
   transition: opacity 0.15s ease;
@@ -73,14 +101,14 @@
   @apply border-l-4 border-primary/40 pl-4 my-4 text-muted-foreground italic;
 }
 .kiwi-prose code {
-  background: hsl(var(--code-bg));
+  background: var(--code-bg);
   font-size: var(--code-font-size);
   font-family: var(--font-mono);
   @apply text-foreground rounded-md px-1.5 py-0.5;
 }
 .kiwi-prose pre {
-  background: hsl(var(--code-bg));
-  border: 1px solid hsl(var(--code-border));
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
   @apply rounded-lg p-4 my-4 overflow-x-auto;
 }
 .kiwi-prose pre code {
@@ -222,7 +250,7 @@
     .bn-block-content.ProseMirror-selectednode > *,
     .ProseMirror-selectednode > .bn-block-content > *
   ) {
-  outline: 2px solid hsl(var(--ring)) !important;
+  outline: 2px solid var(--ring) !important;
 }
 .kiwi-blocknote {
   filter: var(--kiwi-blocknote-filter);
@@ -231,7 +259,7 @@
 /* Wiki link pills in editor */
 .kiwi-editor-wikilink {
   @apply bg-primary/15 text-foreground rounded px-1 py-0.5 font-medium;
-  border-bottom: 2px solid hsl(var(--primary) / 0.5);
+  border-bottom: 2px solid color-mix(in srgb, var(--primary) 50%, transparent);
 }
 
 /* ─── Mobile / responsive ─── */

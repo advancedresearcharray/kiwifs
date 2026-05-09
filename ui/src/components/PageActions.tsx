@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Copy, Download, MoreHorizontal, Move, Printer, Trash2 } from "lucide-react";
-import { api } from "@/lib/api";
-import { stem } from "@/lib/paths";
-import { Button } from "@/components/ui/button";
+import { api } from "@kw/lib/api";
+import { stem } from "@kw/lib/paths";
+import { Button } from "@kw/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover";
+} from "@kw/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -15,9 +15,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@kw/components/ui/dialog";
+import { Input } from "@kw/components/ui/input";
+import { Label } from "@kw/components/ui/label";
 
 type Props = {
   path: string;

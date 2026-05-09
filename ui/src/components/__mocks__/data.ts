@@ -6,7 +6,7 @@ import type {
   Comment,
   GraphNode,
   GraphEdge,
-} from "@/lib/api";
+} from "@kw/lib/api";
 
 export const mockTree: TreeEntry = {
   path: "",

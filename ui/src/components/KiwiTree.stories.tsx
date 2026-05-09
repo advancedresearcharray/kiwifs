@@ -3,7 +3,7 @@ import { action } from "@storybook/addon-actions";
 import { KiwiTree } from "./KiwiTree";
 import { MockApiProvider } from "./__mocks__/apiMock";
 import { mockTree } from "./__mocks__/data";
-import type { TreeEntry } from "@/lib/api";
+import type { TreeEntry } from "@kw/lib/api";
 
 const emptyTree: TreeEntry = {
   path: "",

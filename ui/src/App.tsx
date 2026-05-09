@@ -318,8 +318,8 @@ export default function App() {
                 <PopoverContent align="end" className="w-48 p-1">
                   {themePresets.map((p) => {
                     const swatchColor = theme === "dark"
-                      ? (p.dark.primary || p.light.primary || "0 0% 50%")
-                      : (p.light.primary || "0 0% 50%");
+                      ? (p.dark.primary || p.light.primary || "hsl(0 0% 50%)")
+                      : (p.light.primary || "hsl(0 0% 50%)");
                     return (
                       <button
                         key={p.name}
@@ -328,7 +328,7 @@ export default function App() {
                       >
                         <span
                           className="h-4 w-4 rounded-full shrink-0 border border-border ring-1 ring-inset ring-white/20"
-                          style={{ background: `hsl(${swatchColor})` }}
+                          style={{ background: swatchColor }}
                         />
                         <span className="flex-1 text-left">{p.name}</span>
                         {preset === p.name && <Check className="h-3.5 w-3.5 text-primary" />}

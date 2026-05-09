@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import { GitBranch, History, RotateCcw, User, X } from "lucide-react";
-import { api, type BlameLine, type Version } from "@/lib/api";
-import { titleize } from "@/lib/paths";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { api, type BlameLine, type Version } from "@kw/lib/api";
+import { titleize } from "@kw/lib/paths";
+import { Button } from "@kw/components/ui/button";
+import { ScrollArea } from "@kw/components/ui/scroll-area";
+import { Separator } from "@kw/components/ui/separator";
 
 type ViewMode = "diff" | "blame";
 

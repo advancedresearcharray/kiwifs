@@ -7,10 +7,10 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import { api, type MetaFilter, type SearchResult, type SemanticResult, type TreeEntry } from "@/lib/api";
-import { titleize } from "@/lib/paths";
-import { cn } from "@/lib/cn";
+} from "@kw/components/ui/command";
+import { api, type MetaFilter, type SearchResult, type SemanticResult, type TreeEntry } from "@kw/lib/api";
+import { titleize } from "@kw/lib/paths";
+import { cn } from "@kw/lib/cn";
 
 const RECENT_KEY = "kiwi:recent-searches";
 const MAX_RECENT = 8;

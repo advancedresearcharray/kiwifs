@@ -18,7 +18,7 @@
 
 import { visit } from "unist-util-visit";
 import type { Root } from "mdast";
-import type { TreeEntry } from "@/lib/api";
+import type { TreeEntry } from "@kw/lib/api";
 
 export type LinkResolver = (target: string) => string | null;
 

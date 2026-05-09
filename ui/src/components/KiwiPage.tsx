@@ -10,10 +10,10 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Calendar, CheckSquare, ChevronDown, ChevronRight, Edit, FileAxis3D, FileQuestion, History as HistoryIcon, Link2, List, MessageSquareQuote, Pin, Plus, Star, Tag, Type, User } from "lucide-react";
-import { api, type TreeEntry } from "@/lib/api";
-import { titleize } from "@/lib/paths";
-import { readingTime } from "@/lib/readingTime";
+import { AlertTriangle, BookOpen, Calendar, CheckSquare, ChevronDown, ChevronRight, Edit, File, FileAxis3D, FileQuestion, Folder, History as HistoryIcon, Link2, List, MessageSquareQuote, Pin, Plus, Star, Tag, Type, User } from "lucide-react";
+import { api, type TreeEntry } from "@kw/lib/api";
+import { titleize } from "@kw/lib/paths";
+import { readingTime } from "@kw/lib/readingTime";
 import { KiwiBreadcrumb } from "./KiwiBreadcrumb";
 import { KiwiToC } from "./KiwiToC";
 import { KiwiBacklinks } from "./KiwiBacklinks";
@@ -25,9 +25,9 @@ import { ExcalidrawMarkdownPreview, isExcalidrawMarkdown } from "./ExcalidrawMar
 import { ErrorBoundary } from "./ErrorBoundary";
 import { PageSkeleton } from "./PageSkeleton";
 import { trackRecent } from "./KiwiFavorites";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { buildResolver, remarkWikiLinks } from "@/lib/wikiLinks";
+import { Badge } from "@kw/components/ui/badge";
+import { Button } from "@kw/components/ui/button";
+import { buildResolver, remarkWikiLinks } from "@kw/lib/wikiLinks";
 
 type Props = {
   path: string;
@@ -65,6 +65,17 @@ const sanitizeSchema = {
     img: [...(defaultSchema.attributes?.img || []), "width", "height"],
   },
 };
+
+function findEntry(node: TreeEntry | null | undefined, target: string): TreeEntry | null {
+  if (!node) return null;
+  const norm = target.replace(/\/+$/, "");
+  if (node.path.replace(/\/+$/, "") === norm) return node;
+  for (const child of node.children ?? []) {
+    const found = findEntry(child, norm);
+    if (found) return found;
+  }
+  return null;
+}
 
 const CALLOUT_PREFIXES: Array<{ emoji: string; cls: string }> = [
   { emoji: "ℹ️", cls: "kiwi-callout-info" },
@@ -185,6 +196,9 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
 }
 
 export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey }: Props) {
+  const treeEntry = useMemo(() => findEntry(tree, path), [tree, path]);
+  const isDir = treeEntry?.isDir ?? false;
+
   const [content, setContent] = useState<string | null>(null);
   const [lastModified, setLastModified] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -195,6 +209,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
   const proseRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isDir) return;
     let cancelled = false;
     setContent(null);
     setError(null);
@@ -212,9 +227,10 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
         if (!cancelled) setError(String(e));
       });
     return () => { cancelled = true; };
-  }, [path, refreshKey]);
+  }, [path, refreshKey, isDir]);
 
   useEffect(() => {
+    if (isDir) return;
     let cancelled = false;
     setVersionError(false);
     api.versions(path).then((r) => {
@@ -222,16 +238,17 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
       setLastAuthor(r.versions[0].author);
     }).catch(() => { if (!cancelled) setVersionError(true); });
     return () => { cancelled = true; };
-  }, [path]);
+  }, [path, isDir]);
 
   useEffect(() => {
+    if (isDir) return;
     let cancelled = false;
     setCommentError(false);
     api.listComments(path).then((r) => {
       if (!cancelled) setCommentCount(r.comments.length);
     }).catch(() => { if (!cancelled) setCommentError(true); });
     return () => { cancelled = true; };
-  }, [path, refreshKey]);
+  }, [path, refreshKey, isDir]);
 
   const resolver = useMemo(() => buildResolver(tree), [tree]);
 
@@ -246,6 +263,43 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
   const frontmatterTitle = typeof parsed.meta.title === "string" ? parsed.meta.title : null;
   const statusBadge = badges.find((b) => b.key === "status");
   const tagBadges = badges.filter((b) => b.key === "tags");
+
+  if (isDir && treeEntry) {
+    const children = treeEntry.children ?? [];
+    return (
+      <div className="flex flex-col h-full">
+        <StickyBreadcrumb path={path} onNavigate={onNavigate} />
+        <div className="flex-1 overflow-auto px-4 md:px-10 py-8 max-w-3xl mx-auto w-full">
+          <div className="flex items-center gap-3 mb-6">
+            <Folder className="h-6 w-6 text-primary" />
+            <h1 className="text-2xl font-bold">{titleize(path) || "Root"}</h1>
+          </div>
+          {children.length === 0 ? (
+            <p className="text-sm text-muted-foreground">This folder is empty.</p>
+          ) : (
+            <ul className="space-y-1">
+              {children.map((child) => (
+                <li key={child.path}>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(child.path.replace(/\/+$/, ""))}
+                    className="flex items-center gap-2 w-full text-left rounded-md px-3 py-2 transition-colors hover:bg-accent hover:text-accent-foreground text-sm"
+                  >
+                    {child.isDir ? (
+                      <Folder className="h-4 w-4 text-primary shrink-0" />
+                    ) : (
+                      <File className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+                    <span className="truncate">{titleize(child.name)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     const is404 = error.startsWith("Error: 404") || error.includes("404");

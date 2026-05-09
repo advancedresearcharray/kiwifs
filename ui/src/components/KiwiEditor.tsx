@@ -14,10 +14,10 @@ import { Check, ChevronDown, ChevronRight, Circle, Info, Link as LinkIcon, ListT
 import { Plugin, PluginKey } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import matter from "gray-matter";
-import { api, type TreeEntry } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { dirOf, stem, titleize } from "@/lib/paths";
+import { api, type TreeEntry } from "@kw/lib/api";
+import { Button } from "@kw/components/ui/button";
+import { Textarea } from "@kw/components/ui/textarea";
+import { dirOf, stem, titleize } from "@kw/lib/paths";
 import { KiwiBreadcrumb } from "./KiwiBreadcrumb";
 import { ExcalidrawMarkdownEditor, isExcalidrawMarkdown } from "./ExcalidrawMarkdownPreview";
 import { formatDistanceToNow } from "date-fns";
@@ -68,7 +68,7 @@ type SaveHandle = { save: () => Promise<void> };
 
 type Props = {
   path: string;
-  tree?: import("@/lib/api").TreeEntry | null;
+  tree?: import("@kw/lib/api").TreeEntry | null;
   onClose: () => void;
   onSaved: (path: string) => void;
   onNavigate?: (path: string) => void;
@@ -292,7 +292,7 @@ function EditorInner({
   saveRef,
 }: {
   path: string;
-  tree?: import("@/lib/api").TreeEntry | null;
+  tree?: import("@kw/lib/api").TreeEntry | null;
   initialMd: string;
   etagRef: React.MutableRefObject<string | null>;
   isDark: boolean;

@@ -1,13 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
 // Kiwifs serves the built UI from ./dist via go:embed. The Go server handles
 // /api/* and /health; the dev server proxies those during `npm run dev`.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
+      // Distinct from host apps (e.g. cloud frontend) that use `@/*` → their own `./src`.
+      "@kw": path.resolve(__dirname, "src"),
       "@": path.resolve(__dirname, "src"),
     },
   },

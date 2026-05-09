@@ -4,7 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@kw/components/ui/dialog";
 
 type Props = {
   open: boolean;

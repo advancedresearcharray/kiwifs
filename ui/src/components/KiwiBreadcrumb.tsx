@@ -1,3 +1,4 @@
+import React from "react";
 import { Home } from "lucide-react";
 import {
   Breadcrumb,
@@ -6,8 +7,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { breadcrumbs } from "@/lib/paths";
+} from "@kw/components/ui/breadcrumb";
+import { breadcrumbs } from "@kw/lib/paths";
 
 type Props = {
   path: string;
@@ -35,25 +36,27 @@ export function KiwiBreadcrumb({ path, onNavigate }: Props) {
         {segments.map((seg, i) => {
           const isLast = i === segments.length - 1;
           return (
-            <BreadcrumbItem key={seg.path}>
+            <React.Fragment key={seg.path}>
               <BreadcrumbSeparator />
-              {isLast ? (
-                <BreadcrumbPage className="truncate max-w-[220px]">
-                  {seg.label}
-                </BreadcrumbPage>
-              ) : (
-                <BreadcrumbLink
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onNavigate(seg.path);
-                  }}
-                  className="truncate max-w-[220px]"
-                >
-                  {seg.label}
-                </BreadcrumbLink>
-              )}
-            </BreadcrumbItem>
+              <BreadcrumbItem>
+                {isLast ? (
+                  <BreadcrumbPage className="truncate max-w-[220px]">
+                    {seg.label}
+                  </BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onNavigate(seg.path);
+                    }}
+                    className="truncate max-w-[220px]"
+                  >
+                    {seg.label}
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </React.Fragment>
           );
         })}
       </BreadcrumbList>

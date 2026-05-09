@@ -6,7 +6,7 @@ import rehypeSlug from "rehype-slug";
 import rehypeRaw from "rehype-raw";
 import rehypeKatex from "rehype-katex";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
-import { buildResolver, remarkWikiLinks } from "@/lib/wikiLinks";
+import { buildResolver, remarkWikiLinks } from "@kw/lib/wikiLinks";
 import { mockTree } from "./data";
 
 const resolver = buildResolver(mockTree);
