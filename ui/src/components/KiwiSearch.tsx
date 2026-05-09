@@ -58,7 +58,9 @@ function saveRecentSearch(q: string) {
   if (!trimmed) return;
   const prev = loadRecentSearches().filter((s) => s !== trimmed);
   const next = [trimmed, ...prev].slice(0, MAX_RECENT);
-  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch { /* quota / private mode */ }
 }
 
 function clearRecentSearches() {
@@ -75,6 +77,7 @@ export function KiwiSearch({ open, onOpenChange, onSelect, tree, initialQuery, h
   const [dateFilter, setDateFilter] = useState("");
   const [recents, setRecents] = useState<string[]>([]);
   const debounce = useRef<number | null>(null);
+  const requestId = useRef(0);
 
   const dirs = topDirs(tree);
 
@@ -104,6 +107,7 @@ export function KiwiSearch({ open, onOpenChange, onSelect, tree, initialQuery, h
     }
     setLoading(true);
     debounce.current = window.setTimeout(() => {
+      const thisRequest = ++requestId.current;
       const modifiedAfter = dateFilterToISO(dateFilter);
       const { text: textQuery, filters: metaFilters } = parseFieldFilters(query);
 
@@ -124,6 +128,7 @@ export function KiwiSearch({ open, onOpenChange, onSelect, tree, initialQuery, h
           ? api.search(searchQ, modifiedAfter ? { modifiedAfter } : undefined)
           : Promise.resolve(null);
         Promise.all([ftsPromise, metaPromise]).then(([ftsRes, metaPaths]) => {
+          if (thisRequest !== requestId.current) return;
           let results: Hit[] = [];
           if (ftsRes) {
             results = ftsRes.results.map((x: SearchResult) => ({
@@ -145,18 +150,20 @@ export function KiwiSearch({ open, onOpenChange, onSelect, tree, initialQuery, h
           }
           setHits(results);
           setUnavailable(false);
-        }).catch(() => setHits([]))
-          .finally(() => setLoading(false));
+        }).catch(() => { if (thisRequest === requestId.current) setHits([]); })
+          .finally(() => { if (thisRequest === requestId.current) setLoading(false); });
       } else {
         api
           .semanticSearch(textQuery || query, 15, 0, modifiedAfter ? { modifiedAfter } : undefined)
           .then((r) => {
+            if (thisRequest !== requestId.current) return;
             const best = new Map<string, SemanticResult>();
             for (const hit of r.results) {
               const prev = best.get(hit.path);
               if (!prev || hit.score > prev.score) best.set(hit.path, hit);
             }
             return metaPromise.then((metaPaths) => {
+              if (thisRequest !== requestId.current) return;
               let results = Array.from(best.values()).map((x) => ({
                 path: x.path,
                 snippet: x.snippet,
@@ -171,10 +178,11 @@ export function KiwiSearch({ open, onOpenChange, onSelect, tree, initialQuery, h
             });
           })
           .catch((e) => {
+            if (thisRequest !== requestId.current) return;
             setHits([]);
             setUnavailable(String(e).includes("503"));
           })
-          .finally(() => setLoading(false));
+          .finally(() => { if (thisRequest === requestId.current) setLoading(false); });
       }
     }, 150);
     return () => {
@@ -337,7 +345,7 @@ export function KiwiSearch({ open, onOpenChange, onSelect, tree, initialQuery, h
                 <div
                   className="kiwi-search-snippet text-xs text-muted-foreground mt-0.5 line-clamp-2"
                   dangerouslySetInnerHTML={{
-                    __html: r.kind === "semantic" ? highlightTerms(r.snippet, query) : r.snippet,
+                    __html: r.kind === "semantic" ? highlightTerms(r.snippet, query) : escapeHtml(r.snippet),
                   }}
                 />
               )}

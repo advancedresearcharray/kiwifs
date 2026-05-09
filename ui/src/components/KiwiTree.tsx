@@ -444,12 +444,32 @@ function Node({
               className="text-destructive focus:text-destructive"
               onClick={() => {
                 const files = collectFiles(entry);
+                if (files.length === 0) {
+                  openConfirmDialog({
+                    title: "Delete folder",
+                    description: `Folder "${entry.name}" is empty or contains only sub-folders. Nothing to delete.`,
+                    destructive: false,
+                    onConfirm: () => {},
+                  });
+                  return;
+                }
                 openConfirmDialog({
                   title: "Delete folder",
                   description: `Delete folder "${entry.name}" and its ${files.length} file(s)?`,
                   destructive: true,
-                  onConfirm: () => {
-                    Promise.all(files.map((f) => api.deleteFile(f))).then(() => onDeleted?.()).catch(() => {});
+                  onConfirm: async () => {
+                    const errors: string[] = [];
+                    for (const f of files) {
+                      try {
+                        await api.deleteFile(f);
+                      } catch (e) {
+                        errors.push(`${f}: ${e instanceof Error ? e.message : String(e)}`);
+                      }
+                    }
+                    if (errors.length > 0 && errors.length === files.length) {
+                      console.error("Failed to delete all files in folder:", errors);
+                    }
+                    onDeleted?.();
                   },
                 });
               }}
@@ -575,7 +595,7 @@ function Node({
                 api
                   .deleteFile(path)
                   .then(() => onDeleted?.())
-                  .catch(() => {});
+                  .catch((e) => console.error("Failed to delete file:", e));
               },
             });
           }}
@@ -599,12 +619,24 @@ function collectFiles(entry: TreeEntry): string[] {
 
 async function moveFolder(oldPath: string, newPath: string, entry: TreeEntry): Promise<void> {
   const files = collectFiles(entry);
+  const written: { src: string; dest: string }[] = [];
   for (const f of files) {
     const rel = f.slice(oldPath.length);
     const target = newPath + rel;
     const { content } = await api.readFile(f);
     await api.writeFile(target, content);
-    await api.deleteFile(f);
+    written.push({ src: f, dest: target });
+  }
+  const deleteErrors: string[] = [];
+  for (const { src } of written) {
+    try {
+      await api.deleteFile(src);
+    } catch (e) {
+      deleteErrors.push(`${src}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  if (deleteErrors.length > 0) {
+    console.error("Some source files could not be deleted after move:", deleteErrors);
   }
 }
 

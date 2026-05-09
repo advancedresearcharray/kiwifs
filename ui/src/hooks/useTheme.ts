@@ -165,6 +165,10 @@ export function useTheme(): {
     setCustomTheme(null);
     setPresetState(name);
     writeLS(lsPreset(), name);
+    const found = findPreset(name);
+    if (found) {
+      api.putTheme({ preset: name, ...presetToOverrides(found) } as unknown as Record<string, unknown>).catch(() => {});
+    }
   }, []);
 
   return { theme, toggleTheme, preset, setPreset, presets };
