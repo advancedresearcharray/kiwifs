@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.0](https://github.com/kiwifs/kiwifs/compare/v0.8.0...v0.9.0) (2026-05-09)
+
+
+### Features
+
+* **ui:** comprehensive markdown rendering v2 ([2b6e79a](https://github.com/kiwifs/kiwifs/commit/2b6e79a3b7a5427ecd212c87db7ed343fb8e6645))
+* **ui:** comprehensive markdown rendering v2 ([c78aeff](https://github.com/kiwifs/kiwifs/commit/c78aeffa0ccfa245d5c9b3ebef871f3691523637))
+* **ui:** ship bundled themes wiki; wire App and useTheme hooks ([a68c47c](https://github.com/kiwifs/kiwifs/commit/a68c47cc0adb1b751b03d093a061941e03537f8b))
+
 ## [0.8.0](https://github.com/kiwifs/kiwifs/compare/v0.7.0...v0.8.0) (2026-05-09)
 
 
