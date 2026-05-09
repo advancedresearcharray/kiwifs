@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/kiwifs/kiwifs/compare/v0.7.0...v0.8.0) (2026-05-09)
+
+
+### Features
+
+* **ui:** upgrade Tailwind CSS v3 → v4 ([8dacf29](https://github.com/kiwifs/kiwifs/commit/8dacf29e553759f4afab98d11ae24a924c381acb))
+
+
+### Bug Fixes
+
+* copy .npmrc in Dockerfile for legacy-peer-deps ([2e9b13b](https://github.com/kiwifs/kiwifs/commit/2e9b13b88327dc66d0cc79acde87487580bbbc87))
+* **ui:** responsive layout + fix CI build ([74f500a](https://github.com/kiwifs/kiwifs/commit/74f500ac02de29074e65736107ffa59c324b37e5))
+
 ## [0.7.0](https://github.com/kiwifs/kiwifs/compare/v0.6.0...v0.7.0) (2026-05-08)
 
 
