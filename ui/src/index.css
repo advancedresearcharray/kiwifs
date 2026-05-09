@@ -473,7 +473,10 @@
 
   .kiwi-prose { max-width: 100% !important; }
 
-  details { open: true; }
+  /* Force all <details> content visible when printing */
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary ~ * { display: block !important; }
   details[open] summary { border-bottom: none; }
 
   h1, h2, h3 { break-after: avoid; }

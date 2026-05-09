@@ -338,8 +338,8 @@ const handleSpaceSwitch = useCallback(() => {
           <aside
             className={
               isMobile
-                ? "absolute inset-y-0 left-0 z-30 border-r border-border bg-card flex flex-col overflow-hidden transition-transform duration-200 " + (sidebarOpen ? "translate-x-0" : "-translate-x-full")
-                : "shrink-0 border-r border-border bg-card flex flex-col overflow-hidden" + (resizing.current ? "" : " transition-[width] duration-200")
+                ? "kiwi-tree-sidebar absolute inset-y-0 left-0 z-30 border-r border-border bg-card flex flex-col overflow-hidden transition-transform duration-200 " + (sidebarOpen ? "translate-x-0" : "-translate-x-full")
+                : "kiwi-tree-sidebar shrink-0 border-r border-border bg-card flex flex-col overflow-hidden" + (resizing.current ? "" : " transition-[width] duration-200")
             }
             style={isMobile ? { width: Math.min(sidebarWidth, 300) } : { width: sidebarOpen ? sidebarWidth : 0 }}
           >

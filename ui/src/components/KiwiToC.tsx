@@ -83,7 +83,7 @@ export function KiwiToC({ markdown, containerRef }: Props) {
   if (headings.length === 0) return null;
 
   return (
-    <aside className="hidden xl:block w-64 shrink-0">
+    <aside className="kiwi-toc-sidebar hidden xl:block w-64 shrink-0">
       <div className="sticky top-4 pr-2 text-sm">
         <div className="flex items-center justify-between mb-2 px-2">
           <span className="text-xs uppercase tracking-wider text-muted-foreground">

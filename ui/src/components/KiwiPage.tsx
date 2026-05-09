@@ -453,7 +453,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+              <div className="kiwi-page-actions flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
                 {onTogglePin && (
                   <Button variant="ghost" size="icon" onClick={onTogglePin} className="h-8 w-8" aria-label={isPinned ? "Unpin page" : "Pin page"}>
                     <Pin className={"h-4 w-4" + (isPinned ? " fill-current text-primary" : "")} />
@@ -830,6 +830,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                   title="Comments"
                   storageKey="footer-comments"
                   defaultOpen={commentCount > 0}
+                  className="kiwi-comments-section"
                 >
                   <KiwiComments
                     path={path}
@@ -843,6 +844,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                   icon={<Link2 className="h-4 w-4" />}
                   title="Backlinks"
                   storageKey="footer-backlinks"
+                  className="kiwi-backlinks-section"
                 >
                   <KiwiBacklinks path={path} onNavigate={onNavigate} refreshKey={refreshKey} />
                 </CollapsibleFooterSection>
@@ -1001,7 +1003,7 @@ function SemanticFrontmatterValue({
 
 function StickyBreadcrumb({ path, onNavigate }: { path: string; onNavigate: (p: string) => void }) {
   return (
-    <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border shrink-0">
+    <div className="kiwi-breadcrumb-sticky sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border shrink-0">
       <div className="px-4 md:px-8 py-2 max-w-6xl mx-auto">
         <KiwiBreadcrumb path={path} onNavigate={onNavigate} />
       </div>
@@ -1017,12 +1019,14 @@ function CollapsibleFooterSection({
   children,
   storageKey,
   defaultOpen,
+  className,
 }: {
   icon: React.ReactNode;
   title: string;
   children: React.ReactNode;
   storageKey: string;
   defaultOpen?: boolean;
+  className?: string;
 }) {
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -1033,7 +1037,7 @@ function CollapsibleFooterSection({
   });
 
   return (
-    <div className="border border-border rounded-lg">
+    <div className={"border border-border rounded-lg" + (className ? " " + className : "")}>
       <button
         type="button"
         aria-expanded={!collapsed}

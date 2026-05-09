@@ -87,8 +87,10 @@ export function PageActions({ path, onDeleted, onDuplicated, onMoved }: Props) {
     }
   }
 
-  function handleExport() {
-    api.readFile(path).then(({ content }) => {
+  async function handleExport() {
+    setMenuOpen(false);
+    try {
+      const { content } = await api.readFile(path);
       const blob = new Blob([content], { type: "text/markdown" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -96,8 +98,10 @@ export function PageActions({ path, onDeleted, onDuplicated, onMoved }: Props) {
       a.download = stem(path) + ".md";
       a.click();
       URL.revokeObjectURL(url);
-      setMenuOpen(false);
-    }).catch(() => {});
+    } catch (e) {
+      console.error("Export failed:", e);
+      alert("Failed to export page. Please try again.");
+    }
   }
 
   return (
