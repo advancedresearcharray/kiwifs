@@ -17,6 +17,7 @@
 // tree changes, so lookups are O(1) per link.
 
 import { visit } from "unist-util-visit";
+import GithubSlugger from "github-slugger";
 import type { Root } from "mdast";
 import type { TreeEntry } from "@kw/lib/api";
 
@@ -53,15 +54,41 @@ export function buildResolver(tree: TreeEntry | null): LinkResolver {
   return (target) => {
     if (!target) return null;
     const t = target.trim();
-    if (byPath.has(t)) return byPath.get(t)!;
-    if (byPath.has(t + ".md")) return byPath.get(t + ".md")!;
-    const n = normalize(t);
-    if (byNormPath.has(n)) return byNormPath.get(n)!;
-    if (byStem.has(n)) return byStem.get(n)!;
-    for (const [stem, p] of byStem.entries()) {
-      if (stem.startsWith(n)) return p;
+
+    // Split off heading anchor: [[page#heading]] → page + heading
+    const hashIdx = t.indexOf("#");
+    const pagePart = hashIdx >= 0 ? t.slice(0, hashIdx) : t;
+    const headingPart = hashIdx >= 0 ? t.slice(hashIdx + 1) : "";
+
+    // Same-page heading link: [[#heading]]
+    if (!pagePart && headingPart) {
+      const slugger = new GithubSlugger();
+      return `#${slugger.slug(headingPart)}`;
     }
-    return null;
+
+    // Resolve the page part
+    let resolved: string | null = null;
+    if (byPath.has(pagePart)) resolved = byPath.get(pagePart)!;
+    else if (byPath.has(pagePart + ".md")) resolved = byPath.get(pagePart + ".md")!;
+    else {
+      const n = normalize(pagePart);
+      if (byNormPath.has(n)) resolved = byNormPath.get(n)!;
+      else if (byStem.has(n)) resolved = byStem.get(n)!;
+      else {
+        for (const [stem, p] of byStem.entries()) {
+          if (stem.startsWith(n)) { resolved = p; break; }
+        }
+      }
+    }
+
+    if (!resolved) return null;
+
+    // Append heading slug if present
+    if (headingPart) {
+      const slugger = new GithubSlugger();
+      return `${resolved}#${slugger.slug(headingPart)}`;
+    }
+    return resolved;
   };
 }
 
@@ -130,9 +157,13 @@ export function remarkWikiLinks(opts: { resolver: LinkResolver }) {
             });
           }
         } else {
-          const url = resolved
-            ? `kiwi:${resolved}`
-            : `kiwi-missing:${target}`;
+          // Same-page heading anchors: resolved is "#slug"
+          const isSamePageAnchor = resolved?.startsWith("#");
+          const url = isSamePageAnchor
+            ? resolved
+            : resolved
+              ? `kiwi:${resolved}`
+              : `kiwi-missing:${target}`;
           parts.push({
             type: "link",
             url,

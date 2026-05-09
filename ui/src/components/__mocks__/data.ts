@@ -241,9 +241,87 @@ tags:
 author: Kiwi Team
 ---
 
-## Code Block with Copy Button
+## Highlight Syntax
 
-\`\`\`typescript
+This is ==highlighted text== in a sentence. Multiple ==highlights== can appear ==on one line==.
+
+## Obsidian Comments
+
+This text is visible. %%This comment is hidden from render.%% And this is visible again.
+
+%%
+This is a multi-line
+hidden comment block.
+%%
+
+## GitHub-style Admonitions (All Types)
+
+> [!NOTE]
+> This is a note admonition with **bold** and \`code\`.
+
+> [!TIP]
+> A helpful tip for users.
+
+> [!IMPORTANT]
+> Critical information that users need to know.
+
+> [!WARNING]
+> Something that could cause problems.
+
+> [!CAUTION]
+> Dangerous action that could have consequences.
+
+### Extended Admonition Types
+
+> [!INFO]
+> An info admonition (alias of Note).
+
+> [!HINT]
+> A hint admonition (alias of Tip).
+
+> [!SUCCESS]
+> A success admonition.
+
+> [!QUESTION]
+> Is this rendering correctly?
+
+> [!EXAMPLE]
+> This is an example callout.
+
+> [!ABSTRACT]
+> This is an abstract/summary callout.
+
+> [!BUG]
+> This is a bug report callout.
+
+> [!DANGER]
+> This is a danger callout.
+
+> [!FAILURE]
+> This is a failure callout.
+
+> [!QUOTE]
+> To be or not to be — Shakespeare
+
+### Callout Custom Titles
+
+> [!NOTE] Custom Title Here
+> This note has a custom title instead of "Note".
+
+> [!WARNING] Be Careful!
+> This warning has a custom title.
+
+### Callout Fold Markers
+
+> [!TIP]- Collapsed by default
+> This content is hidden until you click the title.
+
+> [!NOTE]+ Expanded by default
+> This content is visible but can be collapsed.
+
+## Code Block with Title & Line Highlighting
+
+\`\`\`typescript title="config.ts" {1,3-5}
 interface KiwiConfig {
   dataDir: string;
   port: number;
@@ -251,25 +329,70 @@ interface KiwiConfig {
     vector?: { enabled: boolean; embedder: string };
   };
 }
-
-const config: KiwiConfig = {
-  dataDir: "./knowledge",
-  port: 3333,
-  search: { vector: { enabled: true, embedder: "ollama" } },
-};
 \`\`\`
 
-\`\`\`bash
-curl -fsSL https://raw.githubusercontent.com/kiwifs/kiwifs/main/install.sh | sh
-kiwifs init ./knowledge && kiwifs serve --root ./knowledge
+## Code Block Language Label
+
+\`\`\`python
+def hello():
+    print("Hello from KiwiFS!")
 \`\`\`
 
-## Wide Table with Scroll
+\`\`\`rust
+fn main() {
+    println!("Hello, world!");
+}
+\`\`\`
 
-| Col 1 | Col 2 | Col 3 | Col 4 | Col 5 | Col 6 | Col 7 | Col 8 | Col 9 | Col 10 |
-|-------|-------|-------|-------|-------|-------|-------|-------|-------|--------|
-| Alpha | Bravo | Charlie | Delta | Echo | Foxtrot | Golf | Hotel | India | Juliet |
-| Data A | Data B | Data C | Data D | Data E | Data F | Data G | Data H | Data I | Data J |
+## Diff Code Block
+
+\`\`\`diff
+- const old = "remove this";
++ const new = "add this";
+  const unchanged = "stays the same";
+- removed_function();
++ added_function();
+\`\`\`
+
+## Emoji Shortcodes
+
+Hello :wave: welcome to KiwiFS :rocket: Let's build something great :tada:
+
+## Superscript & Subscript
+
+Water is H~2~O. Einstein's equation: E = mc^2^.
+
+The 1^st^ item, the 2^nd^ item, and the 3^rd^ item.
+
+## Inline Tags
+
+This paragraph has #documentation and #guide tags inline. Nested tags like #project/alpha also work.
+
+## Definition Lists
+
+Term 1
+: Definition for term 1
+
+Term 2
+: First definition for term 2
+: Second definition for term 2
+
+## Mermaid Diagram
+
+\`\`\`mermaid
+graph TD
+  A[Start] --> B{Decision}
+  B -->|Yes| C[OK]
+  B -->|No| D[End]
+\`\`\`
+
+## Wide Table with Alignment
+
+| Left | Center | Right | Default |
+|:-----|:------:|------:|---------|
+| L1   |   C1   |    R1 | D1      |
+| L2   |   C2   |    R2 | D2      |
+| L3   |   C3   |    R3 | D3      |
 
 ## Collapsible Details
 
@@ -289,10 +412,11 @@ Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to copy and <kbd>Ctrl</kbd>+<kbd>V</kbd> to p
 
 ## Task Lists
 
-- [x] Copy code button on code blocks
-- [x] Loading skeletons
-- [x] Error boundary
-- [x] Reading time + word count
+- [x] Highlight syntax
+- [x] Obsidian comments
+- [x] Extended callout types
+- [x] Callout custom titles
+- [x] Callout fold markers
 - [ ] More features coming
 
 ## Footnotes
@@ -301,12 +425,6 @@ KiwiFS uses SQLite FTS5 for full-text search[^1]. The indexer runs asynchronousl
 
 [^1]: FTS5 is SQLite's built-in full-text search extension with BM25 ranking.
 [^2]: Async indexing drops write latency from ~5.5ms to ~1ms.
-
-## Callouts
-
-> ℹ️ This is an info callout with **bold** and \`code\`.
-
-> ⚠️ Warning: this action cannot be undone.
 
 ## Math
 
@@ -320,13 +438,13 @@ Inline math: $E = mc^2$ in a sentence.
 
 This text is normal but ~~this text is deleted~~ and this is normal again.
 
-## Wiki Links
+## Wiki Links with Heading Anchors
 
-Link to [[wikilinks]] and a missing page [[nonexistent-page]].
+Link to [[wikilinks]] and a link with anchor [[wikilinks#advanced-usage]].
 
-## Images
+## Image Caption from Alt
 
-![Broken image test](/raw/assets/nonexistent.png)
+![A beautiful sunset over the mountains](/raw/assets/landscape.png)
 `;
 
 export const mockSearchResults: SearchResult[] = [

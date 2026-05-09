@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -10,7 +10,7 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Calendar, CheckSquare, ChevronDown, ChevronRight, Edit, File, FileAxis3D, FileQuestion, Folder, History as HistoryIcon, Link2, List, MessageSquareQuote, Pin, Plus, Star, Tag, Type, User } from "lucide-react";
+import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Edit, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
 import { titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
@@ -21,13 +21,18 @@ import { KiwiComments } from "./KiwiComments";
 import { KiwiQuery } from "./KiwiQuery";
 import { PageActions } from "./PageActions";
 import { ShikiCode } from "./ShikiCode";
+import { MermaidDiagram } from "./MermaidDiagram";
 import { ExcalidrawMarkdownPreview, isExcalidrawMarkdown } from "./ExcalidrawMarkdownPreview";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { PageSkeleton } from "./PageSkeleton";
 import { trackRecent } from "./KiwiFavorites";
 import { Badge } from "@kw/components/ui/badge";
 import { Button } from "@kw/components/ui/button";
+import remarkEmoji from "remark-emoji";
+import remarkSupersub from "remark-supersub";
+import remarkDefinitionList from "remark-definition-list";
 import { buildResolver, remarkWikiLinks } from "@kw/lib/wikiLinks";
+import { remarkMark, stripObsidianComments, remarkInlineTags, rehypeCodeMeta } from "@kw/lib/remarkPlugins";
 
 type Props = {
   path: string;
@@ -54,15 +59,19 @@ type FrontmatterProperty = {
 
 const sanitizeSchema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames || []), "details", "summary", "kbd", "mark", "span", "div", "figure", "figcaption", "video", "audio", "source", "iframe"],
+  tagNames: [...(defaultSchema.tagNames || []), "details", "summary", "kbd", "mark", "span", "div", "figure", "figcaption", "video", "audio", "source", "iframe", "section", "sup", "sub", "dl", "dt", "dd", "abbr"],
   attributes: {
     ...defaultSchema.attributes,
-    "*": [...(defaultSchema.attributes?.["*"] || []), "className", "style", "role"],
+    "*": [...(defaultSchema.attributes?.["*"] || []), "className", "style", "role", "id",
+      "data-footnotes", "data-footnote-ref", "data-footnote-backref",
+      "data-tag", "metastring",
+      "aria-describedby", "aria-label"],
     iframe: ["src", "title", "className", "style"],
     video: ["controls", "preload", "className"],
     audio: ["controls", "preload", "className"],
     source: ["src", "type"],
     img: [...(defaultSchema.attributes?.img || []), "width", "height"],
+    abbr: ["title"],
   },
 };
 
@@ -92,6 +101,84 @@ function splitCallout(text: string): { emoji: string; cls: string; rest: string 
   }
   return null;
 }
+
+function flattenBlockquoteText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (!children) return "";
+  if (Array.isArray(children)) return children.map(flattenBlockquoteText).join("");
+  if (typeof children === "object" && "props" in (children as any)) {
+    return flattenBlockquoteText((children as any).props?.children);
+  }
+  return String(children);
+}
+
+function stripAdmonitionTag(children: React.ReactNode): React.ReactNode {
+  if (!Array.isArray(children)) return children;
+  let stripped = false;
+  return children.map((child) => {
+    if (stripped) return child;
+    // Skip whitespace-only text nodes that react-markdown inserts between elements
+    if (typeof child === "string" && !child.trim()) return child;
+    if (!child || typeof child !== "object" || !("props" in child)) return child;
+    const inner = (child as any).props?.children;
+    if (!inner) return child;
+    const arr = Array.isArray(inner) ? inner : [inner];
+    const first = arr[0];
+    if (typeof first !== "string") return child;
+    // Strip the [!TYPE] tag (+ optional fold marker + optional custom title) from the first line
+    const tagMatch = first.match(ADMONITION_TAG_RE);
+    if (!tagMatch) return child;
+    stripped = true;
+    // Remove everything up to and including the tag on the first line
+    const afterTag = first.slice(tagMatch[0].length);
+    // Also strip optional fold marker and custom title on the same line
+    const cleaned = afterTag.replace(/^[+-]?[^\S\n]*[^\n]*/, "");
+    // Remove leading newline left after stripping the first line
+    const trimmed = cleaned.replace(/^\n/, "");
+    const newChildren = trimmed ? [trimmed, ...arr.slice(1)] : arr.slice(1);
+    return { ...(child as any), props: { ...(child as any).props, children: newChildren } };
+  });
+}
+
+const ADMONITION_TYPES: Record<string, { icon: typeof Info; cls: string; label: string }> = {
+  // Blue family
+  NOTE:      { icon: Info,          cls: "kiwi-admonition-note",      label: "Note" },
+  INFO:      { icon: Info,          cls: "kiwi-admonition-note",      label: "Info" },
+  TODO:      { icon: ClipboardList, cls: "kiwi-admonition-note",      label: "Todo" },
+  // Green family
+  TIP:       { icon: Lightbulb,     cls: "kiwi-admonition-tip",       label: "Tip" },
+  HINT:      { icon: Lightbulb,     cls: "kiwi-admonition-tip",       label: "Hint" },
+  SUCCESS:   { icon: CheckCircle2,  cls: "kiwi-admonition-tip",       label: "Success" },
+  CHECK:     { icon: CheckCircle2,  cls: "kiwi-admonition-tip",       label: "Check" },
+  DONE:      { icon: ListChecks,    cls: "kiwi-admonition-tip",       label: "Done" },
+  // Purple family
+  IMPORTANT: { icon: CircleAlert,   cls: "kiwi-admonition-important", label: "Important" },
+  ABSTRACT:  { icon: ScrollText,    cls: "kiwi-admonition-important", label: "Abstract" },
+  SUMMARY:   { icon: ScrollText,    cls: "kiwi-admonition-important", label: "Summary" },
+  TLDR:      { icon: ScrollText,    cls: "kiwi-admonition-important", label: "TL;DR" },
+  EXAMPLE:   { icon: Zap,           cls: "kiwi-admonition-important", label: "Example" },
+  // Yellow family
+  WARNING:   { icon: TriangleAlert, cls: "kiwi-admonition-warning",   label: "Warning" },
+  CAUTION:   { icon: Flame,         cls: "kiwi-admonition-caution",   label: "Caution" },
+  ATTENTION: { icon: TriangleAlert, cls: "kiwi-admonition-warning",   label: "Attention" },
+  QUESTION:  { icon: HelpCircle,    cls: "kiwi-admonition-warning",   label: "Question" },
+  HELP:      { icon: HelpCircle,    cls: "kiwi-admonition-warning",   label: "Help" },
+  FAQ:       { icon: HelpCircle,    cls: "kiwi-admonition-warning",   label: "FAQ" },
+  // Red family
+  DANGER:    { icon: ShieldAlert,   cls: "kiwi-admonition-caution",   label: "Danger" },
+  FAILURE:   { icon: XCircle,       cls: "kiwi-admonition-caution",   label: "Failure" },
+  FAIL:      { icon: XCircle,       cls: "kiwi-admonition-caution",   label: "Fail" },
+  ERROR:     { icon: XCircle,       cls: "kiwi-admonition-caution",   label: "Error" },
+  BUG:       { icon: Bug,           cls: "kiwi-admonition-caution",   label: "Bug" },
+  MISSING:   { icon: FileQuestion,  cls: "kiwi-admonition-caution",   label: "Missing" },
+  // Gray family
+  QUOTE:     { icon: Quote,         cls: "kiwi-admonition-quote",     label: "Quote" },
+  CITE:      { icon: Quote,         cls: "kiwi-admonition-quote",     label: "Cite" },
+};
+
+// Build the admonition type regex dynamically from ADMONITION_TYPES keys
+const ADMONITION_TYPE_KEYS = Object.keys(ADMONITION_TYPES).join("|");
+const ADMONITION_TAG_RE = new RegExp(`^\\[!(${ADMONITION_TYPE_KEYS})\\]`);
 
 function parseMarkdownPage(content: string): { body: string; meta: Record<string, unknown> } {
   const fallback = splitFrontmatterBlock(content);
@@ -464,11 +551,33 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                   <ExcalidrawMarkdownPreview markdown={content} title={frontmatterTitle || titleize(path)} />
                 </ErrorBoundary>
               ) : (
-              <div ref={proseRef} className="kiwi-prose">
+              <div
+                ref={proseRef}
+                className="kiwi-prose"
+                onClick={(e) => {
+                  // Delegate inline tag clicks
+                  const target = (e.target as HTMLElement).closest<HTMLElement>(".kiwi-inline-tag");
+                  if (target) {
+                    e.preventDefault();
+                    const tag = target.dataset.tag;
+                    if (tag) onTagClick?.(tag);
+                  }
+                }}
+              >
                 <ErrorBoundary>
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath, [remarkWikiLinks, { resolver }]]}
+                  remarkPlugins={[
+                    remarkGfm,
+                    remarkMath,
+                    remarkMark,
+                    remarkInlineTags,
+                    remarkEmoji,
+                    remarkSupersub,
+                    remarkDefinitionList,
+                    [remarkWikiLinks, { resolver }],
+                  ]}
                   rehypePlugins={[
+                    rehypeCodeMeta,
                     rehypeRaw,
                     [rehypeSanitize, sanitizeSchema],
                     rehypeKatex,
@@ -479,13 +588,26 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                     a: ({ href, children, node: _node, ...rest }) => {
                       const h = href ?? "";
                       if (h.startsWith("kiwi:")) {
-                        const target = h.slice("kiwi:".length);
+                        const raw = h.slice("kiwi:".length);
+                        // Split path and heading anchor: "page.md#heading" → navigate + scroll
+                        const hashIdx = raw.indexOf("#");
+                        const pagePath = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+                        const anchor = hashIdx >= 0 ? raw.slice(hashIdx) : "";
                         return (
                           <a
-                            href={`#${target}`}
+                            href={`#${raw}`}
                             onClick={(e) => {
                               e.preventDefault();
-                              onNavigate(target);
+                              onNavigate(pagePath);
+                              if (anchor) {
+                                // Scroll to heading after navigation settles
+                                requestAnimationFrame(() => {
+                                  setTimeout(() => {
+                                    const el = document.getElementById(anchor.slice(1));
+                                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                  }, 100);
+                                });
+                              }
                             }}
                             className="wiki-link"
                             {...(rest as any)}
@@ -522,17 +644,26 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                         </a>
                       );
                     },
-                    code: ({ className, children, node: _node, ...rest }: any) => {
+                    code: ({ className, children, node, ...rest }: any) => {
                       const match = /language-([A-Za-z0-9_-]+)/.exec(className || "");
                       const lang = match ? match[1] : undefined;
                       const raw = String(children).replace(/\n$/, "");
                       if (lang === "kiwi-query") {
                         return <KiwiQuery source={raw} onNavigate={onNavigate} isComputedView={parsed.meta?.["kiwi-view"] === true} />;
                       }
+                      if (lang === "mermaid") {
+                        return <MermaidDiagram chart={raw} />;
+                      }
                       if (!lang || !raw.includes("\n")) {
                         return <code className={className} {...rest}>{children}</code>;
                       }
-                      return <ShikiCode code={raw} lang={lang} />;
+                      // Extract meta string from the code fence (node.data.meta)
+                      const meta: string = node?.data?.meta || node?.properties?.metastring || "";
+                      const titleMatch = meta.match(/title="([^"]+)"/);
+                      const title = titleMatch ? titleMatch[1] : undefined;
+                      const hlMatch = meta.match(/\{([\d,\s-]+)\}/);
+                      const highlightLines = hlMatch ? parseLineRanges(hlMatch[1]) : undefined;
+                      return <ShikiCode code={raw} lang={lang} title={title} highlightLines={highlightLines} />;
                     },
                     pre: ({ children }) => <>{children}</>,
                     img: ({ src, alt, node: _node, width, height, ...rest }) => {
@@ -572,8 +703,8 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                               {alt && <figcaption className="text-sm text-muted-foreground mt-1">{alt}</figcaption>}
                             </figure>
                           );
-                        default:
-                          return (
+                        default: {
+                          const imgEl = (
                             <Zoom wrapElement="span" classDialog="kiwi-zoom-dialog" zoomMargin={32}>
                               <img
                                 src={resolvedSrc}
@@ -584,6 +715,17 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                               />
                             </Zoom>
                           );
+                          // Show caption from alt text for standalone images
+                          if (alt && typeof alt === "string" && alt.trim()) {
+                            return (
+                              <figure className="kiwi-figure">
+                                {imgEl}
+                                <figcaption className="kiwi-figcaption">{alt}</figcaption>
+                              </figure>
+                            );
+                          }
+                          return imgEl;
+                        }
                       }
                     },
                     table: ({ children, node: _node, ...rest }) => (
@@ -608,9 +750,74 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                       }
                       return <p {...(rest as any)}>{children}</p>;
                     },
+                    blockquote: ({ children, node: _node, ...rest }: any) => {
+                      const flat = flattenBlockquoteText(children);
+                      // Match admonition tag on its own (first line only).
+                      // [^\S\n]* = horizontal whitespace only (no newline consumption).
+                      const admonitionRe = new RegExp(
+                        `^\\[!(${ADMONITION_TYPE_KEYS})\\]([+-])?[^\\S\\n]*(.*?)$`,
+                        "m"
+                      );
+                      const match = flat.match(admonitionRe);
+                      if (match) {
+                        const kind = match[1].toUpperCase() as keyof typeof ADMONITION_TYPES;
+                        const foldMarker = match[2] as "+" | "-" | undefined;
+                        const customTitle = match[3]?.trim() || "";
+                        const cfg = ADMONITION_TYPES[kind];
+                        if (cfg) {
+                          const Icon = cfg.icon;
+                          const displayTitle = customTitle || cfg.label;
+                          const stripped = stripAdmonitionTag(children);
+
+                          // Foldable callout: `-` means collapsed, `+` means expanded
+                          if (foldMarker) {
+                            return (
+                              <details
+                                className={`kiwi-admonition kiwi-admonition-foldable ${cfg.cls}`}
+                                open={foldMarker === "+"}
+                              >
+                                <summary className="kiwi-admonition-title">
+                                  <Icon className="h-4 w-4" />
+                                  <span>{displayTitle}</span>
+                                </summary>
+                                <div className="kiwi-admonition-body">
+                                  {stripped}
+                                </div>
+                              </details>
+                            );
+                          }
+
+                          return (
+                            <aside className={`kiwi-admonition ${cfg.cls}`} role="note">
+                              <div className="kiwi-admonition-title">
+                                <Icon className="h-4 w-4" />
+                                <span>{displayTitle}</span>
+                              </div>
+                              <div className="kiwi-admonition-body">
+                                {stripped}
+                              </div>
+                            </aside>
+                          );
+                        }
+                      }
+                      return <blockquote {...(rest as any)}>{children}</blockquote>;
+                    },
+                    section: ({ children, node: _node, ...rest }: any) => {
+                      const props = rest as Record<string, unknown>;
+                      if (props["data-footnotes"] !== undefined || props.className === "footnotes") {
+                        return (
+                          <section className="kiwi-footnotes" role="doc-endnotes" {...(rest as any)}>
+                            <hr className="my-6" />
+                            <h2 className="text-sm font-semibold text-muted-foreground mb-2">Footnotes</h2>
+                            {children}
+                          </section>
+                        );
+                      }
+                      return <section {...(rest as any)}>{children}</section>;
+                    },
                   }}
                 >
-                  {parsed.body}
+                  {stripObsidianComments(parsed.body)}
                 </ReactMarkdown>
                 </ErrorBoundary>
               </div>
@@ -914,6 +1121,24 @@ function formatFrontmatterValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(formatFrontmatterValue).join(", ");
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
+}
+
+/** Parse "{1,3-5,8}" into a Set of line numbers (1-indexed). */
+function parseLineRanges(spec: string): Set<number> {
+  const lines = new Set<number>();
+  for (const part of spec.split(",")) {
+    const trimmed = part.trim();
+    const range = trimmed.match(/^(\d+)-(\d+)$/);
+    if (range) {
+      const start = parseInt(range[1], 10);
+      const end = parseInt(range[2], 10);
+      for (let i = start; i <= end; i++) lines.add(i);
+    } else {
+      const n = parseInt(trimmed, 10);
+      if (!Number.isNaN(n)) lines.add(n);
+    }
+  }
+  return lines;
 }
 
 function frontmatterBadges(
