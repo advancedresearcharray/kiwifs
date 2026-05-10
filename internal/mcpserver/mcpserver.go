@@ -555,6 +555,16 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			),
 			Handler: handleDraftDiscard(b),
 		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_lint",
+				mcp.WithDescription("Validate markdown content or a file for structural issues (tables, fences, frontmatter, headings, mermaid). Returns a list of issues with line numbers. Call after kiwi_write to verify quality, or pass raw content to check before writing."),
+				mcp.WithString("path", mcp.Description("Path to an existing file to lint")),
+				mcp.WithString("content", mcp.Description("Raw markdown content to lint (alternative to path)")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleLint(b),
+		},
 	)
 }
 
@@ -2178,6 +2188,38 @@ func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) ht
 	})
 
 	return mux
+}
+
+func handleLint(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		content, _ := args["content"].(string)
+
+		var data []byte
+		if content != "" {
+			data = []byte(content)
+		} else if path != "" {
+			raw, _, err := b.ReadFile(ctx, path)
+			if err != nil {
+				if isNotFound(err) {
+					return mcp.NewToolResultError("file not found: " + path), nil
+				}
+				return mcp.NewToolResultError(fmt.Sprintf("failed to read %s: %v", path, err)), nil
+			}
+			data = []byte(raw)
+		} else {
+			return mcp.NewToolResultError("provide either path or content"), nil
+		}
+
+		issues := markdown.LintMarkdown(data)
+		if len(issues) == 0 {
+			return mcp.NewToolResultText("No issues found"), nil
+		}
+
+		out, _ := json.MarshalIndent(issues, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
 }
 
 func bearerAuth(token string, next http.Handler) http.Handler {

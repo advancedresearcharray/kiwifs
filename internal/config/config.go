@@ -26,6 +26,7 @@ type Config struct {
 	Tracing    TracingConfig    `toml:"tracing"`
 	Webhooks   WebhooksConfig   `toml:"webhooks"`
 	Schema     SchemaConfig     `toml:"schema"`
+	Lint       LintConfig       `toml:"lint"`
 	Workflow   WorkflowConfig   `toml:"workflow"`
 	Drafts     DraftsConfig     `toml:"drafts"`
 	// Spaces enables multi-tenant mode: each entry becomes an
@@ -42,6 +43,26 @@ type WebhooksConfig struct {
 
 type SchemaConfig struct {
 	Enforce bool `toml:"enforce"`
+}
+
+// LintConfig controls markdown lint and auto-format behaviour.
+type LintConfig struct {
+	// AutoFormat normalizes markdown on write (table alignment, trailing
+	// whitespace, unclosed fences, etc.). Default: true.
+	AutoFormat *bool `toml:"auto_format"`
+	// RejectErrors rejects writes that contain error-severity lint issues
+	// after auto-format has run. Default: true.
+	RejectErrors *bool `toml:"reject_errors"`
+}
+
+// IsAutoFormat returns true unless explicitly set to false.
+func (l LintConfig) IsAutoFormat() bool {
+	return l.AutoFormat == nil || *l.AutoFormat
+}
+
+// IsRejectErrors returns true unless explicitly set to false.
+func (l LintConfig) IsRejectErrors() bool {
+	return l.RejectErrors == nil || *l.RejectErrors
 }
 
 type WorkflowConfig struct {
@@ -151,7 +172,7 @@ type VectorConfig struct {
 }
 
 type EmbedderConfig struct {
-	Provider   string            `toml:"provider"` // openai | ollama | http | cohere | bedrock | vertex
+	Provider   string            `toml:"provider"` // openai | ollama | http | cohere | voyage | bedrock | vertex
 	Model      string            `toml:"model"`
 	APIKey     string            `toml:"api_key"` // ${ENV} expansion supported
 	BaseURL    string            `toml:"base_url"`

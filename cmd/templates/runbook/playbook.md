@@ -63,10 +63,14 @@ After an incident is resolved:
 
 Run periodically:
 
-1. `kiwi_analytics` — find orphaned procedures and stale docs.
-2. `kiwi_search` for procedures with outdated commands.
-3. Review incidents without linked postmortems.
-4. Bump `last-reviewed` on procedures that are still accurate.
+1. `kiwi_lint` with `path` — check individual files for structural issues.
+2. `kiwi_analytics` — find orphaned procedures and stale docs.
+3. `kiwi_search` for procedures with outdated commands.
+4. Review incidents without linked postmortems.
+5. Bump `last-reviewed` on procedures that are still accurate.
+
+**Best practice:** After every `kiwi_write`, call `kiwi_lint` on the same path.
+The server auto-formats cosmetic issues; `kiwi_lint` only reports semantic fixes.
 
 ## Quality Rules
 

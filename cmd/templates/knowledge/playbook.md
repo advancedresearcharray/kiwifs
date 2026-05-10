@@ -118,16 +118,24 @@ Run when asked, or when `kiwi_memory_report` shows unconsolidated episodes.
 
 Run periodically or when asked to clean up:
 
-1. `kiwi_analytics` — reports orphans, broken
-   links, stale content, missing frontmatter.
-2. `kiwi_changes` with `since=<last_checkpoint>` — review recent
+1. `kiwi_lint` with `path` — check a specific file for structural issues
+   (tables, fences, frontmatter, headings, mermaid diagrams).
+2. Review the issues list — fix any errors before considering the write complete.
+3. `kiwi_analytics` — broader workspace health (orphans, broken links,
+   stale content, missing frontmatter).
+4. `kiwi_changes` with `since=<last_checkpoint>` — review recent
    edits for quality.
-3. For each issue:
+5. For each issue:
    - Orphan page → add `[[wikilinks]]` from related pages or index
    - Broken link → `kiwi_search` for intended target, fix the link
    - Stale page → update content, bump `last-reviewed`
    - Duplicate → merge into one, `kiwi_rename` + `kiwi_delete`
-4. `kiwi_append` to `log.md` with what was fixed.
+6. `kiwi_append` to `log.md` with what was fixed.
+
+**Best practice:** After every `kiwi_write`, call `kiwi_lint` on the same path.
+If issues are returned, fix and `kiwi_write` again. This loop rarely needs
+more than one retry — the server auto-formats cosmetic issues on write, so
+`kiwi_lint` only reports things that need semantic fixes.
 
 ## Page Format
 

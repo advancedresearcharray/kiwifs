@@ -66,6 +66,10 @@ func TestMCP_Append_CustomSeparator(t *testing.T) {
 	b, _ := setupTestBackend(t)
 	defer b.Close()
 
+	// Write "day 1" — auto-format will add a trailing newline, so the
+	// stored content becomes "day 1\n". Append then adds "\n---\nday 2"
+	// after it, resulting in "day 1\n\n---\nday 2" (auto-format runs
+	// on the initial write, not on append).
 	b.WriteFile(t.Context(), "journal.md", "day 1", "test", "")
 	mustCallTool(t, handleAppend(b), "kiwi_append", map[string]any{
 		"path":      "journal.md",
@@ -73,8 +77,8 @@ func TestMCP_Append_CustomSeparator(t *testing.T) {
 		"separator": "\n---\n",
 	})
 	content, _, _ := b.ReadFile(t.Context(), "journal.md")
-	if content != "day 1\n---\nday 2" {
-		t.Fatalf("content = %q, want %q", content, "day 1\n---\nday 2")
+	if content != "day 1\n\n---\nday 2" {
+		t.Fatalf("content = %q, want %q", content, "day 1\n\n---\nday 2")
 	}
 }
 

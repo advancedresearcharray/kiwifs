@@ -64,10 +64,14 @@ When connecting insights across experiments and literature:
 
 Run periodically:
 
-1. `kiwi_analytics` — find orphans and stale notes.
-2. `kiwi_query_meta` with `$.status=to-read` to find unread papers.
-3. `kiwi_query_meta` with `$.status=planned` to find unstarted experiments.
-4. Update `last-reviewed` on notes that are still accurate.
+1. `kiwi_lint` with `path` — check individual files for structural issues.
+2. `kiwi_analytics` — find orphans and stale notes.
+3. `kiwi_query_meta` with `$.status=to-read` to find unread papers.
+4. `kiwi_query_meta` with `$.status=planned` to find unstarted experiments.
+5. Update `last-reviewed` on notes that are still accurate.
+
+**Best practice:** After every `kiwi_write`, call `kiwi_lint` on the same path.
+The server auto-formats cosmetic issues; `kiwi_lint` only reports semantic fixes.
 
 ## Quality Rules
 

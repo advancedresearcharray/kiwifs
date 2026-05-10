@@ -83,6 +83,13 @@ type Pipeline struct {
 	// is rejected (e.g. disallowed workflow transition).
 	ValidateTransition func(path, oldStatus, newStatus string) error
 
+	// FormatWrite, when set, is called before ValidateWrite. It normalizes
+	// the content (e.g. fixes table alignment, closes unclosed fences,
+	// strips trailing whitespace). Returns the cleaned content. Used for
+	// auto-formatting markdown on write. The formatter MUST NOT reject
+	// content — only fix cosmetic issues silently.
+	FormatWrite func(path string, content []byte) []byte
+
 	// ValidateWrite, when set, is called before writing content. If it
 	// returns a non-nil error, the write is rejected. Used for schema
 	// validation of frontmatter against JSON Schema definitions.
@@ -589,6 +596,11 @@ func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byt
 		}
 	}
 
+	// Auto-format (normalize) before validation.
+	if p.FormatWrite != nil {
+		content = p.FormatWrite(path, content)
+	}
+
 	if p.ValidateWrite != nil {
 		if err := p.ValidateWrite(path, content); err != nil {
 			return Result{}, fmt.Errorf("%w: %v", ErrValidationFailed, err)
@@ -748,6 +760,12 @@ func (p *Pipeline) BulkWrite(ctx context.Context, files []struct {
 	for i, f := range files {
 		if f.Path == "" {
 			return nil, fmt.Errorf("files[%d].path is required", i)
+		}
+	}
+	// Auto-format (normalize) before validation.
+	if p.FormatWrite != nil {
+		for i := range files {
+			files[i].Content = p.FormatWrite(files[i].Path, files[i].Content)
 		}
 	}
 	if p.ValidateWrite != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kiwifs/kiwifs/internal/api"
@@ -192,6 +193,17 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		}
 	}
 
+	// Auto-format markdown on write (enabled by default).
+	if cfg.Lint.IsAutoFormat() {
+		pipe.FormatWrite = func(path string, content []byte) []byte {
+			if !strings.HasSuffix(strings.ToLower(path), ".md") {
+				return content
+			}
+			return markdown.Format(content)
+		}
+		log.Printf("%smarkdown auto-format enabled", prefix)
+	}
+
 	var schemaReload func()
 	if cfg.Schema.Enforce {
 		sv := schema.NewValidator(root)
@@ -207,6 +219,32 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		}
 		schemaReload = sv.Reload
 		log.Printf("%sschema validation enabled", prefix)
+	}
+
+	// Extend ValidateWrite to reject markdown with error-severity lint
+	// issues (runs after auto-format has cleaned cosmetic issues).
+	if cfg.Lint.IsRejectErrors() {
+		existingValidate := pipe.ValidateWrite
+		pipe.ValidateWrite = func(path string, content []byte) error {
+			// Run existing schema validation first.
+			if existingValidate != nil {
+				if err := existingValidate(path, content); err != nil {
+					return err
+				}
+			}
+			// Markdown-specific lint: reject error-severity issues.
+			if !strings.HasSuffix(strings.ToLower(path), ".md") {
+				return nil
+			}
+			issues := markdown.LintMarkdown(content)
+			for _, issue := range issues {
+				if issue.Severity == "error" {
+					return fmt.Errorf("%s (line %d): %s", issue.Rule, issue.Line, issue.Message)
+				}
+			}
+			return nil
+		}
+		log.Printf("%smarkdown lint reject-errors enabled", prefix)
 	}
 
 	if cfg.Workflow.EnforceTransitions && len(cfg.Workflow.Transitions) > 0 {

@@ -352,6 +352,7 @@ func (s *Server) setupRoutes() {
 	api.POST("/import", h.Import)
 	api.GET("/export", h.Export)
 	api.GET("/analytics", h.Analytics)
+	api.POST("/lint", h.Lint)
 	api.GET("/health-check", h.HealthCheck)
 	api.GET("/context", h.Context)
 	api.GET("/rules", h.Rules)

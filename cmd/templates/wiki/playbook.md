@@ -45,11 +45,15 @@ When restructuring or cleaning up:
 
 Run periodically or when asked:
 
-1. `kiwi_analytics` — find stale pages, orphans, broken links.
-2. For stale pages: update content, bump `last-reviewed`.
-3. For orphans: add links from related pages or the area index.
-4. For broken links: `kiwi_search` for the intended target, fix.
-5. `kiwi_search` for "TODO" or "TBD" to find incomplete pages.
+1. `kiwi_lint` with `path` — check individual files for structural issues.
+2. `kiwi_analytics` — find stale pages, orphans, broken links.
+3. For stale pages: update content, bump `last-reviewed`.
+4. For orphans: add links from related pages or the area index.
+5. For broken links: `kiwi_search` for the intended target, fix.
+6. `kiwi_search` for "TODO" or "TBD" to find incomplete pages.
+
+**Best practice:** After every `kiwi_write`, call `kiwi_lint` on the same path.
+The server auto-formats cosmetic issues; `kiwi_lint` only reports semantic fixes.
 
 ## Quality Rules
 

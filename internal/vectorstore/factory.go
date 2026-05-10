@@ -53,6 +53,8 @@ func buildEmbedder(ctx context.Context, cfg config.EmbedderConfig) (embed.Embedd
 		return embed.NewHTTP(cfg.URL, cfg.Headers, cfg.Dimensions)
 	case "cohere":
 		return embed.NewCohere(cfg.APIKey, cfg.Model, cfg.BaseURL, cfg.Dimensions)
+	case "voyage":
+		return embed.NewVoyage(cfg.APIKey, cfg.Model, cfg.BaseURL, cfg.Dimensions)
 	case "bedrock":
 		return embed.NewBedrock(ctx, cfg.Model, cfg.Region, cfg.Dimensions)
 	case "vertex", "vertex-ai":
@@ -63,7 +65,7 @@ func buildEmbedder(ctx context.Context, cfg config.EmbedderConfig) (embed.Embedd
 		// base_url as "where the inference thing lives".)
 		return embed.NewONNX(cfg.BaseURL, cfg.Dimensions)
 	default:
-		return nil, fmt.Errorf("unknown embedder provider %q (want openai | ollama | http | cohere | bedrock | vertex | onnx)", cfg.Provider)
+		return nil, fmt.Errorf("unknown embedder provider %q (want openai | ollama | http | cohere | voyage | bedrock | vertex | onnx)", cfg.Provider)
 	}
 }
 

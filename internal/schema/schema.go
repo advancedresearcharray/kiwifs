@@ -45,9 +45,10 @@ type Schema struct {
 
 // Issue is a single lint finding.
 type Issue struct {
-	Kind    string `json:"kind"`    // "orphan", "broken-link", "empty-file", "missing-schema"
-	Path    string `json:"path"`    // the file the issue is about (may be empty for repo-level issues)
-	Target  string `json:"target,omitempty"` // for broken-link: the unresolved [[target]]
+	Kind    string `json:"kind"`              // "orphan", "broken-link", "empty-file", "missing-schema", or markdown lint rule IDs
+	Path    string `json:"path"`              // the file the issue is about (may be empty for repo-level issues)
+	Target  string `json:"target,omitempty"`  // for broken-link: the unresolved [[target]]
+	Line    int    `json:"line,omitempty"`     // 1-based line number (0 = file-level or N/A)
 	Message string `json:"message"`
 }
 
@@ -164,7 +165,7 @@ func Lint(root string) (*Result, error) {
 		}
 	}
 
-	// 2) Broken wiki links inside every page + empty files.
+	// 2) Broken wiki links inside every page + empty files + markdown lint.
 	for _, rel := range files {
 		full := filepath.Join(abs, rel)
 		data, err := os.ReadFile(full)
@@ -187,6 +188,16 @@ func Lint(root string) (*Result, error) {
 				Path:    rel,
 				Target:  t,
 				Message: fmt.Sprintf("[[%s]] doesn't resolve to any file", t),
+			})
+		}
+
+		// Markdown structural lint.
+		for _, issue := range markdown.LintMarkdown(data) {
+			res.Issues = append(res.Issues, Issue{
+				Kind:    issue.Rule,
+				Path:    rel,
+				Line:    issue.Line,
+				Message: issue.Message,
 			})
 		}
 	}

@@ -61,8 +61,9 @@ func TestWriteFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read written file: %v", err)
 	}
-	if string(data) != "# Test\n\nHello" {
-		t.Fatalf("written content = %q, want %q", string(data), "# Test\n\nHello")
+	// Auto-format adds a trailing newline to markdown files.
+	if string(data) != "# Test\n\nHello\n" {
+		t.Fatalf("written content = %q, want %q", string(data), "# Test\n\nHello\n")
 	}
 }
 
@@ -143,8 +144,10 @@ func TestBulkWrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", f.Path, err)
 		}
-		if string(data) != f.Content {
-			t.Fatalf("%s content = %q, want %q", f.Path, string(data), f.Content)
+		// Auto-format adds a trailing newline to markdown files.
+		want := f.Content + "\n"
+		if string(data) != want {
+			t.Fatalf("%s content = %q, want %q", f.Path, string(data), want)
 		}
 	}
 }
