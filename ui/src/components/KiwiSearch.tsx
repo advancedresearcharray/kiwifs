@@ -301,7 +301,7 @@ export function KiwiSearch({ open, onOpenChange, onSelect, tree, initialQuery }:
                     }
                   }}
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-2.5 w-2.5" />
                 </button>
               </CommandItem>
             ))}
