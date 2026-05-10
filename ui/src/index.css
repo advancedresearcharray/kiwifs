@@ -471,19 +471,35 @@
   .kiwi-comments-section,
   .kiwi-backlinks-section,
   .kiwi-resize-handle,
-  nav, header, footer { display: none !important; }
+  nav, header, footer, aside { display: none !important; }
 
   /* ── Break out of the SPA viewport jail ──
      The app uses height:100% / h-full / flex-1 + overflow:hidden/auto
      on deeply nested containers. The print engine only renders what
      fits inside each scroll-container viewport, clipping the rest.
      Nuke every height / overflow constraint so the document flows
-     naturally across printed pages. */
+     naturally across printed pages. flex-basis:auto undoes Tailwind's
+     flex-1 (flex-basis:0%) which traps content in one viewport. */
   html, body, #root,
   #root * {
     height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
     overflow: visible !important;
+    flex-basis: auto !important;
     flex-shrink: 1 !important;
+    flex-grow: 0 !important;
+  }
+
+  /* Convert the main app shell containers from flex to block flow
+     so content streams across page breaks instead of being trapped
+     inside flex rows / columns sized to one viewport. */
+  #root > div,
+  #root > div > div,
+  #root > div > div > main,
+  #root > div > div > main > div {
+    display: block !important;
+    position: static !important;
   }
 
   .kiwi-prose { max-width: 100% !important; }

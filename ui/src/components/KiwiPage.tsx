@@ -253,6 +253,12 @@ function parseFrontmatterScalar(value: string): unknown {
   if (trimmed === "true") return true;
   if (trimmed === "false") return false;
   if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed
+      .slice(1, -1)
+      .split(",")
+      .map((s) => parseFrontmatterScalar(s));
+  }
   return trimmed;
 }
 
@@ -1089,9 +1095,11 @@ function statusColor(value: string): string {
   return "";
 }
 
+const HEADER_RENDERED_KEYS = new Set(["title", "status", "tags"]);
+
 function frontmatterProperties(meta: Record<string, unknown>): FrontmatterProperty[] {
   return Object.entries(meta)
-    .filter(([, value]) => value != null)
+    .filter(([key, value]) => value != null && !HEADER_RENDERED_KEYS.has(key))
     .map(([key, value]) => ({
       key,
       value,
