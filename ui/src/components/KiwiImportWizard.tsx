@@ -258,7 +258,7 @@ export function KiwiImportWizard({
                     Credentials are held in memory only, never stored to disk
                   </p>
                 </div>
-                {state.credentials && (
+                {state.credentials != null && (
                   <p className="text-xs text-green-600 mt-1">Service account loaded</p>
                 )}
               </label>
