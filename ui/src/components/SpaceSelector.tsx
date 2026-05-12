@@ -87,6 +87,11 @@ export function SpaceSelector({
 
   if (!loaded) return null;
 
+  // In the cloud app, workspaces are managed externally — hide the space selector.
+  if (typeof window !== "undefined" && (window as any).__kiwi_cloud_mode__) {
+    return null;
+  }
+
   return (
     <>
       <div className="px-3 py-2 border-b border-border">
