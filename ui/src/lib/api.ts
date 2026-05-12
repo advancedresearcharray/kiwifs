@@ -108,6 +108,9 @@ let _extraHeaders: Record<string, string> = {};
 
 export function setBaseOverride(base: string | null) {
   _baseOverride = base;
+  if (typeof window !== "undefined") {
+    (window as any).__kiwi_api_base__ = base;
+  }
 }
 
 export function setExtraHeaders(headers: Record<string, string>) {
@@ -146,6 +149,9 @@ try {
 
 function kiwiBase(): string {
   if (_baseOverride) return _baseOverride;
+  if (typeof window !== "undefined" && (window as any).__kiwi_api_base__) {
+    return (window as any).__kiwi_api_base__;
+  }
   if (_currentSpace && _currentSpace !== "default") {
     return `/api/kiwi/${_currentSpace}`;
   }

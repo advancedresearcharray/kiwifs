@@ -217,7 +217,7 @@ jobs:
   # workflow which couldn't be triggered by GITHUB_TOKEN tag pushes.
   ec2-deploy:
     needs: [release-please, docker]
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created && needs.docker.result == 'success' && vars.ENABLE_EC2_DEPLOY == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH

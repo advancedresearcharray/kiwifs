@@ -176,7 +176,10 @@ function hexToHsl(hex: string): string {
 }
 
 function getCurrentTokens(): KiwiTokens {
-  const style = getComputedStyle(document.documentElement);
+  // When running inside the cloud app, CSS overrides target .kiwi-workspace-scope
+  // instead of :root, so read computed values from that element.
+  const scopeEl = document.querySelector(".kiwi-workspace-scope");
+  const style = getComputedStyle(scopeEl || document.documentElement);
   const tokens: KiwiTokens = {};
   for (const group of TOKEN_GROUPS) {
     for (const t of group.tokens) {

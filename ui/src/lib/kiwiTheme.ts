@@ -100,6 +100,35 @@ export interface KiwiThemeOverrides {
 
 const STYLE_ID = "kiwi-theme-overrides";
 
+// When set, CSS custom-property overrides are scoped to this selector instead
+// of :root / .dark.  The cloud app sets this so presets don't leak into the
+// shell (sidebar, header, etc.).
+//
+// Uses a window global as well as a module-level variable because Turbopack
+// can create separate module instances for dynamic imports.
+let _scopeSelector: string | null = null;
+
+function getScopeSelector(): string | null {
+  if (_scopeSelector) return _scopeSelector;
+  if (typeof window !== "undefined") {
+    return (window as Record<string, unknown>).__kiwi_theme_scope__ as string | null ?? null;
+  }
+  return null;
+}
+
+/**
+ * Restrict kiwi theme preset overrides to descendants of `selector`.
+ * Pass `null` to revert to the default global (:root) behaviour.
+ *
+ * Example: `setKiwiThemeScope(".kiwi-workspace-scope")`
+ */
+export function setKiwiThemeScope(selector: string | null): void {
+  _scopeSelector = selector;
+  if (typeof window !== "undefined") {
+    (window as Record<string, unknown>).__kiwi_theme_scope__ = selector;
+  }
+}
+
 function tokensToCss(selector: string, tokens: KiwiTokens): string {
   const entries = Object.entries(tokens).filter(
     (e): e is [string, string] => e[1] != null,
@@ -109,8 +138,19 @@ function tokensToCss(selector: string, tokens: KiwiTokens): string {
   return `${selector} {\n${props}\n}\n`;
 }
 
+function lightSelector(): string {
+  return getScopeSelector() ?? ":root";
+}
+
+function darkSelector(): string {
+  const scope = getScopeSelector();
+  return scope ? `.dark ${scope}` : ".dark";
+}
+
 function applyMode(mode: KiwiThemeOverrides["mode"]): void {
   if (!mode) return;
+  // When scoped, the cloud ThemeProvider owns dark/light — skip direct DOM changes.
+  if (getScopeSelector()) return;
   const root = document.documentElement;
   if (mode === "dark") {
     root.classList.add("dark");
@@ -127,8 +167,8 @@ export function applyKiwiTheme(overrides: KiwiThemeOverrides): void {
   applyMode(overrides.mode);
 
   let css = "";
-  if (overrides.light) css += tokensToCss(":root", overrides.light);
-  if (overrides.dark) css += tokensToCss(".dark", overrides.dark);
+  if (overrides.light) css += tokensToCss(lightSelector(), overrides.light);
+  if (overrides.dark) css += tokensToCss(darkSelector(), overrides.dark);
   if (!css) return;
 
   document.getElementById(STYLE_ID)?.remove();

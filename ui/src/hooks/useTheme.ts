@@ -57,6 +57,29 @@ export function setCustomTheme(t: KiwiThemeOverrides | null) {
   }
 }
 
+// When running inside the cloud app, the cloud ThemeProvider exposes these
+// globals so we delegate dark/light control to a single source of truth.
+function externalThemeAPI(): {
+  get: () => Theme;
+  toggle: () => void;
+  set: (t: Theme) => void;
+} | null {
+  if (typeof window === "undefined") return null;
+  const w = window as Record<string, unknown>;
+  if (
+    typeof w.__kiwi_theme_get__ === "function" &&
+    typeof w.__kiwi_theme_toggle__ === "function" &&
+    typeof w.__kiwi_theme_set__ === "function"
+  ) {
+    return {
+      get: w.__kiwi_theme_get__ as () => Theme,
+      toggle: w.__kiwi_theme_toggle__ as () => void,
+      set: w.__kiwi_theme_set__ as (t: Theme) => void,
+    };
+  }
+  return null;
+}
+
 export function useTheme(): {
   theme: Theme;
   toggleTheme: () => void;
@@ -71,7 +94,26 @@ export function useTheme(): {
 
   const [preset, setPresetState] = useState(() => readLS(lsPreset(), "Kiwi"));
 
+  // Keep local state in sync with the DOM (handles both cloud-managed and
+  // standalone scenarios — the cloud ThemeProvider changes the class,
+  // and this observer picks it up).
   useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const next: Theme = document.documentElement.classList.contains("dark")
+        ? "dark"
+        : "light";
+      setTheme((prev) => (prev !== next ? next : prev));
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  // Standalone only: apply dark class to DOM when no external provider owns it.
+  useEffect(() => {
+    if (externalThemeAPI()) return;
     const root = document.documentElement;
     if (theme === "dark") root.classList.add("dark");
     else root.classList.remove("dark");
@@ -156,10 +198,14 @@ export function useTheme(): {
     });
   }, []);
 
-  const toggleTheme = useCallback(
-    () => setTheme((t) => (t === "dark" ? "light" : "dark")),
-    [],
-  );
+  const toggleTheme = useCallback(() => {
+    const ext = externalThemeAPI();
+    if (ext) {
+      ext.toggle();
+    } else {
+      setTheme((t) => (t === "dark" ? "light" : "dark"));
+    }
+  }, []);
 
   const setPreset = useCallback((name: string) => {
     setCustomTheme(null);
