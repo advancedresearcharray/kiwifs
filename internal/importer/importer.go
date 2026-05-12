@@ -158,6 +158,11 @@ func sanitizePath(s string) string {
 	return s
 }
 
+// SanitizePath is the exported version of sanitizePath for use by other packages.
+func SanitizePath(s string) string {
+	return sanitizePath(s)
+}
+
 func filterColumns(fields map[string]any, columns []string) map[string]any {
 	out := make(map[string]any, len(columns))
 	for _, c := range columns {

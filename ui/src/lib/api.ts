@@ -430,4 +430,138 @@ export const api = {
       body: JSON.stringify(theme),
     });
   },
+
+  // --- Import pipeline ---
+
+  async importBrowse(params: ImportBrowseRequest): Promise<ImportBrowseResponse> {
+    return request(`${kiwiBase()}/import/browse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  },
+
+  async importPreview(params: ImportPreviewRequest): Promise<ImportPreviewResponse> {
+    return request(`${kiwiBase()}/import/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  },
+
+  async importRun(params: ImportRunRequest): Promise<ImportRunResponse> {
+    return request(`${kiwiBase()}/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  },
+
+  async importConnections(): Promise<ImportConnection[]> {
+    return request(`${kiwiBase()}/import/connections`);
+  },
+
+  async importSaveConnection(conn: Partial<ImportConnection>): Promise<ImportConnection> {
+    return request(`${kiwiBase()}/import/connections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(conn),
+    });
+  },
+
+  async importDeleteConnection(id: string): Promise<void> {
+    return request(`${kiwiBase()}/import/connections/${id}`, { method: "DELETE" });
+  },
+
+  async importRunConnection(id: string, creds?: { credentials?: unknown; api_key?: string }): Promise<ImportRunResponse> {
+    return request(`${kiwiBase()}/import/connections/${id}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(creds ?? {}),
+    });
+  },
+};
+
+// --- Import types ---
+
+export type ImportBrowseRequest = {
+  from: string;
+  dsn?: string;
+  uri?: string;
+  project?: string;
+  database?: string;
+  credentials?: unknown;
+  api_key?: string;
+};
+
+export type ImportBrowseResponse = {
+  tables: { name: string; estimated_count?: number }[];
+};
+
+export type ImportPreviewRequest = {
+  from: string;
+  dsn?: string;
+  uri?: string;
+  project?: string;
+  database?: string;
+  table?: string;
+  collection?: string;
+  database_id?: string;
+  base_id?: string;
+  table_id?: string;
+  credentials?: unknown;
+  api_key?: string;
+  limit?: number;
+};
+
+export type ImportPreviewResponse = {
+  records: { path: string; frontmatter: Record<string, unknown>; body_preview: string }[];
+};
+
+export type ImportRunRequest = {
+  from: string;
+  dsn?: string;
+  uri?: string;
+  db?: string;
+  project?: string;
+  database?: string;
+  table?: string;
+  collection?: string;
+  database_id?: string;
+  base_id?: string;
+  table_id?: string;
+  prefix?: string;
+  id_column?: string;
+  columns?: string[];
+  credentials?: unknown;
+  api_key?: string;
+  limit?: number;
+  dry_run?: boolean;
+};
+
+export type ImportRunResponse = {
+  imported: number;
+  skipped: number;
+  errors: string[];
+};
+
+export type ImportConnection = {
+  id: string;
+  from: string;
+  name: string;
+  project?: string;
+  table?: string;
+  collection?: string;
+  database?: string;
+  database_id?: string;
+  base_id?: string;
+  table_id?: string;
+  dsn?: string;
+  uri?: string;
+  prefix: string;
+  id_column?: string;
+  columns?: string[];
+  last_run?: string;
+  last_stats?: { imported: number; skipped: number; errors?: string[] };
+  created_at: string;
 };

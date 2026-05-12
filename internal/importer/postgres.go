@@ -139,6 +139,11 @@ func (s *PostgresSource) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying *sql.DB for browse operations.
+func (s *PostgresSource) DB() *sql.DB {
+	return s.db
+}
+
 func mapPgValue(v any) any {
 	if v == nil {
 		return nil

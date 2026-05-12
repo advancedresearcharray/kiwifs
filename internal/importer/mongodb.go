@@ -88,6 +88,16 @@ func (s *MongoSource) Close() error {
 	return s.client.Disconnect(context.Background())
 }
 
+// DatabaseName returns the configured database name for browse operations.
+func (s *MongoSource) DatabaseName() string {
+	return s.database
+}
+
+// Client returns the underlying MongoDB client for browse operations.
+func (s *MongoSource) Client() *mongo.Client {
+	return s.client
+}
+
 func mapBSONDoc(doc bson.M) map[string]any {
 	out := make(map[string]any, len(doc))
 	for k, v := range doc {

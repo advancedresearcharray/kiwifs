@@ -3,10 +3,13 @@ package importer
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
+	"google.golang.org/genproto/googleapis/type/latlng"
 )
 
 // FirestoreSource implements Source for Google Cloud Firestore.
@@ -21,6 +24,35 @@ type FirestoreSource struct {
 func NewFirestore(projectID, collection string) (*FirestoreSource, error) {
 	ctx := context.Background()
 	client, err := firestore.NewClient(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("firestore client: %w", err)
+	}
+	return &FirestoreSource{client: client, projectID: projectID, collection: collection}, nil
+}
+
+// NewFirestoreWithCredentials creates a Firestore source using explicit service
+// account JSON credentials. Per Google best practice, credentials are written to
+// a temporary file and passed via option.WithCredentialsFile (not WithCredentialsJSON,
+// which has known issues: https://github.com/googleapis/google-cloud-go/issues/8650).
+// The temp file is removed immediately after client initialization — the client
+// caches credentials in memory.
+func NewFirestoreWithCredentials(projectID, collection string, saJSON []byte) (*FirestoreSource, error) {
+	tmp, err := os.CreateTemp("", "kiwi-sa-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("create temp sa file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(saJSON); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("write temp sa file: %w", err)
+	}
+	tmp.Close()
+
+	ctx := context.Background()
+	client, err := firestore.NewClient(ctx, projectID,
+		option.WithCredentialsFile(tmpPath))
+	os.Remove(tmpPath) // client caches creds in memory, safe to delete
 	if err != nil {
 		return nil, fmt.Errorf("firestore client: %w", err)
 	}
@@ -72,6 +104,20 @@ func (s *FirestoreSource) Close() error {
 	return s.client.Close()
 }
 
+// BrowseCollections lists top-level Firestore collections.
+func (s *FirestoreSource) BrowseCollections(ctx context.Context) ([]string, error) {
+	iter := s.client.Collections(ctx)
+	var names []string
+	for {
+		coll, err := iter.Next()
+		if err != nil {
+			break // iterator.Done
+		}
+		names = append(names, coll.ID)
+	}
+	return names, nil
+}
+
 func mapFirestoreDoc(data map[string]any) map[string]any {
 	out := make(map[string]any, len(data))
 	for k, v := range data {
@@ -87,6 +133,10 @@ func mapFirestoreValue(v any) any {
 	switch val := v.(type) {
 	case time.Time:
 		return val.Format(time.RFC3339)
+	case *latlng.LatLng:
+		return map[string]any{"lat": val.GetLatitude(), "lng": val.GetLongitude()}
+	case *firestore.DocumentRef:
+		return val.Path
 	case map[string]any:
 		return mapFirestoreDoc(val)
 	case []any:

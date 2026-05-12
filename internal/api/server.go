@@ -22,6 +22,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/dataview"
 	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/events"
+	"github.com/kiwifs/kiwifs/internal/importer"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/links"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
@@ -335,6 +336,11 @@ func (s *Server) setupRoutes() {
 		_ = viewReg.Scan(context.Background())
 	}
 
+	connStore, err := importer.NewConnectionStore(s.pipe.Store.AbsPath(""))
+	if err != nil {
+		log.Printf("api: init connection store: %v (import connections disabled)", err)
+	}
+
 	h := &Handlers{
 		store:            s.pipe.Store,
 		versioner:        s.pipe.Versioner,
@@ -360,6 +366,7 @@ func (s *Server) setupRoutes() {
 		draftMgr:             s.draftMgr,
 		auditLogger:         s.auditLogger,
 		cfg:                 s.cfg,
+		connStore:            connStore,
 		schemaReload:         s.schemaReload,
 	}
 	prev := s.pipe.OnInvalidate
@@ -427,6 +434,12 @@ func (s *Server) setupRoutes() {
 	api.GET("/query/aggregate", h.QueryAggregate)
 	api.POST("/view/refresh", h.ViewRefresh)
 	api.POST("/import", h.Import)
+	api.POST("/import/browse", h.ImportBrowse)
+	api.POST("/import/preview", h.ImportPreview)
+	api.GET("/import/connections", h.ListConnections)
+	api.POST("/import/connections", h.SaveConnection)
+	api.DELETE("/import/connections/:id", h.DeleteConnection)
+	api.POST("/import/connections/:id/run", h.RunConnection)
 	api.GET("/export", h.Export)
 	api.GET("/analytics", h.Analytics)
 	api.POST("/lint", h.Lint)

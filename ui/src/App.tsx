@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Database,
   File,
   FileAxis3D,
   History,
@@ -22,6 +23,7 @@ import { KiwiEditor } from "./components/KiwiEditor";
 import { KiwiSearch } from "./components/KiwiSearch";
 import { KiwiGraph } from "./components/KiwiGraph";
 import { KiwiHistory } from "./components/KiwiHistory";
+import { KiwiData } from "./components/KiwiData";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { SpaceSelector } from "./components/SpaceSelector";
@@ -62,6 +64,7 @@ export default function App() {
   const [newFolder, setNewFolder] = useState<string | undefined>();
   const [graphOpen, setGraphOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [dataOpen, setDataOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
@@ -88,8 +91,8 @@ export default function App() {
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
   const editorRef = useRef<{ save: () => Promise<void> } | null>(null);
-  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen });
-  stateRef.current = { editing, activePath, graphOpen, historyOpen };
+  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen });
+  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen };
 
   useEffect(() => {
     api
@@ -117,8 +120,8 @@ export default function App() {
         setNewFolder(undefined);
         setNewOpen(true);
       } else if (mod && key === "e") {
-        const { activePath, graphOpen, historyOpen } = stateRef.current;
-        if (!activePath || graphOpen || historyOpen) return;
+        const { activePath, graphOpen, historyOpen, dataOpen } = stateRef.current;
+        if (!activePath || graphOpen || historyOpen || dataOpen) return;
         e.preventDefault();
         setEditing((v) => !v);
       } else if (mod && key === "s") {
@@ -143,6 +146,7 @@ const handleSpaceSwitch = useCallback(() => {
     setEditing(false);
     setGraphOpen(false);
     setHistoryOpen(false);
+    setDataOpen(false);
     setSpaceKey((k) => k + 1);
     setRefreshKey((k) => k + 1);
   }, []);
@@ -220,6 +224,7 @@ const handleSpaceSwitch = useCallback(() => {
         setEditing(false);
         setGraphOpen(false);
         setHistoryOpen(false);
+        setDataOpen(false);
       } else if (pathname === "/") {
         fromPopState.current = true;
         setActivePath(null);
@@ -251,6 +256,7 @@ const handleSpaceSwitch = useCallback(() => {
     setEditing(false);
     setGraphOpen(false);
     setHistoryOpen(false);
+    setDataOpen(false);
     recordVisit(path);
     if (isMobile) setSidebarOpen(false);
   }
@@ -317,6 +323,9 @@ const handleSpaceSwitch = useCallback(() => {
               label="Version history"
             >
               <History className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => setDataOpen((v) => !v)} label="Data sources">
+              <Database className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -458,7 +467,9 @@ const handleSpaceSwitch = useCallback(() => {
 
           {/* Main content area */}
           <main className="flex-1 overflow-auto kiwi-scroll relative">
-            {graphOpen ? (
+            {dataOpen ? (
+              <KiwiData onClose={() => setDataOpen(false)} />
+            ) : graphOpen ? (
               <KiwiGraph
                 tree={tree}
                 activePath={activePath}
@@ -524,6 +535,7 @@ const handleSpaceSwitch = useCallback(() => {
                 onNewPage={() => { setNewFolder(undefined); setNewOpen(true); }}
                 onSearch={() => setSearchOpen(true)}
                 onGraph={() => setGraphOpen(true)}
+                onData={() => setDataOpen(true)}
               />
             )}
           </main>
@@ -566,10 +578,12 @@ function WelcomeScreen({
   onNewPage,
   onSearch,
   onGraph,
+  onData,
 }: {
   onNewPage: () => void;
   onSearch: () => void;
   onGraph: () => void;
+  onData: () => void;
 }) {
   return (
     <div className="grid place-items-center h-full text-muted-foreground">
@@ -598,6 +612,10 @@ function WelcomeScreen({
           <Button variant="ghost" onClick={onGraph} className="gap-2 text-muted-foreground">
             <Network className="h-4 w-4" />
             View knowledge graph
+          </Button>
+          <Button variant="ghost" onClick={onData} className="gap-2 text-muted-foreground">
+            <Database className="h-4 w-4" />
+            Import from a source
           </Button>
         </div>
         <div className="mt-8 text-xs space-y-1">

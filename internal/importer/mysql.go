@@ -134,6 +134,11 @@ func (s *MySQLSource) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying *sql.DB for browse operations.
+func (s *MySQLSource) DB() *sql.DB {
+	return s.db
+}
+
 func escapeBacktick(s string) string {
 	return strings.ReplaceAll(s, "`", "``")
 }

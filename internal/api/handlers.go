@@ -15,6 +15,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/dataview"
 	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/events"
+	"github.com/kiwifs/kiwifs/internal/importer"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/links"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
@@ -59,6 +60,7 @@ type Handlers struct {
 
 	auditLogger *AuditLogger // B.3: audit log support
 	cfg         *config.Config // B.1: for space info/visibility
+	connStore   *importer.ConnectionStore
 
 	schemaReload func()
 
