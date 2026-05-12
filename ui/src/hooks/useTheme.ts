@@ -65,7 +65,7 @@ function externalThemeAPI(): {
   set: (t: Theme) => void;
 } | null {
   if (typeof window === "undefined") return null;
-  const w = window as Record<string, unknown>;
+  const w = window as unknown as Record<string, unknown>;
   if (
     typeof w.__kiwi_theme_get__ === "function" &&
     typeof w.__kiwi_theme_toggle__ === "function" &&
