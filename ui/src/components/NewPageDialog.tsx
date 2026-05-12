@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { File, Sparkles } from "lucide-react";
+import { Eye, File, Sparkles } from "lucide-react";
 import { api } from "@kw/lib/api";
 import { Button } from "@kw/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
 import { cn } from "@kw/lib/cn";
+import { TemplatePreview } from "./TemplatePreview";
 
 type Template = { name: string; path: string };
 
@@ -30,11 +31,19 @@ export function NewPageDialog({ open, onOpenChange, onCreated, defaultFolder }: 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Preview state
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!open) {
       setPath("");
       setSelected("");
       setError(null);
+      setShowPreview(false);
+      setPreviewContent(null);
       return;
     }
     if (defaultFolder) {
@@ -46,6 +55,25 @@ export function NewPageDialog({ open, onOpenChange, onCreated, defaultFolder }: 
       .then((r) => setTemplates(r.templates || []))
       .catch(() => setTemplates([]));
   }, [open]);
+
+  // Load preview when template changes and preview is active
+  useEffect(() => {
+    if (!showPreview || !selected) {
+      setPreviewContent(null);
+      setPreviewError(null);
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewError(null);
+    api
+      .previewTemplate(selected)
+      .then((r) => setPreviewContent(r.content))
+      .catch((e) => {
+        setPreviewError(String(e));
+        setPreviewContent(null);
+      })
+      .finally(() => setPreviewLoading(false));
+  }, [selected, showPreview]);
 
   async function create() {
     setError(null);
@@ -60,8 +88,13 @@ export function NewPageDialog({ open, onOpenChange, onCreated, defaultFolder }: 
       let content = `# ${titleFromPath(p)}\n\n`;
       if (selected) {
         try {
-          const tmpl = await api.readTemplate(selected);
-          content = tmpl.content;
+          // Use preview content if available (already resolved), otherwise fetch raw
+          if (previewContent) {
+            content = previewContent;
+          } else {
+            const tmpl = await api.readTemplate(selected);
+            content = tmpl.content;
+          }
         } catch (e) {
           console.warn("template fetch failed", e);
         }
@@ -105,12 +138,28 @@ export function NewPageDialog({ open, onOpenChange, onCreated, defaultFolder }: 
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Template</Label>
+            <div className="flex items-center justify-between">
+              <Label>Template</Label>
+              {selected && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs gap-1"
+                  onClick={() => setShowPreview((v) => !v)}
+                >
+                  <Eye className="h-3 w-3" />
+                  {showPreview ? "Hide preview" : "Preview"}
+                </Button>
+              )}
+            </div>
             <div className="flex flex-col max-h-48 overflow-auto kiwi-scroll border border-border rounded-md">
               <TemplateRow
                 label="Blank page"
                 active={selected === ""}
-                onClick={() => setSelected("")}
+                onClick={() => {
+                  setSelected("");
+                  setShowPreview(false);
+                }}
               />
               {templates.map((t) => (
                 <TemplateRow
@@ -123,6 +172,20 @@ export function NewPageDialog({ open, onOpenChange, onCreated, defaultFolder }: 
             </div>
           </div>
 
+          {/* Template preview */}
+          {showPreview && selected && (
+            <div className="border border-border rounded-md overflow-hidden">
+              <div className="text-xs font-medium px-3 py-1.5 border-b border-border bg-muted/30">
+                Resolved preview
+              </div>
+              <TemplatePreview
+                content={previewContent}
+                loading={previewLoading}
+                error={previewError}
+              />
+            </div>
+          )}
+
           {error && (
             <div className="text-sm text-destructive font-mono">{error}</div>
           )}
@@ -133,7 +196,7 @@ export function NewPageDialog({ open, onOpenChange, onCreated, defaultFolder }: 
             Cancel
           </Button>
           <Button onClick={create} disabled={creating}>
-            {creating ? "Creating…" : "Create"}
+            {creating ? "Creating..." : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

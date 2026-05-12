@@ -437,6 +437,116 @@ export const api = {
     });
   },
 
+  // --- Views (Bases) ---
+
+  async listViews(): Promise<{ views: { name: string; query: string; layout: string; columns: unknown[]; filters: unknown[]; sort: unknown[] }[] }> {
+    return request(`${kiwiBase()}/views`);
+  },
+
+  async getView(name: string): Promise<{ name: string; query: string; layout: string; columns: unknown[]; filters: unknown[]; sort: unknown[]; group_by?: string }> {
+    return request(`${kiwiBase()}/views/${encodeURIComponent(name)}`);
+  },
+
+  async saveView(name: string, view: Record<string, unknown>): Promise<void> {
+    return request(`${kiwiBase()}/views/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(view),
+    });
+  },
+
+  async deleteView(name: string): Promise<void> {
+    return request(`${kiwiBase()}/views/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async executeView(name: string): Promise<{ rows: Record<string, unknown>[]; total: number }> {
+    return request(`${kiwiBase()}/views/${encodeURIComponent(name)}/execute`);
+  },
+
+  // --- Canvas ---
+
+  async listCanvases(): Promise<{ canvases: { path: string; name: string }[] }> {
+    return request(`${kiwiBase()}/canvas`);
+  },
+
+  async getCanvas(path: string): Promise<Record<string, unknown>> {
+    const qs = new URLSearchParams({ path });
+    return request(`${kiwiBase()}/canvas?${qs}`);
+  },
+
+  async saveCanvas(path: string, data: Record<string, unknown>): Promise<void> {
+    const qs = new URLSearchParams({ path });
+    return request(`${kiwiBase()}/canvas?${qs}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+  },
+
+  // --- Timeline ---
+
+  async getTimeline(params?: {
+    limit?: number;
+    offset?: number;
+    actor?: string;
+    type?: string;
+    prefix?: string;
+    range?: string;
+  }): Promise<{ events: TimelineEvent[]; total: number }> {
+    const qs = new URLSearchParams();
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    if (params?.offset != null) qs.set("offset", String(params.offset));
+    if (params?.actor) qs.set("actor", params.actor);
+    if (params?.type) qs.set("type", params.type);
+    if (params?.prefix) qs.set("prefix", params.prefix);
+    if (params?.range) qs.set("range", params.range);
+    return request(`${kiwiBase()}/timeline?${qs}`);
+  },
+
+  async getTimelineActors(): Promise<{ actors: string[] }> {
+    return request(`${kiwiBase()}/timeline/actors`);
+  },
+
+  // --- Workflows / Kanban ---
+
+  async listWorkflows(): Promise<{ workflows: WorkflowDef[] }> {
+    return request(`${kiwiBase()}/workflows`);
+  },
+
+  async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[] }> {
+    return request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
+  },
+
+  async advanceWorkflow(path: string, workflow: string, targetState: string): Promise<void> {
+    return request(`${kiwiBase()}/workflow/advance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, workflow, target_state: targetState }),
+    });
+  },
+
+  // --- Web Clipper ---
+
+  async clipUrl(params: { url: string; title?: string; tags?: string[]; folder?: string }): Promise<{ path: string; title: string; excerpt: string }> {
+    return request(`${kiwiBase()}/clip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  },
+
+  // --- Template preview ---
+
+  async previewTemplate(name: string): Promise<{ content: string }> {
+    return request(`${kiwiBase()}/templates/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  },
+
   // --- Import pipeline ---
 
   async importBrowse(params: ImportBrowseRequest): Promise<ImportBrowseResponse> {
@@ -486,6 +596,39 @@ export const api = {
       body: JSON.stringify(creds ?? {}),
     });
   },
+};
+
+// --- Timeline types ---
+
+export type TimelineEvent = {
+  type: "write" | "delete" | "rename";
+  path: string;
+  title?: string;
+  actor: string;
+  timestamp: string;
+  message?: string;
+};
+
+// --- Workflow types ---
+
+export type WorkflowDef = {
+  name: string;
+  states: { name: string; color: string }[];
+  transitions: { from: string; to: string }[];
+};
+
+export type WorkflowColumn = {
+  state: string;
+  color: string;
+  pages: WorkflowPage[];
+};
+
+export type WorkflowPage = {
+  path: string;
+  title: string;
+  tags?: string[];
+  author?: string;
+  modified?: string;
 };
 
 // --- Import types ---

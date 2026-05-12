@@ -17,6 +17,7 @@ import (
 
 	"github.com/kiwifs/kiwifs/internal/bootstrap"
 	"github.com/kiwifs/kiwifs/internal/claims"
+	"github.com/kiwifs/kiwifs/internal/clipper"
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/dataview"
@@ -710,6 +711,36 @@ func (b *LocalBackend) Context(_ context.Context) (string, string, string, strin
 	return read("SCHEMA.md"), read(filepath.Join(".kiwi", "playbook.md")), read("index.md"), read(filepath.Join(".kiwi", "rules.md")), nil
 }
 
+func (b *LocalBackend) Clip(ctx context.Context, url, title string, tags []string, folder string) (*ClipResultMCP, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	clipReq := clipper.ClipRequest{
+		URL:    url,
+		Title:  title,
+		Tags:   tags,
+		Folder: folder,
+	}
+
+	result, content, err := clipper.Clip(ctx, clipReq, nil)
+	if err != nil {
+		return nil, fmt.Errorf("clip: %w", err)
+	}
+
+	actor := "mcp-agent"
+	_, writeErr := b.stack.Pipeline.Write(ctx, result.Path, []byte(content), actor)
+	if writeErr != nil {
+		return nil, fmt.Errorf("write: %w", writeErr)
+	}
+
+	return &ClipResultMCP{
+		Path:    result.Path,
+		Title:   result.Title,
+		Excerpt: result.Excerpt,
+	}, nil
+}
+
 func (b *LocalBackend) Health(_ context.Context) error {
 	return b.init()
 }
@@ -1401,6 +1432,84 @@ func (b *LocalBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAna
 	}, nil
 }
 
+func (b *LocalBackend) GraphCentrality(ctx context.Context, limit int) (*GraphCentralityResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if b.stack.Linker == nil {
+		return nil, fmt.Errorf("link indexing is not enabled")
+	}
+
+	edges, err := b.stack.Linker.AllEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := graphutil.Centrality(edges)
+	if limit > 0 && limit < len(entries) {
+		entries = entries[:limit]
+	}
+
+	pages := make([]CentralityEntry, len(entries))
+	for i, e := range entries {
+		pages[i] = CentralityEntry{
+			Path:        e.Path,
+			PageRank:    e.PageRank,
+			Betweenness: e.Betweenness,
+			InDegree:    e.InDegree,
+			OutDegree:   e.OutDegree,
+		}
+	}
+
+	return &GraphCentralityResult{Pages: pages}, nil
+}
+
+func (b *LocalBackend) GraphCommunities(ctx context.Context) (*GraphCommunitiesResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if b.stack.Linker == nil {
+		return nil, fmt.Errorf("link indexing is not enabled")
+	}
+
+	edges, err := b.stack.Linker.AllEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	communities := graphutil.CommunitiesFromEdges(edges)
+	groups := make([]CommunityGroup, len(communities))
+	for i, c := range communities {
+		groups[i] = CommunityGroup{
+			ID:    c.ID,
+			Pages: c.Pages,
+		}
+	}
+
+	return &GraphCommunitiesResult{Communities: groups}, nil
+}
+
+func (b *LocalBackend) GraphPath(ctx context.Context, from, to string) (*GraphPathResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if b.stack.Linker == nil {
+		return nil, fmt.Errorf("link indexing is not enabled")
+	}
+
+	edges, err := b.stack.Linker.AllEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	path, err := graphutil.ShortestPathFromEdges(edges, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GraphPathResult{Path: path}, nil
+}
+
 func (b *LocalBackend) Velocity(ctx context.Context, period string, limit int, pathPrefix string) (*VelocityResult, error) {
 	if err := b.init(); err != nil {
 		return nil, err
@@ -1751,4 +1860,352 @@ func (b *LocalBackend) ListClaims(ctx context.Context) ([]claims.Claim, error) {
 		return nil, fmt.Errorf("claims not enabled")
 	}
 	return b.stack.ClaimStore.ListActive(ctx)
+}
+
+func (b *LocalBackend) Timeline(ctx context.Context, limit, offset int, actor, eventType, pathPrefix string) (*TimelineResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Fetch more than needed to account for filtering
+	fetchLimit := (limit + offset) * 3
+	if fetchLimit > 1000 {
+		fetchLimit = 1000
+	}
+
+	// Run git log with --name-status to get files changed in each commit
+	args := []string{
+		"log",
+		"--pretty=format:COMMIT:%H|%aI|%an|%s",
+		"--name-status",
+		"-n", strconv.Itoa(fetchLimit),
+		"--",
+	}
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = b.root
+
+	out, err := cmd.Output()
+	if err != nil {
+		// Handle empty repo gracefully
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := string(exitErr.Stderr)
+			if strings.Contains(stderr, "does not have any commits") ||
+				strings.Contains(stderr, "bad default revision") ||
+				strings.Contains(stderr, "unknown revision") {
+				return &TimelineResult{Events: []TimelineEvent{}}, nil
+			}
+		}
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+
+	events, err := b.parseTimelineLog(string(out), actor, eventType, pathPrefix)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply offset and limit
+	if offset >= len(events) {
+		events = []TimelineEvent{}
+	} else {
+		events = events[offset:]
+		if len(events) > limit {
+			events = events[:limit]
+		}
+	}
+
+	return &TimelineResult{Events: events}, nil
+}
+
+func (b *LocalBackend) parseTimelineLog(output, actorFilter, typeFilter, pathPrefix string) ([]TimelineEvent, error) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var events []TimelineEvent
+
+	var currentCommit struct {
+		hash      string
+		timestamp string
+		author    string
+		subject   string
+	}
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		// Check if this is a commit line
+		if strings.HasPrefix(line, "COMMIT:") {
+			// Parse commit header: COMMIT:<hash>|<timestamp>|<author>|<subject>
+			parts := strings.SplitN(line[7:], "|", 4)
+			if len(parts) < 4 {
+				continue
+			}
+			currentCommit.hash = parts[0]
+			currentCommit.timestamp = parts[1]
+			currentCommit.author = parts[2]
+			currentCommit.subject = parts[3]
+			continue
+		}
+
+		// This is a file change line: <status>\t<path>
+		fields := strings.Split(line, "\t")
+		if len(fields) < 2 {
+			continue
+		}
+
+		status := fields[0]
+		path := fields[1]
+
+		// Skip files in .kiwi directory
+		if strings.HasPrefix(path, ".kiwi/") {
+			continue
+		}
+
+		// Apply path prefix filter
+		if pathPrefix != "" && !strings.HasPrefix(path, pathPrefix) {
+			continue
+		}
+
+		// Determine event type from git status
+		var eventType string
+		switch status[0] {
+		case 'A', 'M': // Added or Modified
+			eventType = "write"
+		case 'D': // Deleted
+			eventType = "delete"
+		case 'R': // Renamed - treat as write to new location
+			eventType = "write"
+			// For renames, git shows R100\told\tnew, use the new name
+			if len(fields) > 2 {
+				path = fields[2]
+			}
+		case 'C': // Copied - treat as write
+			eventType = "write"
+			if len(fields) > 2 {
+				path = fields[2]
+			}
+		default:
+			continue
+		}
+
+		// Apply filters
+		if actorFilter != "" && currentCommit.author != actorFilter {
+			continue
+		}
+		if typeFilter != "" && eventType != typeFilter {
+			continue
+		}
+
+		// Parse timestamp to ensure it's valid
+		timestamp := currentCommit.timestamp
+		if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
+			timestamp = t.Format(time.RFC3339)
+		}
+
+		events = append(events, TimelineEvent{
+			Type:      eventType,
+			Path:      path,
+			Actor:     currentCommit.author,
+			Timestamp: timestamp,
+			Message:   currentCommit.subject,
+		})
+	}
+
+	return events, nil
+}
+
+func (b *LocalBackend) ViewsList(ctx context.Context) ([]ViewInfo, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	viewsDir := filepath.Join(b.root, ".kiwi", "views")
+	entries, err := os.ReadDir(viewsDir)
+	if os.IsNotExist(err) {
+		return []ViewInfo{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read views dir: %w", err)
+	}
+	
+	var views []ViewInfo
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".json")
+		view, err := b.ViewsGet(ctx, name)
+		if err != nil {
+			continue
+		}
+		views = append(views, *view)
+	}
+	return views, nil
+}
+
+func (b *LocalBackend) ViewsGet(ctx context.Context, name string) (*ViewInfo, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	
+	path := filepath.Join(b.root, ".kiwi", "views", name+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read view: %w", err)
+	}
+	
+	var view ViewInfo
+	if err := json.Unmarshal(data, &view); err != nil {
+		return nil, fmt.Errorf("parse view: %w", err)
+	}
+	view.Name = name
+	return &view, nil
+}
+
+func (b *LocalBackend) ViewsSave(ctx context.Context, view ViewInfo) error {
+	if err := b.init(); err != nil {
+		return err
+	}
+	
+	viewsDir := filepath.Join(b.root, ".kiwi", "views")
+	if err := os.MkdirAll(viewsDir, 0755); err != nil {
+		return fmt.Errorf("create views dir: %w", err)
+	}
+	
+	data, err := json.MarshalIndent(view, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal view: %w", err)
+	}
+	
+	path := filepath.Join(viewsDir, view.Name+".json")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write view: %w", err)
+	}
+	return nil
+}
+
+func (b *LocalBackend) ViewsExecute(ctx context.Context, name string, limit, offset int) (*QueryResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	view, err := b.ViewsGet(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	if b.dvExec == nil {
+		return nil, fmt.Errorf("dataview executor not available")
+	}
+
+	dvResult, err := b.dvExec.Query(ctx, view.Query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert dataview.QueryResult to mcpserver.QueryResult
+	qr := &QueryResult{
+		Columns: dvResult.Columns,
+		Rows:    dvResult.Rows,
+		Total:   dvResult.Total,
+		HasMore: dvResult.HasMore,
+	}
+	for _, g := range dvResult.Groups {
+		qr.Groups = append(qr.Groups, GroupResult{Key: g.Key, Count: g.Count})
+	}
+	return qr, nil
+}
+
+func (b *LocalBackend) CanvasList(ctx context.Context) ([]string, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	var canvases []string
+	err := storage.Walk(ctx, b.stack.Store, "/", func(e storage.Entry) error {
+		if !e.IsDir && strings.HasSuffix(strings.ToLower(e.Path), ".canvas.json") {
+			canvases = append(canvases, e.Path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if canvases == nil {
+		canvases = []string{}
+	}
+	return canvases, nil
+}
+
+func (b *LocalBackend) CanvasRead(ctx context.Context, path string) (string, error) {
+	if err := b.init(); err != nil {
+		return "", err
+	}
+
+	if !strings.HasSuffix(strings.ToLower(path), ".canvas.json") {
+		return "", fmt.Errorf("path must end with .canvas.json")
+	}
+
+	content, err := b.stack.Store.Read(ctx, path)
+	if err != nil {
+		return "", err
+	}
+
+	// Validate it's valid JSON with nodes and edges
+	var data map[string]any
+	if err := json.Unmarshal(content, &data); err != nil {
+		return "", fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	return string(content), nil
+}
+
+func (b *LocalBackend) CanvasWrite(ctx context.Context, path, content, actor string) (string, error) {
+	if err := b.init(); err != nil {
+		return "", err
+	}
+
+	if !strings.HasSuffix(strings.ToLower(path), ".canvas.json") {
+		return "", fmt.Errorf("path must end with .canvas.json")
+	}
+
+	// Validate JSON structure
+	var data map[string]any
+	if err := json.Unmarshal([]byte(content), &data); err != nil {
+		return "", fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	// Ensure nodes and edges exist
+	if _, ok := data["nodes"]; !ok {
+		data["nodes"] = []any{}
+	}
+	if _, ok := data["edges"]; !ok {
+		data["edges"] = []any{}
+	}
+
+	// Re-marshal to ensure clean structure
+	cleanContent, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+
+	if actor == "" {
+		actor = "mcp-agent"
+	}
+
+	res, err := b.stack.Pipeline.Write(ctx, path, cleanContent, actor)
+	if err != nil {
+		return "", err
+	}
+	return res.ETag, nil
 }

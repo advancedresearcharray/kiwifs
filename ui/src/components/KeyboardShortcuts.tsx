@@ -25,6 +25,14 @@ const shortcuts: { section: string; items: { keys: string; label: string }[] }[]
     ],
   },
   {
+    section: "Views",
+    items: [
+      { keys: `${MOD}Shift+B`, label: "Toggle Bases" },
+      { keys: `${MOD}Shift+T`, label: "Toggle Timeline" },
+      { keys: `${MOD}Shift+W`, label: "Toggle Kanban" },
+    ],
+  },
+  {
     section: "Editor",
     items: [
       { keys: `${MOD}S`, label: "Save (also auto-saves after 2s)" },

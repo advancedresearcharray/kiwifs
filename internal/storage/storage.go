@@ -48,6 +48,20 @@ type WalkFunc func(entry Entry) error
 // skip dot-dirs, filter .md" pattern previously copy-pasted across
 // search, vectorstore, graph, lint, and watcher.
 func Walk(ctx context.Context, s Storage, root string, fn WalkFunc) error {
+	return WalkFilter(ctx, s, root, func(e Entry) bool {
+		return strings.HasSuffix(strings.ToLower(e.Name), ".md")
+	}, fn)
+}
+
+// WalkAll recursively visits every file under root (no extension filter).
+// Directories are descended into but not emitted.
+func WalkAll(ctx context.Context, s Storage, root string, fn WalkFunc) error {
+	return WalkFilter(ctx, s, root, func(Entry) bool { return true }, fn)
+}
+
+// WalkFilter recursively visits every file under root for which accept
+// returns true. Directories are descended into but not emitted.
+func WalkFilter(ctx context.Context, s Storage, root string, accept func(Entry) bool, fn WalkFunc) error {
 	entries, err := s.List(ctx, root)
 	if err != nil {
 		return err
@@ -57,12 +71,12 @@ func Walk(ctx context.Context, s Storage, root string, fn WalkFunc) error {
 			return err
 		}
 		if e.IsDir {
-			if err := Walk(ctx, s, e.Path, fn); err != nil {
+			if err := WalkFilter(ctx, s, e.Path, accept, fn); err != nil {
 				return err
 			}
 			continue
 		}
-		if !strings.HasSuffix(strings.ToLower(e.Name), ".md") {
+		if !accept(e) {
 			continue
 		}
 		if err := fn(e); err != nil {
@@ -82,4 +96,9 @@ func IsKnowledgeFile(path string) bool {
 	}
 	clean := filepath.ToSlash(filepath.Clean(path))
 	return !strings.HasPrefix(clean, ".git/") && !strings.HasPrefix(clean, ".kiwi/")
+}
+
+// IsCanvasFile reports whether path is a canvas file (.canvas.json extension).
+func IsCanvasFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".canvas.json")
 }
