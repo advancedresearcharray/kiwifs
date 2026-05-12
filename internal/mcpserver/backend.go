@@ -162,7 +162,11 @@ type Backend interface {
 	Suggestions(ctx context.Context, path string, limit int) ([]SuggestionResult, error)
 	Embeddings(ctx context.Context, path string) (*EmbeddingsResult, error)
 	GraphAnalytics(ctx context.Context, limit int) (*GraphAnalyticsResult, error)
+	GraphCentrality(ctx context.Context, limit int) (*GraphCentralityResult, error)
+	GraphCommunities(ctx context.Context) (*GraphCommunitiesResult, error)
+	GraphPath(ctx context.Context, from, to string) (*GraphPathResult, error)
 	Velocity(ctx context.Context, period string, limit int, pathPrefix string) (*VelocityResult, error)
+	Timeline(ctx context.Context, limit, offset int, actor, eventType, pathPrefix string) (*TimelineResult, error)
 	Eval(ctx context.Context, queries []EvalQuery) (*EvalResult, error)
 	Eligible(ctx context.Context, limit int, pathPrefix string) (*QueryResult, error)
 	Claim(ctx context.Context, path, claimedBy string, leaseDuration time.Duration) (*claims.Claim, error)
@@ -175,9 +179,17 @@ type Backend interface {
 	DraftDiff(ctx context.Context, draftID string) (string, error)
 	DraftMerge(ctx context.Context, draftID string) error
 	DraftDiscard(ctx context.Context, draftID string) error
+	Clip(ctx context.Context, url, title string, tags []string, folder string) (*ClipResultMCP, error)
 	PublicURL() string
 	Health(ctx context.Context) error
 	Close() error
+	ViewsList(ctx context.Context) ([]ViewInfo, error)
+	ViewsGet(ctx context.Context, name string) (*ViewInfo, error)
+	ViewsSave(ctx context.Context, view ViewInfo) error
+	ViewsExecute(ctx context.Context, name string, limit, offset int) (*QueryResult, error)
+	CanvasList(ctx context.Context) ([]string, error)
+	CanvasRead(ctx context.Context, path string) (string, error)
+	CanvasWrite(ctx context.Context, path, content, actor string) (string, error)
 }
 
 type DraftInfo struct {
@@ -222,6 +234,36 @@ type PageRankEntry struct {
 	PageRank  float64 `json:"pagerank"`
 	InDegree  int     `json:"in_degree"`
 	OutDegree int     `json:"out_degree"`
+}
+
+// GraphCentralityResult holds PageRank and betweenness centrality data.
+type GraphCentralityResult struct {
+	Pages []CentralityEntry `json:"pages"`
+}
+
+// CentralityEntry holds centrality scores for a single page.
+type CentralityEntry struct {
+	Path        string  `json:"path"`
+	PageRank    float64 `json:"pagerank"`
+	Betweenness float64 `json:"betweenness"`
+	InDegree    int     `json:"in_degree"`
+	OutDegree   int     `json:"out_degree"`
+}
+
+// GraphCommunitiesResult holds community detection results.
+type GraphCommunitiesResult struct {
+	Communities []CommunityGroup `json:"communities"`
+}
+
+// CommunityGroup is a cluster of related pages.
+type CommunityGroup struct {
+	ID    int      `json:"id"`
+	Pages []string `json:"pages"`
+}
+
+// GraphPathResult holds the shortest path between two pages.
+type GraphPathResult struct {
+	Path []string `json:"path"`
 }
 
 type VelocityResult struct {
@@ -274,4 +316,50 @@ type EvalQueryResult struct {
 	SemanticRank int      `json:"semantic_rank"`
 	FTSHits      []string `json:"fts_hits"`
 	SemanticHits []string `json:"semantic_hits"`
+}
+
+type ClipResultMCP struct {
+	Path    string `json:"path"`
+	Title   string `json:"title"`
+	Excerpt string `json:"excerpt"`
+}
+
+type ViewInfo struct {
+	Name    string      `json:"name"`
+	Query   string      `json:"query"`
+	Layout  string      `json:"layout"`
+	Columns []ViewColumn `json:"columns,omitempty"`
+	Filters []ViewFilter `json:"filters,omitempty"`
+	Sort    []ViewSort   `json:"sort,omitempty"`
+	GroupBy string      `json:"group_by,omitempty"`
+}
+
+type ViewColumn struct {
+	Property string `json:"property"`
+	Label    string `json:"label,omitempty"`
+	Formula  string `json:"formula,omitempty"`
+	Summary  string `json:"summary,omitempty"`
+}
+
+type ViewFilter struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    any    `json:"value"`
+}
+
+type ViewSort struct {
+	Field string `json:"field"`
+	Order string `json:"order"`
+}
+
+type TimelineResult struct {
+	Events []TimelineEvent `json:"events"`
+}
+
+type TimelineEvent struct {
+	Type      string `json:"type"`
+	Path      string `json:"path"`
+	Actor     string `json:"actor"`
+	Timestamp string `json:"timestamp"`
+	Message   string `json:"message"`
 }

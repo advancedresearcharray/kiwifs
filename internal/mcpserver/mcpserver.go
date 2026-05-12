@@ -387,6 +387,33 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleGraphAnalytics(b),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_graph_centrality",
+				mcp.WithDescription("Get PageRank and betweenness centrality scores for all pages. Returns pages ranked by PageRank with both centrality measures, in/out degree. Use this to find the most important and most connective pages."),
+				mcp.WithNumber("limit", mcp.Description("Max pages to return (default all)")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleGraphCentrality(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_graph_communities",
+				mcp.WithDescription("Detect community clusters in the wiki-link graph using the Louvain algorithm. Returns groups of topically related pages. Use this to understand the natural topic structure of the knowledge base."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleGraphCommunities(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_graph_path",
+				mcp.WithDescription("Find the shortest path between two pages in the wiki-link graph. Returns the sequence of pages from source to target. Use this to understand how knowledge connects."),
+				mcp.WithString("from", mcp.Required(), mcp.Description("Source page path")),
+				mcp.WithString("to", mcp.Required(), mcp.Description("Target page path")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleGraphPath(b),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_peek",
 				mcp.WithDescription("Quick glance at a file — returns title, frontmatter, first paragraph snippet, outbound wiki links, inbound backlinks, heading outline, and word count. Use this to decide if a page is worth reading fully. Costs ~200 tokens vs reading the whole file."),
 				mcp.WithString("path", pathOpts...),
@@ -426,6 +453,19 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithDestructiveHintAnnotation(false),
 			),
 			Handler: handleVelocity(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_timeline",
+				mcp.WithDescription("Activity timeline from git history: recent changes across all files with timestamps, authors, and change types (write/delete). Returns a feed of recent activity sorted by time."),
+				mcp.WithNumber("limit", mcp.Description("Max events to return (default 50, max 500)")),
+				mcp.WithNumber("offset", mcp.Description("Offset for pagination (default 0)")),
+				mcp.WithString("actor", mcp.Description("Filter by actor/author name")),
+				mcp.WithString("type", mcp.Description("Filter by event type: write or delete")),
+				mcp.WithString("path_prefix", mcp.Description("Filter by path prefix")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleTimeline(b),
 		},
 		server.ServerTool{
 		Tool: mcp.NewTool("kiwi_context",
@@ -564,6 +604,58 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithDestructiveHintAnnotation(false),
 			),
 			Handler: handleLint(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_clip",
+				mcp.WithDescription("Clip a web page into the knowledge base as a markdown page with extracted article content"),
+				mcp.WithString("url", mcp.Required(), mcp.Description("URL to clip")),
+				mcp.WithString("title", mcp.Description("Override title")),
+				mcp.WithArray("tags", mcp.Description("Tags to apply"), mcp.WithStringItems()),
+				mcp.WithString("folder", mcp.Description("Target folder (default clips/)")),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+			),
+			Handler: handleClip(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_views_list",
+				mcp.WithDescription("List all saved view definitions (bases/views) in the knowledge base"),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleViewsList(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_views_get",
+				mcp.WithDescription("Get a specific view definition by name"),
+				mcp.WithString("name", mcp.Required(), mcp.Description("View name")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleViewsGet(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_views_save",
+				mcp.WithDescription("Save or update a view definition (base/view) with query, layout, columns, filters, and grouping"),
+				mcp.WithString("name", mcp.Required(), mcp.Description("View name")),
+				mcp.WithString("query", mcp.Required(), mcp.Description("DQL query for the view")),
+				mcp.WithString("layout", mcp.Description("Layout type: table, list, calendar, kanban")),
+				mcp.WithString("group_by", mcp.Description("Field to group by")),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+			),
+			Handler: handleViewsSave(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_views_execute",
+				mcp.WithDescription("Execute a saved view query and return results"),
+				mcp.WithString("name", mcp.Required(), mcp.Description("View name to execute")),
+				mcp.WithNumber("limit", mcp.Description("Max results (default 50)")),
+				mcp.WithNumber("offset", mcp.Description("Offset for pagination (default 0)")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleViewsExecute(b),
 		},
 	)
 }
@@ -1864,6 +1956,76 @@ func handleGraphAnalytics(b Backend) server.ToolHandlerFunc {
 	}
 }
 
+func handleGraphCentrality(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		limit := intArg(args, "limit", 0)
+		result, err := b.GraphCentrality(ctx, limit)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Graph centrality failed: %v", err)), nil
+		}
+		var sb strings.Builder
+		sb.WriteString("Page Centrality (PageRank + Betweenness)\n\n")
+		for i, p := range result.Pages {
+			fmt.Fprintf(&sb, "%d. %s\n   PageRank: %.4f  Betweenness: %.4f  In: %d  Out: %d\n",
+				i+1, p.Path, p.PageRank, p.Betweenness, p.InDegree, p.OutDegree)
+		}
+		if len(result.Pages) == 0 {
+			sb.WriteString("No pages found in the link graph.\n")
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleGraphCommunities(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		result, err := b.GraphCommunities(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Community detection failed: %v", err)), nil
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Communities (%d detected)\n\n", len(result.Communities))
+		for _, c := range result.Communities {
+			fmt.Fprintf(&sb, "Community %d (%d pages):\n", c.ID, len(c.Pages))
+			for _, p := range c.Pages {
+				fmt.Fprintf(&sb, "  - %s\n", p)
+			}
+			sb.WriteString("\n")
+		}
+		if len(result.Communities) == 0 {
+			sb.WriteString("No communities detected.\n")
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleGraphPath(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		from, _ := args["from"].(string)
+		to, _ := args["to"].(string)
+		if from == "" || to == "" {
+			return mcp.NewToolResultError("from and to are required"), nil
+		}
+		result, err := b.GraphPath(ctx, from, to)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Path finding failed: %v", err)), nil
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Shortest path from %s to %s (%d hops):\n\n", from, to, len(result.Path)-1)
+		for i, p := range result.Path {
+			if i > 0 {
+				sb.WriteString("  → ")
+			} else {
+				sb.WriteString("  ")
+			}
+			sb.WriteString(p)
+			sb.WriteString("\n")
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
 func handlePeek(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		path, _ := req.GetArguments()["path"].(string)
@@ -1968,6 +2130,49 @@ func handleVelocity(b Backend) server.ToolHandlerFunc {
 		if len(result.SingleAuthorPages) > 0 {
 			fmt.Fprintf(&sb, "Single-author pages: %d\n", len(result.SingleAuthorPages))
 		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleTimeline(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		limit := intArg(args, "limit", 50)
+		offset := intArg(args, "offset", 0)
+		actor, _ := args["actor"].(string)
+		eventType, _ := args["type"].(string)
+		pathPrefix, _ := args["path_prefix"].(string)
+
+		result, err := b.Timeline(ctx, limit, offset, actor, eventType, pathPrefix)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Timeline failed: %v", err)), nil
+		}
+
+		if len(result.Events) == 0 {
+			return mcp.NewToolResultText("No events found."), nil
+		}
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Activity Timeline (%d events)\n\n", len(result.Events))
+
+		for _, e := range result.Events {
+			// Format timestamp to be more readable
+			ts := e.Timestamp
+			if t, err := time.Parse(time.RFC3339, e.Timestamp); err == nil {
+				ts = t.Format("2006-01-02 15:04")
+			}
+
+			typeIcon := "✏️"
+			if e.Type == "delete" {
+				typeIcon = "🗑️"
+			}
+
+			fmt.Fprintf(&sb, "%s [%s] %s by %s\n", typeIcon, ts, e.Path, e.Actor)
+			if e.Message != "" {
+				fmt.Fprintf(&sb, "    %s\n", e.Message)
+			}
+		}
+
 		return mcp.NewToolResultText(sb.String()), nil
 	}
 }
@@ -2222,6 +2427,36 @@ func handleLint(b Backend) server.ToolHandlerFunc {
 	}
 }
 
+func handleClip(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		url, _ := args["url"].(string)
+		title, _ := args["title"].(string)
+		folder, _ := args["folder"].(string)
+
+		var tags []string
+		if tagsRaw, ok := args["tags"].([]any); ok {
+			for _, t := range tagsRaw {
+				if s, ok := t.(string); ok {
+					tags = append(tags, s)
+				}
+			}
+		}
+
+		if url == "" {
+			return mcp.NewToolResultError("url is required"), nil
+		}
+
+		result, err := b.Clip(ctx, url, title, tags, folder)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("clip failed: %v", err)), nil
+		}
+
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
 func bearerAuth(token string, next http.Handler) http.Handler {
 	if token == "" {
 		return next
@@ -2235,4 +2470,84 @@ func bearerAuth(token string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func handleViewsList(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		views, err := b.ViewsList(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to list views: %v", err)), nil
+		}
+		out, _ := json.MarshalIndent(views, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleViewsGet(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		name, _ := args["name"].(string)
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+
+		view, err := b.ViewsGet(ctx, name)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get view: %v", err)), nil
+		}
+		out, _ := json.MarshalIndent(view, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleViewsSave(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		name, _ := args["name"].(string)
+		query, _ := args["query"].(string)
+		layout, _ := args["layout"].(string)
+		groupBy, _ := args["group_by"].(string)
+
+		if name == "" || query == "" {
+			return mcp.NewToolResultError("name and query are required"), nil
+		}
+
+		view := ViewInfo{
+			Name:    name,
+			Query:   query,
+			Layout:  layout,
+			GroupBy: groupBy,
+		}
+
+		if err := b.ViewsSave(ctx, view); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to save view: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("View %s saved", name)), nil
+	}
+}
+
+func handleViewsExecute(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		name, _ := args["name"].(string)
+		limit, _ := args["limit"].(float64)
+		offset, _ := args["offset"].(float64)
+
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+
+		if limit == 0 {
+			limit = 50
+		}
+
+		result, err := b.ViewsExecute(ctx, name, int(limit), int(offset))
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to execute view: %v", err)), nil
+		}
+
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
 }

@@ -506,6 +506,27 @@ func (r *RemoteBackend) Context(ctx context.Context) (string, string, string, st
 	return result.Schema, result.Playbook, result.Index, result.Rules, nil
 }
 
+func (r *RemoteBackend) Clip(ctx context.Context, url, title string, tags []string, folder string) (*ClipResultMCP, error) {
+	body := map[string]any{
+		"url": url,
+	}
+	if title != "" {
+		body["title"] = title
+	}
+	if len(tags) > 0 {
+		body["tags"] = tags
+	}
+	if folder != "" {
+		body["folder"] = folder
+	}
+
+	var result ClipResultMCP
+	if err := r.postJSON(ctx, r.apiPrefix+"/clip", body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (r *RemoteBackend) Health(ctx context.Context) error {
 	return r.getJSON(ctx, "/health", &json.RawMessage{})
 }
@@ -535,6 +556,32 @@ func (r *RemoteBackend) Embeddings(ctx context.Context, path string) (*Embedding
 func (r *RemoteBackend) GraphAnalytics(ctx context.Context, limit int) (*GraphAnalyticsResult, error) {
 	q := fmt.Sprintf("%s/graph/analytics?limit=%d", r.apiPrefix, limit)
 	var result GraphAnalyticsResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) GraphCentrality(ctx context.Context, limit int) (*GraphCentralityResult, error) {
+	q := fmt.Sprintf("%s/graph/centrality?limit=%d", r.apiPrefix, limit)
+	var result GraphCentralityResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) GraphCommunities(ctx context.Context) (*GraphCommunitiesResult, error) {
+	var result GraphCommunitiesResult
+	if err := r.getJSON(ctx, r.apiPrefix+"/graph/communities", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) GraphPath(ctx context.Context, from, to string) (*GraphPathResult, error) {
+	q := fmt.Sprintf("%s/graph/path?from=%s&to=%s", r.apiPrefix, url.QueryEscape(from), url.QueryEscape(to))
+	var result GraphPathResult
 	if err := r.getJSON(ctx, q, &result); err != nil {
 		return nil, err
 	}
@@ -578,6 +625,24 @@ func (r *RemoteBackend) Velocity(ctx context.Context, period string, limit int, 
 		q += "&path_prefix=" + url.QueryEscape(pathPrefix)
 	}
 	var result VelocityResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) Timeline(ctx context.Context, limit, offset int, actor, eventType, pathPrefix string) (*TimelineResult, error) {
+	q := fmt.Sprintf("%s/timeline?limit=%d&offset=%d", r.apiPrefix, limit, offset)
+	if actor != "" {
+		q += "&actor=" + url.QueryEscape(actor)
+	}
+	if eventType != "" {
+		q += "&type=" + url.QueryEscape(eventType)
+	}
+	if pathPrefix != "" {
+		q += "&path_prefix=" + url.QueryEscape(pathPrefix)
+	}
+	var result TimelineResult
 	if err := r.getJSON(ctx, q, &result); err != nil {
 		return nil, err
 	}
@@ -655,4 +720,86 @@ func (r *RemoteBackend) ListClaims(ctx context.Context) ([]claims.Claim, error) 
 		return nil, err
 	}
 	return result.Claims, nil
+}
+
+func (r *RemoteBackend) ViewsList(ctx context.Context) ([]ViewInfo, error) {
+	var result struct {
+		Views []ViewInfo `json:"views"`
+	}
+	if err := r.getJSON(ctx, r.apiPrefix+"/views", &result); err != nil {
+		return nil, err
+	}
+	return result.Views, nil
+}
+
+func (r *RemoteBackend) ViewsGet(ctx context.Context, name string) (*ViewInfo, error) {
+	var view ViewInfo
+	if err := r.getJSON(ctx, r.apiPrefix+"/views/"+url.PathEscape(name), &view); err != nil {
+		return nil, err
+	}
+	return &view, nil
+}
+
+func (r *RemoteBackend) ViewsSave(ctx context.Context, view ViewInfo) error {
+	body, err := json.Marshal(view)
+	if err != nil {
+		return err
+	}
+	resp, err := r.do(ctx, http.MethodPut, r.apiPrefix+"/views/"+url.PathEscape(view.Name), 
+		strings.NewReader(string(body)), "Content-Type", "application/json")
+	if err != nil {
+		return err
+	}
+	_, err = r.readBody(resp)
+	return err
+}
+
+func (r *RemoteBackend) ViewsExecute(ctx context.Context, name string, limit, offset int) (*QueryResult, error) {
+	q := fmt.Sprintf("%s/views/%s/execute?limit=%d&offset=%d", r.apiPrefix, url.PathEscape(name), limit, offset)
+	var result QueryResult
+	if err := r.getJSON(ctx, q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) CanvasList(ctx context.Context) ([]string, error) {
+	var result struct {
+		Canvases []string `json:"canvases"`
+	}
+	if err := r.getJSON(ctx, r.apiPrefix+"/canvas", &result); err != nil {
+		return nil, err
+	}
+	return result.Canvases, nil
+}
+
+func (r *RemoteBackend) CanvasRead(ctx context.Context, path string) (string, error) {
+	resp, err := r.do(ctx, http.MethodGet, r.apiPrefix+"/canvas?path="+url.QueryEscape(path), nil)
+	if err != nil {
+		return "", err
+	}
+	body, err := r.readBody(resp)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func (r *RemoteBackend) CanvasWrite(ctx context.Context, path, content, actor string) (string, error) {
+	resp, err := r.do(ctx, http.MethodPut, r.apiPrefix+"/canvas?path="+url.QueryEscape(path),
+		strings.NewReader(content), "Content-Type", "application/json", "X-Actor", actor)
+	if err != nil {
+		return "", err
+	}
+	body, err := r.readBody(resp)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		ETag string `json:"etag"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+	return result.ETag, nil
 }

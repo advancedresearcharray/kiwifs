@@ -3,16 +3,21 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Clock4,
+  Columns3,
   Database,
   File,
   FileAxis3D,
   History,
+  LayoutGrid,
   Moon,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
   Pin,
   Plus,
+  Presentation,
+  Scissors,
   Search as SearchIcon,
   Star,
   Sun,
@@ -24,6 +29,11 @@ import { KiwiSearch } from "./components/KiwiSearch";
 import { KiwiGraph } from "./components/KiwiGraph";
 import { KiwiHistory } from "./components/KiwiHistory";
 import { KiwiData } from "./components/KiwiData";
+import { KiwiBases } from "./components/KiwiBases";
+import { KiwiCanvas } from "./components/KiwiCanvas";
+import { KiwiTimeline } from "./components/KiwiTimeline";
+import { KiwiKanban } from "./components/KiwiKanban";
+import { KiwiClipDialog } from "./components/KiwiClipDialog";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { SpaceSelector } from "./components/SpaceSelector";
@@ -66,6 +76,12 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dataOpen, setDataOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [basesOpen, setBasesOpen] = useState(false);
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const [canvasPath, setCanvasPath] = useState<string | null>(null);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [kanbanOpen, setKanbanOpen] = useState(false);
+  const [clipOpen, setClipOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -91,8 +107,8 @@ export default function App() {
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
   const editorRef = useRef<{ save: () => Promise<void> } | null>(null);
-  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen });
-  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen };
+  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, timelineOpen, kanbanOpen });
+  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, timelineOpen, kanbanOpen };
 
   useEffect(() => {
     api
@@ -128,6 +144,15 @@ export default function App() {
         if (!stateRef.current.editing) return;
         e.preventDefault();
         editorRef.current?.save().catch(() => {});
+      } else if (mod && e.shiftKey && key === "b") {
+        e.preventDefault();
+        setBasesOpen((v) => !v);
+      } else if (mod && e.shiftKey && key === "t") {
+        e.preventDefault();
+        setTimelineOpen((v) => !v);
+      } else if (mod && e.shiftKey && key === "w") {
+        e.preventDefault();
+        setKanbanOpen((v) => !v);
       } else if (mod && (key === "/" || key === "?")) {
         e.preventDefault();
         setShortcutsOpen((v) => !v);
@@ -147,6 +172,10 @@ const handleSpaceSwitch = useCallback(() => {
     setGraphOpen(false);
     setHistoryOpen(false);
     setDataOpen(false);
+    setBasesOpen(false);
+    setCanvasOpen(false);
+    setTimelineOpen(false);
+    setKanbanOpen(false);
     setSpaceKey((k) => k + 1);
     setRefreshKey((k) => k + 1);
   }, []);
@@ -225,6 +254,10 @@ const handleSpaceSwitch = useCallback(() => {
         setGraphOpen(false);
         setHistoryOpen(false);
         setDataOpen(false);
+        setBasesOpen(false);
+        setCanvasOpen(false);
+        setTimelineOpen(false);
+        setKanbanOpen(false);
       } else if (pathname === "/") {
         fromPopState.current = true;
         setActivePath(null);
@@ -257,6 +290,10 @@ const handleSpaceSwitch = useCallback(() => {
     setGraphOpen(false);
     setHistoryOpen(false);
     setDataOpen(false);
+    setBasesOpen(false);
+    setCanvasOpen(false);
+    setTimelineOpen(false);
+    setKanbanOpen(false);
     recordVisit(path);
     if (isMobile) setSidebarOpen(false);
   }
@@ -323,6 +360,21 @@ const handleSpaceSwitch = useCallback(() => {
               label="Version history"
             >
               <History className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => setBasesOpen((v) => !v)} label="Bases">
+              <LayoutGrid className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => { setCanvasPath("canvas.canvas.json"); setCanvasOpen((v) => !v); }} label="Canvas">
+              <Presentation className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => setTimelineOpen((v) => !v)} label="Timeline">
+              <Clock4 className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => setKanbanOpen((v) => !v)} label="Kanban">
+              <Columns3 className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => setClipOpen(true)} label="Clip URL">
+              <Scissors className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={() => setDataOpen((v) => !v)} label="Data sources">
               <Database className="h-4 w-4" />
@@ -467,7 +519,28 @@ const handleSpaceSwitch = useCallback(() => {
 
           {/* Main content area */}
           <main className="flex-1 overflow-auto kiwi-scroll relative">
-            {dataOpen ? (
+            {basesOpen ? (
+              <KiwiBases
+                onClose={() => setBasesOpen(false)}
+                onNavigate={(p) => { setBasesOpen(false); navigate(p); }}
+              />
+            ) : canvasOpen ? (
+              <KiwiCanvas
+                path={canvasPath}
+                onClose={() => setCanvasOpen(false)}
+                onNavigate={(p) => { setCanvasOpen(false); navigate(p); }}
+              />
+            ) : timelineOpen ? (
+              <KiwiTimeline
+                onClose={() => setTimelineOpen(false)}
+                onNavigate={(p) => { setTimelineOpen(false); navigate(p); }}
+              />
+            ) : kanbanOpen ? (
+              <KiwiKanban
+                onClose={() => setKanbanOpen(false)}
+                onNavigate={(p) => { setKanbanOpen(false); navigate(p); }}
+              />
+            ) : dataOpen ? (
               <KiwiData onClose={() => setDataOpen(false)} />
             ) : graphOpen ? (
               <KiwiGraph
@@ -536,6 +609,8 @@ const handleSpaceSwitch = useCallback(() => {
                 onSearch={() => setSearchOpen(true)}
                 onGraph={() => setGraphOpen(true)}
                 onData={() => setDataOpen(true)}
+                onBases={() => setBasesOpen(true)}
+                onTimeline={() => setTimelineOpen(true)}
               />
             )}
           </main>
@@ -568,6 +643,15 @@ const handleSpaceSwitch = useCallback(() => {
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
       />
+      <KiwiClipDialog
+        open={clipOpen}
+        onOpenChange={setClipOpen}
+        onClipped={(p) => {
+          setClipOpen(false);
+          setRefreshKey((k) => k + 1);
+          navigate(p);
+        }}
+      />
     </TooltipProvider>
   );
 }
@@ -579,11 +663,15 @@ function WelcomeScreen({
   onSearch,
   onGraph,
   onData,
+  onBases,
+  onTimeline,
 }: {
   onNewPage: () => void;
   onSearch: () => void;
   onGraph: () => void;
   onData: () => void;
+  onBases: () => void;
+  onTimeline: () => void;
 }) {
   return (
     <div className="grid place-items-center h-full text-muted-foreground">
@@ -612,6 +700,14 @@ function WelcomeScreen({
           <Button variant="ghost" onClick={onGraph} className="gap-2 text-muted-foreground">
             <Network className="h-4 w-4" />
             View knowledge graph
+          </Button>
+          <Button variant="ghost" onClick={onBases} className="gap-2 text-muted-foreground">
+            <LayoutGrid className="h-4 w-4" />
+            View as database
+          </Button>
+          <Button variant="ghost" onClick={onTimeline} className="gap-2 text-muted-foreground">
+            <Clock4 className="h-4 w-4" />
+            Activity timeline
           </Button>
           <Button variant="ghost" onClick={onData} className="gap-2 text-muted-foreground">
             <Database className="h-4 w-4" />

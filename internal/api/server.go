@@ -450,6 +450,13 @@ func (s *Server) setupRoutes() {
 	api.GET("/suggestions", h.Suggestions)
 	api.GET("/embeddings", h.Embeddings)
 	api.GET("/graph/analytics", h.GraphAnalytics)
+	api.GET("/graph/centrality", h.GraphCentrality)
+	api.GET("/graph/communities", h.GraphCommunities)
+	api.GET("/graph/path", h.GraphPath)
+	api.POST("/clip", h.Clip)
+	api.GET("/timeline", h.Timeline)
+	api.GET("/feed.xml", h.FeedAtom)
+	api.GET("/feed.json", h.FeedJSON)
 	api.GET("/peek", h.Peek)
 	api.GET("/section", h.SectionRead)
 	api.GET("/graph/walk", h.GraphWalk)
@@ -477,6 +484,18 @@ func (s *Server) setupRoutes() {
 
 	// B.3: Audit log endpoint
 	api.GET("/audit", h.AuditEndpoint)
+
+	// Views (Bases) endpoints
+	api.GET("/views", h.ListViews)
+	api.GET("/views/:name", h.GetView)
+	api.PUT("/views/:name", h.SaveView)
+	api.DELETE("/views/:name", h.DeleteView)
+	api.GET("/views/:name/execute", h.ExecuteView)
+
+	// Canvas endpoints
+	api.GET("/canvas", h.ListCanvas)
+	api.GET("/canvas/*", h.ReadCanvas)
+	api.PUT("/canvas/*", h.WriteCanvas)
 
 	draftGrp := api.Group("/drafts")
 	draftGrp.POST("", h.CreateDraft)
