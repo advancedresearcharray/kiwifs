@@ -492,10 +492,10 @@ func (s *Server) setupRoutes() {
 	api.DELETE("/views/:name", h.DeleteView)
 	api.GET("/views/:name/execute", h.ExecuteView)
 
-	// Canvas endpoints
-	api.GET("/canvas", h.ListCanvas)
-	api.GET("/canvas/*", h.ReadCanvas)
-	api.PUT("/canvas/*", h.WriteCanvas)
+	// Canvas endpoints — list uses /canvases (plural), read/write use /canvas?path=
+	api.GET("/canvases", h.ListCanvas)
+	api.GET("/canvas", h.ReadCanvas)
+	api.PUT("/canvas", h.WriteCanvas)
 
 	draftGrp := api.Group("/drafts")
 	draftGrp.POST("", h.CreateDraft)

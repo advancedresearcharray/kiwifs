@@ -1914,6 +1914,8 @@ func (b *LocalBackend) Timeline(ctx context.Context, limit, offset int, actor, e
 		return nil, err
 	}
 
+	total := len(events)
+
 	// Apply offset and limit
 	if offset >= len(events) {
 		events = []TimelineEvent{}
@@ -1924,7 +1926,7 @@ func (b *LocalBackend) Timeline(ctx context.Context, limit, offset int, actor, e
 		}
 	}
 
-	return &TimelineResult{Events: events}, nil
+	return &TimelineResult{Events: events, Total: total}, nil
 }
 
 func (b *LocalBackend) parseTimelineLog(output, actorFilter, typeFilter, pathPrefix string) ([]TimelineEvent, error) {
@@ -2092,6 +2094,64 @@ func (b *LocalBackend) ViewsSave(ctx context.Context, view ViewInfo) error {
 		return fmt.Errorf("write view: %w", err)
 	}
 	return nil
+}
+
+func (b *LocalBackend) ViewsDelete(_ context.Context, name string) error {
+	if err := b.init(); err != nil {
+		return err
+	}
+
+	viewsDir := filepath.Join(b.root, ".kiwi", "views")
+	path := filepath.Join(viewsDir, name+".json")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete view: %w", err)
+	}
+	return nil
+}
+
+func (b *LocalBackend) Feed(ctx context.Context, limit int) (json.RawMessage, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Fetch recent timeline events and convert to feed entries
+	result, err := b.Timeline(ctx, limit, 0, "", "write", "")
+	if err != nil {
+		return nil, err
+	}
+
+	type feedEntry struct {
+		Path      string `json:"path"`
+		Title     string `json:"title"`
+		Timestamp string `json:"timestamp"`
+		Actor     string `json:"actor"`
+		Message   string `json:"message"`
+	}
+
+	entries := make([]feedEntry, 0, len(result.Events))
+	seen := make(map[string]bool)
+	for _, e := range result.Events {
+		if seen[e.Path] {
+			continue
+		}
+		seen[e.Path] = true
+		title := strings.TrimSuffix(filepath.Base(e.Path), filepath.Ext(e.Path))
+		entries = append(entries, feedEntry{
+			Path:      e.Path,
+			Title:     title,
+			Timestamp: e.Timestamp,
+			Actor:     e.Actor,
+			Message:   e.Message,
+		})
+	}
+
+	return json.Marshal(map[string]any{"items": entries, "total": len(entries)})
 }
 
 func (b *LocalBackend) ViewsExecute(ctx context.Context, name string, limit, offset int) (*QueryResult, error) {

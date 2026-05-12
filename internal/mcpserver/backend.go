@@ -186,10 +186,12 @@ type Backend interface {
 	ViewsList(ctx context.Context) ([]ViewInfo, error)
 	ViewsGet(ctx context.Context, name string) (*ViewInfo, error)
 	ViewsSave(ctx context.Context, view ViewInfo) error
+	ViewsDelete(ctx context.Context, name string) error
 	ViewsExecute(ctx context.Context, name string, limit, offset int) (*QueryResult, error)
 	CanvasList(ctx context.Context) ([]string, error)
 	CanvasRead(ctx context.Context, path string) (string, error)
 	CanvasWrite(ctx context.Context, path, content, actor string) (string, error)
+	Feed(ctx context.Context, limit int) (json.RawMessage, error)
 }
 
 type DraftInfo struct {
@@ -354,6 +356,7 @@ type ViewSort struct {
 
 type TimelineResult struct {
 	Events []TimelineEvent `json:"events"`
+	Total  int             `json:"total"`
 }
 
 type TimelineEvent struct {

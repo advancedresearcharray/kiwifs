@@ -618,6 +618,60 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleClip(b),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_canvas_list",
+				mcp.WithDescription("List all canvas files (.canvas.json) in the knowledge base. Canvases are visual graphs of nodes and edges."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleCanvasList(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_canvas_read",
+				mcp.WithDescription("Read a canvas file and return its JSON structure (nodes and edges)."),
+				mcp.WithString("path", mcp.Required(), mcp.Description("Path to the canvas file, must end with .canvas.json"), mcp.MaxLength(500)),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleCanvasRead(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_canvas_write",
+				mcp.WithDescription("Write a canvas file. Content must be a JSON object with nodes and edges arrays."),
+				mcp.WithString("path", mcp.Required(), mcp.Description("Path to the canvas file, must end with .canvas.json"), mcp.MaxLength(500)),
+				mcp.WithString("content", mcp.Required(), mcp.Description("JSON string with nodes and edges arrays")),
+				mcp.WithString("actor", mcp.Description("Who is writing — defaults to mcp-agent")),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+			),
+			Handler: handleCanvasWrite(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_versions",
+				mcp.WithDescription("List git version history for a file. Returns commit hashes, dates, authors, and messages. Use this to inspect page history and see who changed what."),
+				mcp.WithString("path", pathOpts...),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleVersions(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_claims_list",
+				mcp.WithDescription("List all currently active task claims. Shows which pages are claimed by which agents and when claims expire."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleClaimsList(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_feed",
+				mcp.WithDescription("Get the JSON feed of recently updated pages. Returns title, URL, date, and summary for each entry. Useful for seeing what changed recently in a structured format."),
+				mcp.WithNumber("limit", mcp.Description("Max entries (default 20)")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleFeed(b),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_views_list",
 				mcp.WithDescription("List all saved view definitions (bases/views) in the knowledge base"),
 				mcp.WithReadOnlyHintAnnotation(true),
@@ -636,15 +690,56 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_views_save",
-				mcp.WithDescription("Save or update a view definition (base/view) with query, layout, columns, filters, and grouping"),
+				mcp.WithDescription("Save or update a view definition (base/view) with query, layout, columns, filters, sort, and grouping"),
 				mcp.WithString("name", mcp.Required(), mcp.Description("View name")),
 				mcp.WithString("query", mcp.Required(), mcp.Description("DQL query for the view")),
 				mcp.WithString("layout", mcp.Description("Layout type: table, list, calendar, kanban")),
 				mcp.WithString("group_by", mcp.Description("Field to group by")),
+				mcp.WithArray("columns", mcp.Description("Column definitions: array of {property, label, formula, summary}"),
+					mcp.Items(map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"property": map[string]any{"type": "string"},
+							"label":    map[string]any{"type": "string"},
+							"formula":  map[string]any{"type": "string"},
+							"summary":  map[string]any{"type": "string"},
+						},
+						"required": []string{"property"},
+					}),
+				),
+				mcp.WithArray("filters", mcp.Description("Filter definitions: array of {field, operator, value}"),
+					mcp.Items(map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"field":    map[string]any{"type": "string"},
+							"operator": map[string]any{"type": "string"},
+							"value":    map[string]any{},
+						},
+						"required": []string{"field", "operator", "value"},
+					}),
+				),
+				mcp.WithArray("sort", mcp.Description("Sort definitions: array of {field, order}"),
+					mcp.Items(map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"field": map[string]any{"type": "string"},
+							"order": map[string]any{"type": "string"},
+						},
+						"required": []string{"field", "order"},
+					}),
+				),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 			),
 			Handler: handleViewsSave(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_views_delete",
+				mcp.WithDescription("Delete a saved view definition by name"),
+				mcp.WithString("name", mcp.Required(), mcp.Description("View name to delete")),
+				mcp.WithDestructiveHintAnnotation(true),
+			),
+			Handler: handleViewsDelete(b),
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_views_execute",
@@ -2153,7 +2248,7 @@ func handleTimeline(b Backend) server.ToolHandlerFunc {
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Activity Timeline (%d events)\n\n", len(result.Events))
+		fmt.Fprintf(&sb, "Activity Timeline (%d events, %d total)\n\n", len(result.Events), result.Total)
 
 		for _, e := range result.Events {
 			// Format timestamp to be more readable
@@ -2519,11 +2614,205 @@ func handleViewsSave(b Backend) server.ToolHandlerFunc {
 			GroupBy: groupBy,
 		}
 
+		// Task 4: Parse optional columns, filters, sort
+		if raw, ok := args["columns"]; ok {
+			if arr, ok := raw.([]any); ok {
+				for _, item := range arr {
+					if m, ok := item.(map[string]any); ok {
+						col := ViewColumn{}
+						col.Property, _ = m["property"].(string)
+						col.Label, _ = m["label"].(string)
+						col.Formula, _ = m["formula"].(string)
+						col.Summary, _ = m["summary"].(string)
+						if col.Property != "" {
+							view.Columns = append(view.Columns, col)
+						}
+					}
+				}
+			}
+		}
+
+		if raw, ok := args["filters"]; ok {
+			if arr, ok := raw.([]any); ok {
+				for _, item := range arr {
+					if m, ok := item.(map[string]any); ok {
+						f := ViewFilter{}
+						f.Field, _ = m["field"].(string)
+						f.Operator, _ = m["operator"].(string)
+						f.Value = m["value"]
+						if f.Field != "" && f.Operator != "" {
+							view.Filters = append(view.Filters, f)
+						}
+					}
+				}
+			}
+		}
+
+		if raw, ok := args["sort"]; ok {
+			if arr, ok := raw.([]any); ok {
+				for _, item := range arr {
+					if m, ok := item.(map[string]any); ok {
+						s := ViewSort{}
+						s.Field, _ = m["field"].(string)
+						s.Order, _ = m["order"].(string)
+						if s.Field != "" {
+							view.Sort = append(view.Sort, s)
+						}
+					}
+				}
+			}
+		}
+
 		if err := b.ViewsSave(ctx, view); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to save view: %v", err)), nil
 		}
 
 		return mcp.NewToolResultText(fmt.Sprintf("View %s saved", name)), nil
+	}
+}
+
+func handleViewsDelete(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		name, _ := args["name"].(string)
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+
+		if err := b.ViewsDelete(ctx, name); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to delete view: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("View %s deleted", name)), nil
+	}
+}
+
+func handleCanvasList(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		canvases, err := b.CanvasList(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to list canvases: %v", err)), nil
+		}
+		out, _ := json.MarshalIndent(map[string]any{"canvases": canvases}, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleCanvasRead(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+
+		content, err := b.CanvasRead(ctx, path)
+		if err != nil {
+			if isNotFound(err) {
+				return mcp.NewToolResultError(fmt.Sprintf("Canvas not found at %s", path)), nil
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("failed to read canvas: %v", err)), nil
+		}
+		return mcp.NewToolResultText(content), nil
+	}
+}
+
+func handleCanvasWrite(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		content, _ := args["content"].(string)
+		actor, _ := args["actor"].(string)
+
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		if content == "" {
+			return mcp.NewToolResultError("content is required"), nil
+		}
+		if actor == "" {
+			actor = "mcp-agent"
+		}
+
+		etag, err := b.CanvasWrite(ctx, path, content, actor)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to write canvas: %v", err)), nil
+		}
+
+		out, _ := json.MarshalIndent(map[string]any{"path": path, "etag": etag}, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleVersions(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+
+		versions, err := b.Versions(ctx, path)
+		if err != nil {
+			if isNotFound(err) {
+				return mcp.NewToolResultError(fmt.Sprintf("File not found at %s", path)), nil
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get versions: %v", err)), nil
+		}
+
+		if len(versions) == 0 {
+			return mcp.NewToolResultText(fmt.Sprintf("No version history for %s", path)), nil
+		}
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Version history for %s (%d commits):\n\n", path, len(versions))
+		for i, v := range versions {
+			hash := v.Hash
+			if len(hash) > 8 {
+				hash = hash[:8]
+			}
+			fmt.Fprintf(&sb, "%d. %s  %s  by %s\n", i+1, hash, v.Date, v.Author)
+			if v.Message != "" {
+				fmt.Fprintf(&sb, "   %s\n", v.Message)
+			}
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleClaimsList(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		claims, err := b.ListClaims(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to list claims: %v", err)), nil
+		}
+
+		if len(claims) == 0 {
+			return mcp.NewToolResultText("No active claims."), nil
+		}
+
+		out, _ := json.MarshalIndent(map[string]any{"claims": claims}, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleFeed(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		limit := intArg(args, "limit", 20)
+
+		raw, err := b.Feed(ctx, limit)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("feed failed: %v", err)), nil
+		}
+
+		// Pretty-print JSON
+		var pretty json.RawMessage
+		if json.Unmarshal(raw, &pretty) == nil {
+			indented, _ := json.MarshalIndent(pretty, "", "  ")
+			return mcp.NewToolResultText(string(indented)), nil
+		}
+		return mcp.NewToolResultText(string(raw)), nil
 	}
 }
 
