@@ -82,6 +82,20 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
+
+  // Close all full-screen views. Called before opening a new one so only one
+  // view is ever active — the ternary render chain in <main> checks them in
+  // priority order and the first truthy one wins.
+  const closeAllViews = useCallback(() => {
+    setBasesOpen(false);
+    setCanvasOpen(false);
+    setTimelineOpen(false);
+    setKanbanOpen(false);
+    setDataOpen(false);
+    setGraphOpen(false);
+    setHistoryOpen(false);
+  }, []);
+
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -352,31 +366,31 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label="New page (⌘N)">
               <Plus className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => setGraphOpen((v) => !v)} label="Knowledge graph">
+            <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
               <Network className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton
-              onClick={() => activePath && setHistoryOpen((v) => !v)}
+              onClick={() => { if (!activePath) return; const next = !historyOpen; closeAllViews(); setHistoryOpen(next); }}
               label="Version history"
             >
               <History className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => setBasesOpen((v) => !v)} label="Bases">
+            <ToolbarButton onClick={() => { const next = !basesOpen; closeAllViews(); setBasesOpen(next); }} label="Bases">
               <LayoutGrid className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => { setCanvasPath("canvas.canvas.json"); setCanvasOpen((v) => !v); }} label="Canvas">
+            <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasPath("canvas.canvas.json"); setCanvasOpen(next); }} label="Canvas">
               <Presentation className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => setTimelineOpen((v) => !v)} label="Timeline">
+            <ToolbarButton onClick={() => { const next = !timelineOpen; closeAllViews(); setTimelineOpen(next); }} label="Timeline">
               <Clock4 className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => setKanbanOpen((v) => !v)} label="Kanban">
+            <ToolbarButton onClick={() => { const next = !kanbanOpen; closeAllViews(); setKanbanOpen(next); }} label="Kanban">
               <Columns3 className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={() => setClipOpen(true)} label="Clip URL">
               <Scissors className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => setDataOpen((v) => !v)} label="Data sources">
+            <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
               <Database className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
