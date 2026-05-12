@@ -111,7 +111,7 @@ let _scopeSelector: string | null = null;
 function getScopeSelector(): string | null {
   if (_scopeSelector) return _scopeSelector;
   if (typeof window !== "undefined") {
-    return (window as Record<string, unknown>).__kiwi_theme_scope__ as string | null ?? null;
+    return (window as unknown as Record<string, unknown>).__kiwi_theme_scope__ as string | null ?? null;
   }
   return null;
 }
@@ -125,7 +125,7 @@ function getScopeSelector(): string | null {
 export function setKiwiThemeScope(selector: string | null): void {
   _scopeSelector = selector;
   if (typeof window !== "undefined") {
-    (window as Record<string, unknown>).__kiwi_theme_scope__ = selector;
+    (window as unknown as Record<string, unknown>).__kiwi_theme_scope__ = selector;
   }
 }
 
