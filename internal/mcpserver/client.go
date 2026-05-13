@@ -754,6 +754,15 @@ func (r *RemoteBackend) ViewsSave(ctx context.Context, view ViewInfo) error {
 	return err
 }
 
+func (r *RemoteBackend) ViewsDelete(ctx context.Context, name string) error {
+	resp, err := r.do(ctx, http.MethodDelete, r.apiPrefix+"/views/"+url.PathEscape(name), nil)
+	if err != nil {
+		return err
+	}
+	_, err = r.readBody(resp)
+	return err
+}
+
 func (r *RemoteBackend) ViewsExecute(ctx context.Context, name string, limit, offset int) (*QueryResult, error) {
 	q := fmt.Sprintf("%s/views/%s/execute?limit=%d&offset=%d", r.apiPrefix, url.PathEscape(name), limit, offset)
 	var result QueryResult
@@ -763,11 +772,20 @@ func (r *RemoteBackend) ViewsExecute(ctx context.Context, name string, limit, of
 	return &result, nil
 }
 
+func (r *RemoteBackend) Feed(ctx context.Context, limit int) (json.RawMessage, error) {
+	q := fmt.Sprintf("%s/feed.json?limit=%d", r.apiPrefix, limit)
+	var raw json.RawMessage
+	if err := r.getJSON(ctx, q, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
 func (r *RemoteBackend) CanvasList(ctx context.Context) ([]string, error) {
 	var result struct {
 		Canvases []string `json:"canvases"`
 	}
-	if err := r.getJSON(ctx, r.apiPrefix+"/canvas", &result); err != nil {
+	if err := r.getJSON(ctx, r.apiPrefix+"/canvases", &result); err != nil {
 		return nil, err
 	}
 	return result.Canvases, nil
@@ -802,4 +820,66 @@ func (r *RemoteBackend) CanvasWrite(ctx context.Context, path, content, actor st
 		return "", err
 	}
 	return result.ETag, nil
+}
+
+func (r *RemoteBackend) WorkflowList(ctx context.Context) ([]WorkflowDef, error) {
+	var result struct {
+		Workflows []WorkflowDef `json:"workflows"`
+	}
+	if err := r.getJSON(ctx, r.apiPrefix+"/workflows", &result); err != nil {
+		return nil, err
+	}
+	return result.Workflows, nil
+}
+
+func (r *RemoteBackend) WorkflowGet(ctx context.Context, name string) (*WorkflowDef, error) {
+	var w WorkflowDef
+	if err := r.getJSON(ctx, r.apiPrefix+"/workflows/"+url.PathEscape(name), &w); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+func (r *RemoteBackend) WorkflowSave(ctx context.Context, w WorkflowDef) error {
+	body, err := json.Marshal(w)
+	if err != nil {
+		return err
+	}
+	resp, err := r.do(ctx, http.MethodPut, r.apiPrefix+"/workflows/"+url.PathEscape(w.Name),
+		strings.NewReader(string(body)), "Content-Type", "application/json")
+	if err != nil {
+		return err
+	}
+	_, err = r.readBody(resp)
+	return err
+}
+
+func (r *RemoteBackend) WorkflowAdvance(ctx context.Context, path, targetState, actor string) (*WorkflowAdvanceResult, error) {
+	body, _ := json.Marshal(map[string]string{
+		"path":         path,
+		"target_state": targetState,
+		"actor":        actor,
+	})
+	resp, err := r.do(ctx, http.MethodPost, r.apiPrefix+"/workflow/advance",
+		strings.NewReader(string(body)), "Content-Type", "application/json")
+	if err != nil {
+		return nil, err
+	}
+	raw, err := r.readBody(resp)
+	if err != nil {
+		return nil, err
+	}
+	var result WorkflowAdvanceResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) WorkflowBoard(ctx context.Context, workflowName string) (*WorkflowBoardResult, error) {
+	var result WorkflowBoardResult
+	if err := r.getJSON(ctx, r.apiPrefix+"/workflow/board/"+url.PathEscape(workflowName), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

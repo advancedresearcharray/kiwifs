@@ -468,7 +468,7 @@ export const api = {
   // --- Canvas ---
 
   async listCanvases(): Promise<{ canvases: { path: string; name: string }[] }> {
-    return request(`${kiwiBase()}/canvas`);
+    return request(`${kiwiBase()}/canvases`);
   },
 
   async getCanvas(path: string): Promise<Record<string, unknown>> {

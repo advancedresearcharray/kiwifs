@@ -1,28 +1,9 @@
-// Knowledge graph view: nodes are markdown pages, edges are [[wiki-link]]
-// references between them. Powered by Sigma.js (WebGL) + Graphology with a
-// ForceAtlas2 layout; Louvain community detection drives the per-cluster
-// palette.
-//
-// Enhanced with:
-//   - PageRank-based node sizing (toggle)
-//   - Community detection coloring (toggle)
-//   - Shortest-path finding between two selected nodes
-//   - Layout switcher (ForceAtlas2 / Circular / Random)
-//   - Rich hover tooltip (title, PageRank, community, degree)
+// Knowledge graph — PixiJS (WebGL) + d3-force, inspired by Obsidian's graph.
+// Nodes = markdown pages, edges = [[wiki-link]] references.
+// Features: community coloring, PageRank sizing, hover glow, search highlight,
+// directory/tag filtering, shortest-path finder, zoom-adaptive labels.
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import Graph from "graphology";
-import circular from "graphology-layout/circular";
-import random from "graphology-layout/random";
-import forceAtlas2 from "graphology-layout-forceatlas2";
-import louvain from "graphology-communities-louvain";
-import {
-  SigmaContainer,
-  useLoadGraph,
-  useRegisterEvents,
-  useSetSettings,
-  useSigma,
-} from "@react-sigma/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Loader2,
@@ -30,21 +11,31 @@ import {
   Search as SearchIcon,
   Tag,
 } from "lucide-react";
-import "@react-sigma/core/lib/style.css";
+import {
+  forceSimulation,
+  forceLink,
+  forceManyBody,
+  forceCenter,
+  forceCollide,
+  type Simulation,
+  type SimulationNodeDatum,
+  type SimulationLinkDatum,
+} from "d3-force";
 import { api, type GraphResponse, type TreeEntry } from "@kw/lib/api";
 import { buildResolver } from "@kw/lib/wikiLinks";
 import { titleize } from "@kw/lib/paths";
 import { cn } from "@kw/lib/cn";
 import {
-  colorForGraphCommunity,
   readKiwiGraphTheme,
   type KiwiGraphTheme,
 } from "@kw/lib/kiwiGraphTheme";
 import {
+  communityPalette,
   computePageRank,
-  findShortestPath,
   pagerankToSize,
 } from "@kw/lib/graphAnalytics";
+import Graph from "graphology";
+import louvain from "graphology-communities-louvain";
 import { Button } from "@kw/components/ui/button";
 import { Card } from "@kw/components/ui/card";
 import { Input } from "@kw/components/ui/input";
@@ -63,144 +54,224 @@ type Props = {
   onClose: () => void;
 };
 
-type LayoutKind = "forceatlas2" | "circular" | "random";
+// ── Internal node/link types for the simulation ──────────────────────────────
+
+interface GNode extends SimulationNodeDatum {
+  id: string;
+  label: string;
+  dir: string;
+  tags: string[];
+  community: number;
+  pagerank: number;
+  radius: number;
+  color: string;
+}
+
+interface GLink extends SimulationLinkDatum<GNode> {
+  source: string | GNode;
+  target: string | GNode;
+}
 
 function topDir(path: string): string {
   const i = path.indexOf("/");
   return i < 0 ? "(root)" : path.slice(0, i);
 }
 
-type Built = {
-  graph: Graph;
+// ── Hex color helpers ────────────────────────────────────────────────────────
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+// ── Build graph data from API response ───────────────────────────────────────
+
+type BuiltGraph = {
+  nodes: GNode[];
+  links: GLink[];
   dirs: string[];
   tags: string[];
-  theme: KiwiGraphTheme;
-  pagerank: Map<string, number>;
-  communities: Map<string, number>;
+  communityMap: Map<number, { color: string; count: number; topDir: string }>;
 };
 
-// Build the Graphology instance from the server response plus the file tree.
-function buildGraph(
+function buildGraphData(
   resp: GraphResponse,
   tree: TreeEntry | null,
   theme: KiwiGraphTheme,
-  layout: LayoutKind,
   sizeByPageRank: boolean,
   colorByCommunity: boolean,
-): Built {
+): BuiltGraph {
   const g = new Graph({ type: "undirected", multi: false });
   const resolver = buildResolver(tree);
-
   const tagSet = new Set<string>();
+  const dirSet = new Set<string>();
+
   for (const n of resp.nodes) {
-    g.addNode(n.path, {
-      label: titleize(n.path),
-      path: n.path,
-      dir: topDir(n.path),
-      tags: n.tags || [],
-      size: 4,
-      color: theme.defaultNode,
-    });
+    g.addNode(n.path, {});
+    dirSet.add(topDir(n.path));
     if (n.tags) n.tags.forEach((t) => tagSet.add(t));
   }
-
-  const dirSet = new Set<string>();
-  for (const n of resp.nodes) dirSet.add(topDir(n.path));
 
   for (const e of resp.edges) {
     if (!g.hasNode(e.source)) continue;
     const resolved = resolver(e.target);
-    if (!resolved || !g.hasNode(resolved)) continue;
-    if (resolved === e.source) continue; // skip self-loops
-    const edgeKey = g.hasEdge(e.source, resolved)
-      ? g.edge(e.source, resolved)
-      : g.addEdge(e.source, resolved, { size: 0.8, color: theme.edge });
-    void edgeKey;
+    if (!resolved || !g.hasNode(resolved) || resolved === e.source) continue;
+    if (!g.hasEdge(e.source, resolved)) g.addEdge(e.source, resolved);
   }
 
-  // PageRank computation
   const prScores = computePageRank(g);
   const maxPR = Math.max(...Array.from(prScores.values()), 0);
 
-  // Node sizing — PageRank or degree-based
-  g.forEachNode((node) => {
-    if (sizeByPageRank && maxPR > 0) {
-      const score = prScores.get(node) ?? 0;
-      g.setNodeAttribute(node, "size", pagerankToSize(score, maxPR, 4, 24));
-    } else {
-      const deg = g.degree(node);
-      g.setNodeAttribute(node, "size", Math.max(6, Math.min(22, 6 + Math.sqrt(deg) * 2.5)));
-    }
-  });
-
-  // Community detection + coloring
-  const communityMap = new Map<string, number>();
+  let communities = new Map<string, number>();
   if (g.size > 0) {
-    louvain.assign(g, { nodeCommunityAttribute: "community" });
-    g.forEachNode((node) => {
-      const c = g.getNodeAttribute(node, "community") as number | undefined;
-      const idx = typeof c === "number" ? c : 0;
-      communityMap.set(node, idx);
-      if (colorByCommunity) {
-        g.setNodeAttribute(node, "color", colorForGraphCommunity(idx, theme));
-      }
-    });
+    try {
+      const raw = louvain(g);
+      communities = new Map(
+        Object.entries(raw).map(([k, v]) => [k, v as number]),
+      );
+    } catch {}
   }
 
-  // Layout
-  switch (layout) {
-    case "circular":
-      circular.assign(g, { scale: 100 });
-      break;
-    case "random":
-      random.assign(g, { scale: 200 });
-      break;
-    case "forceatlas2":
-    default:
-      circular.assign(g, { scale: 100 });
-      forceAtlas2.assign(g, {
-        iterations: 200,
-        settings: {
-          gravity: 1,
-          scalingRatio: 10,
-          slowDown: 2,
-          barnesHutOptimize: g.order > 200,
-          strongGravityMode: false,
-        },
+  const communityDirCounts = new Map<
+    number,
+    { color: string; count: number; dirs: Map<string, number> }
+  >();
+
+  const nodes: GNode[] = resp.nodes.map((n) => {
+    const pr = prScores.get(n.path) ?? 0;
+    const comm = communities.get(n.path) ?? 0;
+    const color = communityPalette(comm);
+    const dir = topDir(n.path);
+
+    if (!communityDirCounts.has(comm)) {
+      communityDirCounts.set(comm, {
+        color,
+        count: 0,
+        dirs: new Map(),
       });
-      break;
+    }
+    const cd = communityDirCounts.get(comm)!;
+    cd.count++;
+    cd.dirs.set(dir, (cd.dirs.get(dir) || 0) + 1);
+
+    const radius = sizeByPageRank && maxPR > 0
+      ? pagerankToSize(pr, maxPR, 4, 18)
+      : Math.max(4, Math.min(14, 4 + Math.sqrt(g.hasNode(n.path) ? g.degree(n.path) : 0) * 2));
+
+    const nodeColor = colorByCommunity ? color : (theme.defaultNode || "#7c8a6e");
+
+    return {
+      id: n.path,
+      label: titleize(n.path),
+      dir,
+      tags: n.tags || [],
+      community: comm,
+      pagerank: pr,
+      radius,
+      color: nodeColor,
+    };
+  });
+
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const links: GLink[] = [];
+  const seen = new Set<string>();
+  for (const e of resp.edges) {
+    if (!nodeIds.has(e.source)) continue;
+    const resolved = resolver(e.target);
+    if (!resolved || !nodeIds.has(resolved) || resolved === e.source) continue;
+    const key = [e.source, resolved].sort().join("||");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push({ source: e.source, target: resolved });
+  }
+
+  const communityMap = new Map<
+    number,
+    { color: string; count: number; topDir: string }
+  >();
+  for (const [idx, { color, count, dirs }] of communityDirCounts) {
+    const topDirEntry =
+      Array.from(dirs.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ??
+      "unknown";
+    communityMap.set(idx, { color, count, topDir: topDirEntry });
   }
 
   return {
-    graph: g,
+    nodes,
+    links,
     dirs: Array.from(dirSet).sort(),
     tags: Array.from(tagSet).sort(),
-    theme,
-    pagerank: prScores,
-    communities: communityMap,
+    communityMap,
   };
 }
 
+// ── Shortest path (BFS on adjacency) ─────────────────────────────────────────
+
+function bfsPath(
+  adj: Map<string, Set<string>>,
+  from: string,
+  to: string,
+): string[] {
+  if (from === to) return [from];
+  const visited = new Set<string>([from]);
+  const queue: [string, string[]][] = [[from, [from]]];
+  while (queue.length > 0) {
+    const [node, path] = queue.shift()!;
+    for (const neighbor of adj.get(node) || []) {
+      if (visited.has(neighbor)) continue;
+      visited.add(neighbor);
+      const newPath = [...path, neighbor];
+      if (neighbor === to) return newPath;
+      queue.push([neighbor, newPath]);
+    }
+  }
+  return [];
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Main component
+// ═════════════════════════════════════════════════════════════════════════════
+
 export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const simRef = useRef<Simulation<GNode, GLink> | null>(null);
+  const rafRef = useRef<number>(0);
+  const dataRef = useRef<BuiltGraph | null>(null);
+  const adjRef = useRef<Map<string, Set<string>>>(new Map());
+
   const [resp, setResp] = useState<GraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dirFilter, setDirFilter] = useState<string>("");
-  const [tagFilter, setTagFilter] = useState<string>("");
-  const [query, setQuery] = useState<string>("");
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [htmlClassEpoch, setHtmlClassEpoch] = useState(0);
+  const [dirFilter, setDirFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [query, setQuery] = useState("");
+  const [hovered, setHovered] = useState<GNode | null>(null);
 
-  // New analytics controls
   const [sizeByPageRank, setSizeByPageRank] = useState(true);
   const [colorByCommunity, setColorByCommunity] = useState(true);
-  const [layout, setLayout] = useState<LayoutKind>("forceatlas2");
 
-  // Path finding state
   const [pathFindActive, setPathFindActive] = useState(false);
   const [pathSource, setPathSource] = useState<string | null>(null);
   const [pathTarget, setPathTarget] = useState<string | null>(null);
   const [foundPath, setFoundPath] = useState<string[] | null>(null);
 
+  // Transform & viewport state (stored in refs for perf — no re-renders)
+  const transformRef = useRef({ x: 0, y: 0, scale: 1 });
+  const draggingRef = useRef<{
+    node: GNode | null;
+    pan: boolean;
+    startX: number;
+    startY: number;
+    startTx: number;
+    startTy: number;
+  } | null>(null);
+  const mouseRef = useRef({ x: 0, y: 0 });
+
+  // Fetch graph data
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -217,10 +288,12 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     };
   }, [tree]);
 
+  // Read theme once
+  const themeRef = useRef<KiwiGraphTheme>(readKiwiGraphTheme());
   useEffect(() => {
-    const obs = new MutationObserver(() =>
-      setHtmlClassEpoch((n: number) => n + 1),
-    );
+    const obs = new MutationObserver(() => {
+      themeRef.current = readKiwiGraphTheme();
+    });
     obs.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class"],
@@ -228,22 +301,411 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     return () => obs.disconnect();
   }, []);
 
-  const built = useMemo<Built | null>(() => {
-    if (!resp) return null;
-    return buildGraph(resp, tree, readKiwiGraphTheme(), layout, sizeByPageRank, colorByCommunity);
-  }, [resp, tree, htmlClassEpoch, layout, sizeByPageRank, colorByCommunity]);
+  // ── Core: build graph + simulation + canvas render loop ──────────────────
 
-  // Compute path when source and target are both set
   useEffect(() => {
-    if (!built || !pathSource || !pathTarget) {
+    if (!resp || !containerRef.current) return;
+
+    const data = buildGraphData(resp, tree, themeRef.current, sizeByPageRank, colorByCommunity);
+    dataRef.current = data;
+
+    if (data.nodes.length === 0) return;
+
+    // Build adjacency for path-finding
+    const adj = new Map<string, Set<string>>();
+    for (const n of data.nodes) adj.set(n.id, new Set());
+    for (const l of data.links) {
+      const s = typeof l.source === "string" ? l.source : l.source.id;
+      const t = typeof l.target === "string" ? l.target : l.target.id;
+      adj.get(s)?.add(t);
+      adj.get(t)?.add(s);
+    }
+    adjRef.current = adj;
+
+    // Canvas setup
+    const container = containerRef.current;
+    let canvas = canvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.style.cssText =
+        "position:absolute;inset:0;width:100%;height:100%;display:block;";
+      container.appendChild(canvas);
+      canvasRef.current = canvas;
+    }
+    const ctx = canvas.getContext("2d")!;
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = container.getBoundingClientRect();
+      canvas!.width = rect.width * dpr;
+      canvas!.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+
+    // Center transform
+    const rect = container.getBoundingClientRect();
+    transformRef.current = { x: rect.width / 2, y: rect.height / 2, scale: 1 };
+
+    // d3-force simulation
+    const sim = forceSimulation<GNode>(data.nodes)
+      .force(
+        "link",
+        forceLink<GNode, GLink>(data.links)
+          .id((d) => d.id)
+          .distance(60)
+          .strength(0.4),
+      )
+      .force("charge", forceManyBody().strength(-120).distanceMax(300))
+      .force("center", forceCenter(0, 0))
+      .force(
+        "collide",
+        forceCollide<GNode>()
+          .radius((d) => d.radius + 2)
+          .iterations(2),
+      )
+      .alphaDecay(0.02)
+      .velocityDecay(0.4);
+
+    simRef.current = sim;
+
+    // ── Render loop (Canvas 2D — no WebGL) ────────────────────────────────
+
+    function render() {
+      const w = canvas!.clientWidth;
+      const h = canvas!.clientHeight;
+      const { x: tx, y: ty, scale } = transformRef.current;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.scale(scale, scale);
+
+      const isDark = document.documentElement.classList.contains("dark");
+      const qLower = query.trim().toLowerCase();
+      const pathSet = foundPath ? new Set(foundPath) : null;
+
+      const hoveredNeighbors = new Set<string>();
+      if (hovered) {
+        hoveredNeighbors.add(hovered.id);
+        for (const n of adjRef.current.get(hovered.id) || [])
+          hoveredNeighbors.add(n);
+      }
+
+      // ── Draw edges ───────────────────────────────────────────────────────
+
+      for (const link of data.links) {
+        const s = link.source as GNode;
+        const t = link.target as GNode;
+        const sx = s.x, sy = s.y, tx = t.x, ty = t.y;
+        if (sx == null || sy == null || tx == null || ty == null) continue;
+
+        // Filtering
+        if (dirFilter && s.dir !== dirFilter && t.dir !== dirFilter) continue;
+        if (tagFilter) {
+          if (!s.tags.includes(tagFilter) && !t.tags.includes(tagFilter))
+            continue;
+        }
+
+        let alpha = 0.15;
+        let width = 0.5;
+        let color = isDark ? "rgba(255,255,255," : "rgba(100,100,100,";
+
+        if (pathSet) {
+          const onPath = pathSet.has(s.id) && pathSet.has(t.id);
+          if (onPath) {
+            alpha = 0.9;
+            width = 2.5;
+            color = "rgba(245,158,11,";
+          } else {
+            alpha = 0.04;
+          }
+        } else if (hovered) {
+          const connected =
+            (s.id === hovered.id || t.id === hovered.id);
+          alpha = connected ? 0.6 : 0.04;
+          width = connected ? 1.5 : 0.3;
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = `${color}${alpha})`;
+        ctx.lineWidth = width / scale;
+        ctx.stroke();
+      }
+
+      // ── Draw nodes ───────────────────────────────────────────────────────
+
+      for (const node of data.nodes) {
+        const nx = node.x, ny = node.y;
+        if (nx == null || ny == null) continue;
+
+        // Filtering
+        if (dirFilter && node.dir !== dirFilter) continue;
+        if (tagFilter && !node.tags.includes(tagFilter)) continue;
+
+        const isActive = activePath === node.id;
+        const isHovered = hovered?.id === node.id;
+        const isNeighbor = hoveredNeighbors.has(node.id);
+        const onPath = pathSet?.has(node.id) ?? false;
+        const queryMatch = qLower
+          ? node.id.toLowerCase().includes(qLower) ||
+            node.label.toLowerCase().includes(qLower)
+          : true;
+
+        let nodeAlpha = 1;
+        if (pathSet && !onPath) nodeAlpha = 0.1;
+        else if (hovered && !isNeighbor) nodeAlpha = 0.15;
+        else if (qLower && !queryMatch) nodeAlpha = 0.1;
+
+        const r = node.radius / scale;
+        const [cr, cg, cb] = hexToRgb(node.color);
+        const highlighted = isHovered || isActive || onPath;
+
+        // Layer 1: Outer ambient glow (soft halo) — always present, stronger on highlight
+        const glowRadius = highlighted ? r * 4 : r * 2.2;
+        const glowAlpha = highlighted ? 0.35 * nodeAlpha : 0.12 * nodeAlpha;
+        const glow = ctx.createRadialGradient(
+          nx, ny, r * 0.3,
+          nx, ny, glowRadius,
+        );
+        glow.addColorStop(0, `rgba(${cr},${cg},${cb},${glowAlpha})`);
+        glow.addColorStop(0.5, `rgba(${cr},${cg},${cb},${glowAlpha * 0.4})`);
+        glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+        ctx.beginPath();
+        ctx.arc(nx, ny, glowRadius, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
+
+        // Layer 2: Core disc — soft-edged via gradient (no hard stroke)
+        const core = ctx.createRadialGradient(nx, ny, 0, nx, ny, r);
+        const coreAlpha = nodeAlpha * (highlighted ? 1 : 0.85);
+        core.addColorStop(0, `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 60)},${Math.min(255, cb + 60)},${coreAlpha})`);
+        core.addColorStop(0.6, `rgba(${cr},${cg},${cb},${coreAlpha})`);
+        core.addColorStop(1, `rgba(${cr},${cg},${cb},${coreAlpha * 0.6})`);
+        ctx.beginPath();
+        ctx.arc(nx, ny, r, 0, Math.PI * 2);
+        ctx.fillStyle = core;
+        ctx.fill();
+
+        // Layer 3 (highlight only): Bright center point
+        if (highlighted && nodeAlpha > 0.5) {
+          const bright = ctx.createRadialGradient(nx, ny, 0, nx, ny, r * 0.5);
+          bright.addColorStop(0, `rgba(255,255,255,${isDark ? 0.7 : 0.5})`);
+          bright.addColorStop(1, `rgba(255,255,255,0)`);
+          ctx.beginPath();
+          ctx.arc(nx, ny, r * 0.5, 0, Math.PI * 2);
+          ctx.fillStyle = bright;
+          ctx.fill();
+        }
+
+        // Labels — zoom-adaptive visibility
+        const showLabel =
+          scale > 0.6 ||
+          isHovered ||
+          isActive ||
+          onPath ||
+          (qLower && queryMatch);
+        if (showLabel && nodeAlpha > 0.3) {
+          const fontSize = Math.max(10, 12 / scale);
+          ctx.font = `${highlighted ? "600" : "400"} ${fontSize}px system-ui, -apple-system, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+
+          const labelY = ny + r + 4 / scale;
+          const textAlpha = Math.min(nodeAlpha, scale > 0.6 ? 1 : 0.8);
+
+          // Halo behind text for readability
+          ctx.fillStyle = isDark
+            ? `rgba(0,0,0,${textAlpha * 0.6})`
+            : `rgba(255,255,255,${textAlpha * 0.6})`;
+          ctx.fillText(node.label, nx + 0.5 / scale, labelY + 0.5 / scale);
+
+          ctx.fillStyle = isDark
+            ? `rgba(220,220,220,${textAlpha})`
+            : `rgba(40,40,40,${textAlpha})`;
+          ctx.fillText(node.label, nx, labelY);
+        }
+      }
+
+      ctx.restore();
+      rafRef.current = requestAnimationFrame(render);
+    }
+
+    // Start the render loop
+    rafRef.current = requestAnimationFrame(render);
+
+    // Stop simulation after it cools
+    sim.on("end", () => {});
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      sim.stop();
+      ro.disconnect();
+    };
+  }, [resp, tree, dirFilter, tagFilter, query, hovered, activePath, foundPath, pathFindActive, sizeByPageRank, colorByCommunity]);
+
+  // ── Mouse interactions ──────────────────────────────────────────────────────
+
+  const screenToWorld = useCallback(
+    (sx: number, sy: number): [number, number] => {
+      const { x: tx, y: ty, scale } = transformRef.current;
+      return [(sx - tx) / scale, (sy - ty) / scale];
+    },
+    [],
+  );
+
+  const findNodeAt = useCallback(
+    (wx: number, wy: number): GNode | null => {
+      if (!dataRef.current) return null;
+      const { scale } = transformRef.current;
+      for (let i = dataRef.current.nodes.length - 1; i >= 0; i--) {
+        const n = dataRef.current.nodes[i]!;
+        if (n.x == null || n.y == null) continue;
+        // Filtering: skip hidden nodes
+        if (dirFilter && n.dir !== dirFilter) continue;
+        if (tagFilter && !n.tags.includes(tagFilter)) continue;
+        const dx = wx - n.x;
+        const dy = wy - n.y;
+        const r = n.radius / scale + 4 / scale;
+        if (dx * dx + dy * dy < r * r) return n;
+      }
+      return null;
+    },
+    [dirFilter, tagFilter],
+  );
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const [wx, wy] = screenToWorld(sx, sy);
+      const node = findNodeAt(wx, wy);
+
+      if (node) {
+        draggingRef.current = {
+          node,
+          pan: false,
+          startX: sx,
+          startY: sy,
+          startTx: 0,
+          startTy: 0,
+        };
+        node.fx = node.x;
+        node.fy = node.y;
+        simRef.current?.alphaTarget(0.3).restart();
+      } else {
+        draggingRef.current = {
+          node: null,
+          pan: true,
+          startX: sx,
+          startY: sy,
+          startTx: transformRef.current.x,
+          startTy: transformRef.current.y,
+        };
+      }
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [screenToWorld, findNodeAt],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      mouseRef.current = { x: sx, y: sy };
+
+      const drag = draggingRef.current;
+      if (drag) {
+        if (drag.pan) {
+          transformRef.current.x = drag.startTx + (sx - drag.startX);
+          transformRef.current.y = drag.startTy + (sy - drag.startY);
+        } else if (drag.node) {
+          const [wx, wy] = screenToWorld(sx, sy);
+          drag.node.fx = wx;
+          drag.node.fy = wy;
+        }
+      } else {
+        const [wx, wy] = screenToWorld(sx, sy);
+        const node = findNodeAt(wx, wy);
+        setHovered(node);
+        if (containerRef.current) {
+          containerRef.current.style.cursor = node ? "pointer" : "grab";
+        }
+      }
+    },
+    [screenToWorld, findNodeAt],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const drag = draggingRef.current;
+      if (drag?.node) {
+        const dx = Math.abs(
+          e.clientX -
+            (containerRef.current?.getBoundingClientRect().left ?? 0) -
+            drag.startX,
+        );
+        const dy = Math.abs(
+          e.clientY -
+            (containerRef.current?.getBoundingClientRect().top ?? 0) -
+            drag.startY,
+        );
+        // Treat as click if barely moved
+        if (dx < 4 && dy < 4) {
+          if (pathFindActive) {
+            if (!pathSource) setPathSource(drag.node.id);
+            else if (!pathTarget) setPathTarget(drag.node.id);
+            else {
+              setPathSource(drag.node.id);
+              setPathTarget(null);
+              setFoundPath(null);
+            }
+          } else {
+            onNavigate(drag.node.id);
+          }
+        }
+        drag.node.fx = null;
+        drag.node.fy = null;
+        simRef.current?.alphaTarget(0);
+      }
+      draggingRef.current = null;
+    },
+    [onNavigate, pathFindActive, pathSource, pathTarget],
+  );
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+    const t = transformRef.current;
+    const newScale = Math.max(0.1, Math.min(8, t.scale * factor));
+    const ratio = newScale / t.scale;
+    t.x = mx - (mx - t.x) * ratio;
+    t.y = my - (my - t.y) * ratio;
+    t.scale = newScale;
+  }, []);
+
+  // Path finding
+  useEffect(() => {
+    if (!pathSource || !pathTarget) {
       setFoundPath(null);
       return;
     }
-    const path = findShortestPath(built.graph, pathSource, pathTarget);
+    const path = bfsPath(adjRef.current, pathSource, pathTarget);
     setFoundPath(path.length > 0 ? path : null);
-  }, [built, pathSource, pathTarget]);
+  }, [pathSource, pathTarget]);
 
-  // Clear path finding state when deactivated
   useEffect(() => {
     if (!pathFindActive) {
       setPathSource(null);
@@ -252,38 +714,23 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     }
   }, [pathFindActive]);
 
-  function handlePathNodeClick(node: string) {
-    if (!pathFindActive) return false;
-    if (!pathSource) {
-      setPathSource(node);
-      return true;
-    }
-    if (!pathTarget) {
-      setPathTarget(node);
-      return true;
-    }
-    // Both already set — reset and start over
-    setPathSource(node);
-    setPathTarget(null);
-    setFoundPath(null);
-    return true;
-  }
+  const built = dataRef.current;
 
   return (
     <div className="h-full w-full flex flex-col relative">
       {/* ── Toolbar ── */}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 border-b border-border bg-card">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 border-b border-border bg-card shrink-0">
         <Button variant="outline" size="sm" onClick={onClose}>
-          <ArrowLeft className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Back</span>
+          <ArrowLeft className="h-3.5 w-3.5" />{" "}
+          <span className="hidden sm:inline">Back</span>
         </Button>
         <div className="font-semibold text-sm">Knowledge graph</div>
         <div className="text-xs text-muted-foreground hidden sm:block">
           {built
-            ? `${built.graph.order} pages · ${built.graph.size} links`
+            ? `${built.nodes.length} pages · ${built.links.length} links`
             : null}
         </div>
         <div className="ml-auto flex items-center gap-2 flex-wrap">
-          {/* Search / highlight */}
           <div className="relative">
             <SearchIcon className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <Input
@@ -294,8 +741,6 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
               className="h-8 pl-7 w-32 sm:w-48 text-sm"
             />
           </div>
-
-          {/* Directory filter */}
           {built && built.dirs.length > 1 && (
             <Select
               value={dirFilter || "__all__"}
@@ -314,8 +759,6 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
               </SelectContent>
             </Select>
           )}
-
-          {/* Tag filter */}
           {built && built.tags.length > 0 && (
             <Select
               value={tagFilter || "__all__"}
@@ -335,26 +778,11 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
               </SelectContent>
             </Select>
           )}
-
-          {/* Layout selector */}
-          <Select
-            value={layout}
-            onValueChange={(v) => setLayout(v as LayoutKind)}
-          >
-            <SelectTrigger className="h-8 w-32 text-sm">
-              <SelectValue placeholder="Layout" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="forceatlas2">ForceAtlas2</SelectItem>
-              <SelectItem value="circular">Circular</SelectItem>
-              <SelectItem value="random">Random</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
-      {/* ── Analytics toggles ── */}
-      <div className="flex flex-wrap items-center gap-2 px-3 sm:px-6 py-1.5 border-b border-border/50 bg-card/50 text-xs">
+      {/* ── Analytics bar ── */}
+      <div className="flex flex-wrap items-center gap-2 px-3 sm:px-6 py-1.5 border-b border-border/50 bg-card/50 text-xs shrink-0">
         <label className="flex items-center gap-1.5 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -403,347 +831,112 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         )}
       </div>
 
-      {/* ── Graph canvas ── */}
-      <div className="flex-1 relative">
+      {/* ── Canvas area ── */}
+      <div className="flex-1 relative min-h-0">
         {error && (
-          <div className="absolute inset-0 grid place-items-center text-sm text-destructive font-mono">
+          <div className="absolute inset-0 grid place-items-center text-sm text-destructive font-mono z-10">
             {error}
           </div>
         )}
-        {!error && !built && (
-          <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">
+        {!error && !resp && (
+          <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground z-10">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Building graph...
             </div>
           </div>
         )}
-        {built && built.graph.order === 0 && (
-          <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">
+        {resp && built && built.nodes.length === 0 && (
+          <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground z-10">
             No pages yet.
           </div>
         )}
-        {built && built.graph.order > 0 && (
-          <SigmaContainer
-            key={`${resp ? resp.nodes.length : 0}-${htmlClassEpoch}-${layout}`}
-            graph={built.graph as any}
-            className="!bg-background"
-            style={{ height: "100%", width: "100%" }}
-            settings={{
-              renderLabels: true,
-              labelColor: { attribute: "color" },
-              labelSize: 12,
-              labelWeight: "500",
-              labelDensity: 0.7,
-              labelGridCellSize: 80,
-              defaultEdgeColor: built.theme.edge,
-              zIndex: true,
-            }}
-          >
-            <GraphInteractions
-              onNavigate={onNavigate}
-              hovered={hovered}
-              setHovered={setHovered}
-              query={query.trim().toLowerCase()}
-              dirFilter={dirFilter}
-              tagFilter={tagFilter}
-              activePath={activePath || undefined}
-              colors={built.theme}
-              foundPath={foundPath}
-              pathFindActive={pathFindActive}
-              onPathNodeClick={handlePathNodeClick}
-            />
-          </SigmaContainer>
-        )}
 
-        {/* ── Hover tooltip (enhanced) ── */}
-        {hovered && built && built.graph.hasNode(hovered) && (
-          <Card className="absolute bottom-3 left-3 px-3 py-2 text-xs pointer-events-none max-w-xs">
-            <div className="font-medium">
-              {built.graph.getNodeAttribute(hovered, "label") as string}
+        <div
+          ref={containerRef}
+          className="absolute inset-0"
+          style={{ cursor: "grab", touchAction: "none" }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onWheel={handleWheel}
+        />
+
+        {/* Hover tooltip */}
+        {hovered && (
+          <Card
+            className="absolute bottom-3 left-3 px-3 py-2 text-xs pointer-events-none max-w-xs z-20"
+          >
+            <div className="font-medium">{hovered.label}</div>
+            <div className="text-muted-foreground font-mono text-[10px]">
+              {hovered.id}
             </div>
-            <div className="text-muted-foreground font-mono text-[10px]">{hovered}</div>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground mt-1">
               <span>
-                {built.graph.degree(hovered)} connection
-                {built.graph.degree(hovered) === 1 ? "" : "s"}
+                {adjRef.current.get(hovered.id)?.size ?? 0} connection
+                {(adjRef.current.get(hovered.id)?.size ?? 0) === 1 ? "" : "s"}
               </span>
-              {built.pagerank.has(hovered) && (
-                <span>PR: {(built.pagerank.get(hovered)! * 100).toFixed(2)}%</span>
-              )}
-              {built.communities.has(hovered) && (
-                <span>Community: {built.communities.get(hovered)}</span>
-              )}
+              <span>
+                PR: {(hovered.pagerank * 100).toFixed(2)}%
+              </span>
+              <span>Community: {hovered.community}</span>
             </div>
-            {(() => {
-              const tags = (built.graph.getNodeAttribute(hovered, "tags") as string[]) || [];
-              if (tags.length === 0) return null;
-              return (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {tags.map((t) => (
-                    <span key={t} className="bg-muted px-1 rounded text-[10px]">{t}</span>
-                  ))}
-                </div>
-              );
-            })()}
+            {hovered.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {hovered.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="bg-muted px-1 rounded text-[10px]"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
           </Card>
         )}
 
-        {/* ── Path length overlay ── */}
+        {/* Path overlay */}
         {foundPath && foundPath.length > 1 && (
-          <Card className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 text-xs pointer-events-none bg-primary text-primary-foreground">
-            Shortest path: {foundPath.length - 1} hop{foundPath.length - 1 !== 1 ? "s" : ""} ({foundPath.map(n => titleize(n)).join(" -> ")})
+          <Card className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 text-xs pointer-events-none bg-primary text-primary-foreground z-20">
+            Shortest path: {foundPath.length - 1} hop
+            {foundPath.length - 1 !== 1 ? "s" : ""} (
+            {foundPath.map((n) => titleize(n)).join(" → ")})
           </Card>
         )}
 
-        {built && built.graph.order > 0 && (
-          <GraphLegend graph={built.graph} theme={built.theme} />
+        {/* Community legend */}
+        {built && built.communityMap.size > 1 && (
+          <Card className="absolute top-3 right-3 px-3 py-2 text-xs z-20">
+            <div className="text-muted-foreground mb-1.5 font-medium">
+              Communities
+            </div>
+            <div className="space-y-1">
+              {Array.from(built.communityMap.entries())
+                .sort((a, b) => b[1].count - a[1].count)
+                .map(([idx, { color, count, topDir }]) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ background: color }}
+                    />
+                    <span className="text-muted-foreground">
+                      {topDir} ({count})
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </Card>
         )}
+
         <div
           className={cn(
             "absolute bottom-3 right-3 text-[10px] text-muted-foreground font-mono",
-            "pointer-events-none",
+            "pointer-events-none z-20",
           )}
         >
           drag to pan · scroll to zoom
         </div>
       </div>
     </div>
-  );
-}
-
-// GraphInteractions runs inside <SigmaContainer> so it can use the sigma
-// hooks. It owns: click->navigate, hover highlighting, query-based dimming,
-// the directory filter, and path highlighting.
-function GraphInteractions({
-  onNavigate,
-  hovered,
-  setHovered,
-  query,
-  dirFilter,
-  tagFilter,
-  activePath,
-  colors,
-  foundPath,
-  pathFindActive,
-  onPathNodeClick,
-}: {
-  onNavigate: (path: string) => void;
-  hovered: string | null;
-  setHovered: (s: string | null) => void;
-  query: string;
-  dirFilter: string;
-  tagFilter: string;
-  activePath?: string;
-  colors: KiwiGraphTheme;
-  foundPath: string[] | null;
-  pathFindActive: boolean;
-  onPathNodeClick: (node: string) => boolean;
-}) {
-  const sigma = useSigma();
-  const registerEvents = useRegisterEvents();
-  const setSettings = useSetSettings();
-  const loadGraph = useLoadGraph();
-  const loadedRef = useRef(false);
-
-  useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-    const g = sigma.getGraph();
-    if (g) loadGraph(g as any);
-  }, [loadGraph, sigma]);
-
-  useEffect(() => {
-    registerEvents({
-      clickNode: (e) => {
-        const node = e.node;
-        if (pathFindActive) {
-          onPathNodeClick(node);
-          return;
-        }
-        onNavigate(node);
-      },
-      enterNode: (e) => setHovered(e.node),
-      leaveNode: () => setHovered(null),
-    });
-  }, [registerEvents, onNavigate, setHovered, pathFindActive, onPathNodeClick]);
-
-  useEffect(() => {
-    const graph = sigma.getGraph();
-    const neighbors = new Set<string>();
-    if (hovered && graph.hasNode(hovered)) {
-      neighbors.add(hovered);
-      graph.forEachNeighbor(hovered, (n: string) => neighbors.add(n));
-    }
-
-    const pathSet = foundPath ? new Set(foundPath) : null;
-    // Build set of edges on the found path
-    const pathEdges = new Set<string>();
-    if (foundPath && foundPath.length > 1) {
-      for (let i = 0; i < foundPath.length - 1; i++) {
-        const a = foundPath[i]!;
-        const b = foundPath[i + 1]!;
-        if (graph.hasEdge(a, b)) pathEdges.add(graph.edge(a, b)!);
-        if (graph.hasEdge(b, a)) pathEdges.add(graph.edge(b, a)!);
-      }
-    }
-
-    setSettings({
-      nodeReducer: (node, data) => {
-        const out: any = { ...data };
-        const path = (data as any).path as string;
-        const dir = (data as any).dir as string;
-        const label = ((data as any).label as string) || "";
-        const tags = ((data as any).tags as string[]) || [];
-        const tagOut = tagFilter && !tags.includes(tagFilter);
-        const filteredOut = (dirFilter && dir !== dirFilter) || tagOut;
-        const queryMatch = query
-          ? path.toLowerCase().includes(query) || label.toLowerCase().includes(query)
-          : true;
-        if (filteredOut) {
-          out.hidden = true;
-          return out;
-        }
-        if (activePath && node === activePath) {
-          out.size = Math.max((out.size as number) || 6, 10);
-          out.zIndex = 3;
-          out.forceLabel = true;
-          out.borderColor = "#ffffff";
-          out.borderSize = 2;
-        }
-
-        // Path highlighting takes precedence over hover/search
-        if (pathSet) {
-          if (pathSet.has(node)) {
-            out.zIndex = 3;
-            out.forceLabel = true;
-            out.size = Math.max((out.size as number) || 6, 12);
-          } else {
-            out.color = colors.nodeDim;
-            out.label = "";
-            out.zIndex = 0;
-          }
-          return out;
-        }
-
-        if (hovered) {
-          if (!neighbors.has(node)) {
-            if (node !== activePath) {
-              out.color = colors.nodeDim;
-              out.label = "";
-              out.zIndex = 0;
-            }
-          } else {
-            out.zIndex = 2;
-            out.forceLabel = true;
-          }
-        } else if (query) {
-          if (!queryMatch) {
-            out.color = colors.nodeDim;
-            out.label = "";
-          } else {
-            out.forceLabel = true;
-            out.zIndex = 2;
-          }
-        }
-        return out;
-      },
-      edgeReducer: (edge, data) => {
-        const out: any = { ...data };
-        const g = sigma.getGraph();
-        const [s, t] = g.extremities(edge);
-        if (dirFilter) {
-          const sDir = g.getNodeAttribute(s, "dir") as string;
-          const tDir = g.getNodeAttribute(t, "dir") as string;
-          if (sDir !== dirFilter && tDir !== dirFilter) {
-            out.hidden = true;
-            return out;
-          }
-        }
-        if (tagFilter) {
-          const sTags = (g.getNodeAttribute(s, "tags") as string[]) || [];
-          const tTags = (g.getNodeAttribute(t, "tags") as string[]) || [];
-          if (!sTags.includes(tagFilter) && !tTags.includes(tagFilter)) {
-            out.hidden = true;
-            return out;
-          }
-        }
-
-        // Path highlighting
-        if (pathSet) {
-          if (pathEdges.has(edge)) {
-            out.color = "#f59e0b"; // amber highlight for path edges
-            out.size = 3;
-            out.zIndex = 2;
-          } else {
-            out.color = colors.edgeGhost;
-            out.size = 0.2;
-          }
-          return out;
-        }
-
-        if (hovered) {
-          if (s !== hovered && t !== hovered) {
-            out.color = colors.edgeGhost;
-            out.size = 0.3;
-          } else {
-            out.color = colors.edgeStrong;
-            out.size = 1.5;
-            out.zIndex = 1;
-          }
-        }
-        return out;
-      },
-    });
-
-    sigma.refresh();
-  }, [sigma, setSettings, hovered, query, dirFilter, tagFilter, activePath, colors, foundPath, pathFindActive]);
-
-  return null;
-}
-
-function GraphLegend({ graph, theme }: { graph: Graph; theme: KiwiGraphTheme }) {
-  const communities = new Map<number, { color: string; count: number; dirs: Map<string, number> }>();
-  graph.forEachNode((_, attrs) => {
-    const c = (attrs as any).community as number | undefined;
-    if (c == null) return;
-    const dir = (attrs as any).dir as string || "(root)";
-    const existing = communities.get(c);
-    if (existing) {
-      existing.count++;
-      existing.dirs.set(dir, (existing.dirs.get(dir) || 0) + 1);
-    } else {
-      const dirs = new Map<string, number>();
-      dirs.set(dir, 1);
-      communities.set(c, {
-        color: colorForGraphCommunity(c, theme),
-        count: 1,
-        dirs,
-      });
-    }
-  });
-  if (communities.size <= 1) return null;
-
-  const sorted = Array.from(communities.entries()).sort((a, b) => b[1].count - a[1].count);
-
-  return (
-    <Card className="absolute top-3 right-3 px-3 py-2 text-xs">
-      <div className="text-muted-foreground mb-1.5 font-medium">Communities</div>
-      <div className="space-y-1">
-        {sorted.map(([idx, { color, count, dirs }]) => {
-          const topDirEntry = Array.from(dirs.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "unknown";
-          return (
-            <div key={idx} className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full shrink-0"
-                style={{ background: color }}
-              />
-              <span className="text-muted-foreground">
-                {topDirEntry} ({count})
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
   );
 }

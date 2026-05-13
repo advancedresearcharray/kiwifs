@@ -28,6 +28,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/memory"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/kiwifs/kiwifs/internal/search"
+	"github.com/kiwifs/kiwifs/internal/workflow"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/kiwifs/kiwifs/internal/tracing"
 	"github.com/kiwifs/kiwifs/internal/vectorstore"
@@ -1914,6 +1915,8 @@ func (b *LocalBackend) Timeline(ctx context.Context, limit, offset int, actor, e
 		return nil, err
 	}
 
+	total := len(events)
+
 	// Apply offset and limit
 	if offset >= len(events) {
 		events = []TimelineEvent{}
@@ -1924,7 +1927,7 @@ func (b *LocalBackend) Timeline(ctx context.Context, limit, offset int, actor, e
 		}
 	}
 
-	return &TimelineResult{Events: events}, nil
+	return &TimelineResult{Events: events, Total: total}, nil
 }
 
 func (b *LocalBackend) parseTimelineLog(output, actorFilter, typeFilter, pathPrefix string) ([]TimelineEvent, error) {
@@ -2094,6 +2097,64 @@ func (b *LocalBackend) ViewsSave(ctx context.Context, view ViewInfo) error {
 	return nil
 }
 
+func (b *LocalBackend) ViewsDelete(_ context.Context, name string) error {
+	if err := b.init(); err != nil {
+		return err
+	}
+
+	viewsDir := filepath.Join(b.root, ".kiwi", "views")
+	path := filepath.Join(viewsDir, name+".json")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete view: %w", err)
+	}
+	return nil
+}
+
+func (b *LocalBackend) Feed(ctx context.Context, limit int) (json.RawMessage, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Fetch recent timeline events and convert to feed entries
+	result, err := b.Timeline(ctx, limit, 0, "", "write", "")
+	if err != nil {
+		return nil, err
+	}
+
+	type feedEntry struct {
+		Path      string `json:"path"`
+		Title     string `json:"title"`
+		Timestamp string `json:"timestamp"`
+		Actor     string `json:"actor"`
+		Message   string `json:"message"`
+	}
+
+	entries := make([]feedEntry, 0, len(result.Events))
+	seen := make(map[string]bool)
+	for _, e := range result.Events {
+		if seen[e.Path] {
+			continue
+		}
+		seen[e.Path] = true
+		title := strings.TrimSuffix(filepath.Base(e.Path), filepath.Ext(e.Path))
+		entries = append(entries, feedEntry{
+			Path:      e.Path,
+			Title:     title,
+			Timestamp: e.Timestamp,
+			Actor:     e.Actor,
+			Message:   e.Message,
+		})
+	}
+
+	return json.Marshal(map[string]any{"items": entries, "total": len(entries)})
+}
+
 func (b *LocalBackend) ViewsExecute(ctx context.Context, name string, limit, offset int) (*QueryResult, error) {
 	if err := b.init(); err != nil {
 		return nil, err
@@ -2208,4 +2269,262 @@ func (b *LocalBackend) CanvasWrite(ctx context.Context, path, content, actor str
 		return "", err
 	}
 	return res.ETag, nil
+}
+
+func (b *LocalBackend) WorkflowList(_ context.Context) ([]WorkflowDef, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	workflows, err := workflow.Load(b.root)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]WorkflowDef, 0, len(workflows))
+	for _, w := range workflows {
+		result = append(result, workflowToMCP(w))
+	}
+	return result, nil
+}
+
+func (b *LocalBackend) WorkflowGet(_ context.Context, name string) (*WorkflowDef, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	w, err := workflow.Get(b.root, name)
+	if err != nil {
+		return nil, err
+	}
+	def := workflowToMCP(w)
+	return &def, nil
+}
+
+func (b *LocalBackend) WorkflowSave(_ context.Context, w WorkflowDef) error {
+	if err := b.init(); err != nil {
+		return err
+	}
+	return workflow.Save(b.root, mcpToWorkflow(w))
+}
+
+func (b *LocalBackend) WorkflowAdvance(ctx context.Context, path, targetState, actor string) (*WorkflowAdvanceResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+	if actor == "" {
+		actor = "mcp-agent"
+	}
+
+	// Read current page
+	content, _, err := b.ReadFile(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	fm, err := markdown.Frontmatter([]byte(content))
+	if err != nil || fm == nil {
+		return nil, fmt.Errorf("page has no frontmatter")
+	}
+
+	wfName, _ := fm["workflow"].(string)
+	currentState, _ := fm["state"].(string)
+	if wfName == "" {
+		return nil, fmt.Errorf("page has no 'workflow' field")
+	}
+	if currentState == "" {
+		return nil, fmt.Errorf("page has no 'state' field")
+	}
+
+	w, err := workflow.Get(b.root, wfName)
+	if err != nil {
+		return nil, fmt.Errorf("workflow %q not found: %w", wfName, err)
+	}
+
+	if err := workflow.ValidateTransition(w, currentState, targetState); err != nil {
+		return nil, err
+	}
+
+	// Update frontmatter
+	fmRaw, body, err := markdown.SplitFrontmatter([]byte(content))
+	if err != nil || len(fmRaw) == 0 {
+		return nil, fmt.Errorf("cannot split frontmatter")
+	}
+	fm["state"] = targetState
+	newFM, err := yamlMarshal(fm)
+	if err != nil {
+		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("---\n")
+	buf.Write(newFM)
+	buf.WriteString("---\n")
+	buf.Write(body)
+
+	etag, err := b.WriteFile(ctx, path, buf.String(), actor, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return &WorkflowAdvanceResult{
+		Path:      path,
+		FromState: currentState,
+		ToState:   targetState,
+		ETag:      etag,
+	}, nil
+}
+
+func (b *LocalBackend) WorkflowBoard(ctx context.Context, workflowName string) (*WorkflowBoardResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	w, err := workflow.Get(b.root, workflowName)
+	if err != nil {
+		return nil, err
+	}
+
+	board := make(map[string][]map[string]any)
+	for _, s := range w.States {
+		board[s.Name] = []map[string]any{}
+	}
+
+	tree, err := b.Tree(ctx, "/")
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse tree to get file paths, then check each markdown file
+	var allPaths []string
+	extractPaths(tree, &allPaths)
+
+	for _, p := range allPaths {
+		if !strings.HasSuffix(p, ".md") {
+			continue
+		}
+		content, _, err := b.ReadFile(ctx, p)
+		if err != nil {
+			continue
+		}
+		fm, err := markdown.Frontmatter([]byte(content))
+		if err != nil || fm == nil {
+			continue
+		}
+		pageWF, _ := fm["workflow"].(string)
+		pageState, _ := fm["state"].(string)
+		if pageWF != workflowName || pageState == "" {
+			continue
+		}
+		entry := map[string]any{
+			"path":  p,
+			"state": pageState,
+		}
+		if title, ok := fm["title"].(string); ok {
+			entry["title"] = title
+		}
+		if priority, ok := fm["priority"]; ok {
+			entry["priority"] = priority
+		}
+		board[pageState] = append(board[pageState], entry)
+	}
+
+	wfDef := workflowToMCP(w)
+	return &WorkflowBoardResult{
+		Workflow: wfDef,
+		Board:   board,
+	}, nil
+}
+
+// extractPaths walks a tree JSON and collects all file paths.
+func extractPaths(tree json.RawMessage, paths *[]string) {
+	var root struct {
+		Children []struct {
+			Name     string          `json:"name"`
+			Path     string          `json:"path"`
+			IsDir    bool            `json:"isDir"`
+			Children json.RawMessage `json:"children"`
+		} `json:"children"`
+	}
+	if err := json.Unmarshal(tree, &root); err != nil {
+		return
+	}
+	for _, c := range root.Children {
+		if c.IsDir && len(c.Children) > 0 {
+			extractPaths(c.Children, paths)
+		} else if !c.IsDir {
+			*paths = append(*paths, c.Path)
+		}
+	}
+}
+
+func workflowToMCP(w workflow.Workflow) WorkflowDef {
+	def := WorkflowDef{Name: w.Name}
+	for _, s := range w.States {
+		def.States = append(def.States, WorkflowState{
+			Name: s.Name, Color: s.Color, Terminal: s.Terminal,
+		})
+	}
+	for _, t := range w.Transitions {
+		def.Transitions = append(def.Transitions, WorkflowTransition{
+			From: t.From, To: t.To, RequiredRole: t.RequiredRole,
+		})
+	}
+	return def
+}
+
+func mcpToWorkflow(def WorkflowDef) workflow.Workflow {
+	w := workflow.Workflow{Name: def.Name}
+	for _, s := range def.States {
+		w.States = append(w.States, workflow.State{
+			Name: s.Name, Color: s.Color, Terminal: s.Terminal,
+		})
+	}
+	for _, t := range def.Transitions {
+		w.Transitions = append(w.Transitions, workflow.Transition{
+			From: t.From, To: t.To, RequiredRole: t.RequiredRole,
+		})
+	}
+	return w
+}
+
+// yamlMarshal is a thin wrapper to serialize a map to YAML bytes.
+func yamlMarshal(m map[string]any) ([]byte, error) {
+	// Use gopkg.in/yaml.v3 via encoding round-trip
+	// Since local.go doesn't import yaml.v3, we use JSON as intermediary
+	// which is safe for simple key-value frontmatter.
+	jdata, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	// Convert JSON to a compact YAML-like format: "key: value\n"
+	var parsed map[string]any
+	if err := json.Unmarshal(jdata, &parsed); err != nil {
+		return nil, err
+	}
+
+	var buf strings.Builder
+	keys := make([]string, 0, len(parsed))
+	for k := range parsed {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := parsed[k]
+		switch val := v.(type) {
+		case string:
+			buf.WriteString(k + ": " + val + "\n")
+		case float64:
+			if val == float64(int(val)) {
+				buf.WriteString(fmt.Sprintf("%s: %d\n", k, int(val)))
+			} else {
+				buf.WriteString(fmt.Sprintf("%s: %g\n", k, val))
+			}
+		case bool:
+			buf.WriteString(fmt.Sprintf("%s: %t\n", k, val))
+		case nil:
+			buf.WriteString(k + ":\n")
+		default:
+			jv, _ := json.Marshal(val)
+			buf.WriteString(k + ": " + string(jv) + "\n")
+		}
+	}
+	return []byte(buf.String()), nil
 }

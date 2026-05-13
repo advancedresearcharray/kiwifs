@@ -24,7 +24,6 @@ export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
   void _onNavigate; // Reserved for future page-shape double-click navigation
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [initialCanvas, setInitialCanvas] = useState<JSONCanvas | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -37,7 +36,6 @@ export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
       return;
     }
     setLoading(true);
-    setError(null);
     api
       .getCanvas(path)
       .then((data) => {
@@ -47,8 +45,8 @@ export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
         };
         setInitialCanvas(canvas);
       })
-      .catch((e) => {
-        setError(String(e));
+      .catch(() => {
+        // 404 or any error: start with a blank canvas (will be created on first save)
         setInitialCanvas({ nodes: [], edges: [] });
       })
       .finally(() => setLoading(false));
@@ -193,15 +191,6 @@ export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
           <div className="absolute inset-0 grid place-items-center text-muted-foreground">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading canvas...
-            </div>
-          </div>
-        ) : error ? (
-          <div className="absolute inset-0 grid place-items-center">
-            <div className="text-center">
-              <p className="text-sm text-destructive font-mono">{error}</p>
-              <p className="text-xs text-muted-foreground mt-2">
-                Starting with a blank canvas instead.
-              </p>
             </div>
           </div>
         ) : (
