@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.15.0](https://github.com/kiwifs/kiwifs/compare/v0.14.1...v0.15.0) (2026-05-13)
+
+
+### Features
+
+* rebase backup branch before push ([bb825ed](https://github.com/kiwifs/kiwifs/commit/bb825ed3309a9f68ec572e6d372393acee258433))
+* rebase backup branch before push ([0564cc6](https://github.com/kiwifs/kiwifs/commit/0564cc6ed53bff104c21bd707a5422a8636fef53))
+* **ui:** add Mermaid diagram zoom controls ([92b5b8a](https://github.com/kiwifs/kiwifs/commit/92b5b8af181a5de02c17c37f750f25bbecc7db23))
+* **ui:** add Mermaid diagram zoom controls ([39badf1](https://github.com/kiwifs/kiwifs/commit/39badf1fcafd7feff11924521836780df95ca360))
+
+
+### Bug Fixes
+
+* **api:** avoid duplicate Atom XML declaration ([cf0dcbb](https://github.com/kiwifs/kiwifs/commit/cf0dcbb3e4eebbc76840b7910a1884bc6d97cdac))
+* **api:** avoid duplicate Atom XML declaration ([dc3349a](https://github.com/kiwifs/kiwifs/commit/dc3349a979b7c042a5165ba33ded05a2da0f4158))
+
 ## [0.14.1](https://github.com/kiwifs/kiwifs/compare/v0.14.0...v0.14.1) (2026-05-13)
 
 
