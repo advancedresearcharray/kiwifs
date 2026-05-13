@@ -26,14 +26,12 @@ import { buildResolver } from "@kw/lib/wikiLinks";
 import { titleize } from "@kw/lib/paths";
 import { cn } from "@kw/lib/cn";
 import {
-  colorForGraphCommunity,
   readKiwiGraphTheme,
   type KiwiGraphTheme,
 } from "@kw/lib/kiwiGraphTheme";
 import {
   communityPalette,
   computePageRank,
-  findShortestPath,
   pagerankToSize,
 } from "@kw/lib/graphAnalytics";
 import Graph from "graphology";
@@ -88,10 +86,6 @@ function hexToRgb(hex: string): [number, number, number] {
     parseInt(h.slice(2, 4), 16),
     parseInt(h.slice(4, 6), 16),
   ];
-}
-
-function hexToNumber(hex: string): number {
-  return parseInt(hex.replace("#", ""), 16);
 }
 
 // ── Build graph data from API response ───────────────────────────────────────
@@ -244,7 +238,7 @@ function bfsPath(
 
 export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const simRef = useRef<Simulation<GNode, GLink> | null>(null);
   const rafRef = useRef<number>(0);
   const dataRef = useRef<BuiltGraph | null>(null);
@@ -405,13 +399,11 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       for (const link of data.links) {
         const s = link.source as GNode;
         const t = link.target as GNode;
-        if (s.x == null || t.x == null) continue;
-
-        const sDir = s.dir;
-        const tDir = t.dir;
+        const sx = s.x, sy = s.y, tx = t.x, ty = t.y;
+        if (sx == null || sy == null || tx == null || ty == null) continue;
 
         // Filtering
-        if (dirFilter && sDir !== dirFilter && tDir !== dirFilter) continue;
+        if (dirFilter && s.dir !== dirFilter && t.dir !== dirFilter) continue;
         if (tagFilter) {
           if (!s.tags.includes(tagFilter) && !t.tags.includes(tagFilter))
             continue;
@@ -438,8 +430,8 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         }
 
         ctx.beginPath();
-        ctx.moveTo(s.x, s.y);
-        ctx.lineTo(t.x, t.y);
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(tx, ty);
         ctx.strokeStyle = `${color}${alpha})`;
         ctx.lineWidth = width / scale;
         ctx.stroke();
@@ -448,7 +440,8 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       // ── Draw nodes ───────────────────────────────────────────────────────
 
       for (const node of data.nodes) {
-        if (node.x == null || node.y == null) continue;
+        const nx = node.x, ny = node.y;
+        if (nx == null || ny == null) continue;
 
         // Filtering
         if (dirFilter && node.dir !== dirFilter) continue;
@@ -476,41 +469,35 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         const glowRadius = highlighted ? r * 4 : r * 2.2;
         const glowAlpha = highlighted ? 0.35 * nodeAlpha : 0.12 * nodeAlpha;
         const glow = ctx.createRadialGradient(
-          node.x, node.y, r * 0.3,
-          node.x, node.y, glowRadius,
+          nx, ny, r * 0.3,
+          nx, ny, glowRadius,
         );
         glow.addColorStop(0, `rgba(${cr},${cg},${cb},${glowAlpha})`);
         glow.addColorStop(0.5, `rgba(${cr},${cg},${cb},${glowAlpha * 0.4})`);
         glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
         ctx.beginPath();
-        ctx.arc(node.x, node.y, glowRadius, 0, Math.PI * 2);
+        ctx.arc(nx, ny, glowRadius, 0, Math.PI * 2);
         ctx.fillStyle = glow;
         ctx.fill();
 
         // Layer 2: Core disc — soft-edged via gradient (no hard stroke)
-        const core = ctx.createRadialGradient(
-          node.x, node.y, 0,
-          node.x, node.y, r,
-        );
+        const core = ctx.createRadialGradient(nx, ny, 0, nx, ny, r);
         const coreAlpha = nodeAlpha * (highlighted ? 1 : 0.85);
         core.addColorStop(0, `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 60)},${Math.min(255, cb + 60)},${coreAlpha})`);
         core.addColorStop(0.6, `rgba(${cr},${cg},${cb},${coreAlpha})`);
         core.addColorStop(1, `rgba(${cr},${cg},${cb},${coreAlpha * 0.6})`);
         ctx.beginPath();
-        ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+        ctx.arc(nx, ny, r, 0, Math.PI * 2);
         ctx.fillStyle = core;
         ctx.fill();
 
         // Layer 3 (highlight only): Bright center point
         if (highlighted && nodeAlpha > 0.5) {
-          const bright = ctx.createRadialGradient(
-            node.x, node.y, 0,
-            node.x, node.y, r * 0.5,
-          );
+          const bright = ctx.createRadialGradient(nx, ny, 0, nx, ny, r * 0.5);
           bright.addColorStop(0, `rgba(255,255,255,${isDark ? 0.7 : 0.5})`);
           bright.addColorStop(1, `rgba(255,255,255,0)`);
           ctx.beginPath();
-          ctx.arc(node.x, node.y, r * 0.5, 0, Math.PI * 2);
+          ctx.arc(nx, ny, r * 0.5, 0, Math.PI * 2);
           ctx.fillStyle = bright;
           ctx.fill();
         }
@@ -528,19 +515,19 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
           ctx.textAlign = "center";
           ctx.textBaseline = "top";
 
-          const labelY = node.y + r + 4 / scale;
+          const labelY = ny + r + 4 / scale;
           const textAlpha = Math.min(nodeAlpha, scale > 0.6 ? 1 : 0.8);
 
           // Halo behind text for readability
           ctx.fillStyle = isDark
             ? `rgba(0,0,0,${textAlpha * 0.6})`
             : `rgba(255,255,255,${textAlpha * 0.6})`;
-          ctx.fillText(node.label, node.x + 0.5 / scale, labelY + 0.5 / scale);
+          ctx.fillText(node.label, nx + 0.5 / scale, labelY + 0.5 / scale);
 
           ctx.fillStyle = isDark
             ? `rgba(220,220,220,${textAlpha})`
             : `rgba(40,40,40,${textAlpha})`;
-          ctx.fillText(node.label, node.x, labelY);
+          ctx.fillText(node.label, nx, labelY);
         }
       }
 
