@@ -33,7 +33,7 @@ function parseHeadings(md: string): Heading[] {
 
 type Props = {
   markdown: string;
-  containerRef: React.RefObject<HTMLElement>;
+  containerRef: React.RefObject<HTMLElement | null>;
 };
 
 export function KiwiToC({ markdown, containerRef }: Props) {
