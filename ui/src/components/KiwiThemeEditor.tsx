@@ -128,35 +128,71 @@ const TEXT_TOKEN_GROUPS: TextTokenGroup[] = [
   },
 ];
 
-function hslToHex(hsl: string): string {
-  const v = hsl.trim();
+function cssColorToHex(raw: string): string {
+  const v = raw.trim();
+  if (!v) return "#888888";
 
-  if (v.startsWith("#") && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
-  if (v.startsWith("#") && /^#[0-9a-fA-F]{3}$/.test(v)) {
+  // #rrggbb
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  // #rgb → #rrggbb
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
     return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
   }
+  // #rrggbbaa → take first 7 chars
+  if (/^#[0-9a-fA-F]{8}$/.test(v)) return v.slice(0, 7);
 
+  // rgb(r, g, b) or rgb(r g b) — browsers often resolve hsl/hex to this
+  const rgbMatch = v.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+  if (rgbMatch) {
+    const toHex = (n: string) => Math.round(parseFloat(n)).toString(16).padStart(2, "0");
+    return `#${toHex(rgbMatch[1])}${toHex(rgbMatch[2])}${toHex(rgbMatch[3])}`;
+  }
+
+  // hsl(h, s%, l%) or hsl(h s% l%) or bare "h s% l%"
   let inner = v;
-  const hslMatch = v.match(/^hsl\(?\s*(.+?)\s*\)?$/i);
+  const hslMatch = v.match(/^hsla?\(\s*(.+?)\s*\)?$/i);
   if (hslMatch) inner = hslMatch[1];
 
-  const parts = inner.replace(/,/g, " ").split(/\s+/).filter(Boolean);
-  if (parts.length < 3) return "#888888";
+  const parts = inner.replace(/,/g, " ").replace(/%/g, "").split(/\s+/).filter(Boolean);
+  if (parts.length >= 3) {
+    const h = parseFloat(parts[0]);
+    const s = parseFloat(parts[1]) / 100;
+    const l = parseFloat(parts[2]) / 100;
+    if (!isNaN(h) && !isNaN(s) && !isNaN(l)) {
+      const a = s * Math.min(l, 1 - l);
+      const f = (n: number) => {
+        const k = (n + h / 30) % 12;
+        const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+        return Math.round(255 * color).toString(16).padStart(2, "0");
+      };
+      return `#${f(0)}${f(8)}${f(4)}`;
+    }
+  }
 
-  const h = parseFloat(parts[0]);
-  const s = parseFloat(parts[1]) / 100;
-  const l = parseFloat(parts[2]) / 100;
+  // oklch / color() — use a canvas to resolve any valid CSS color
+  try {
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#000000";
+      ctx.fillStyle = v;
+      const resolved = ctx.fillStyle;
+      if (resolved !== "#000000" || v === "#000000" || v.toLowerCase() === "black") {
+        // ctx.fillStyle normalizes to #rrggbb or rgb()
+        if (/^#[0-9a-fA-F]{6}$/.test(resolved)) return resolved;
+        const m = resolved.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+        if (m) {
+          const hex = (n: string) => Math.round(parseFloat(n)).toString(16).padStart(2, "0");
+          return `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`;
+        }
+      }
+    }
+  } catch {}
 
-  if (isNaN(h) || isNaN(s) || isNaN(l)) return "#888888";
-
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12;
-    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, "0");
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
+  return "#888888";
 }
+
+// Keep old name as alias for backward compat within this file
+const hslToHex = cssColorToHex;
 
 function hexToHsl(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -181,27 +217,61 @@ function getCurrentTokens(): KiwiTokens {
   const scopeEl = document.querySelector(".kiwi-workspace-scope");
   const style = getComputedStyle(scopeEl || document.documentElement);
   const tokens: KiwiTokens = {};
+  const allTokenKeys: string[] = [];
   for (const group of TOKEN_GROUPS) {
-    for (const t of group.tokens) {
-      const val = style.getPropertyValue(`--${t.key as string}`).trim();
-      if (val) tokens[t.key as string] = val;
-    }
+    for (const t of group.tokens) allTokenKeys.push(t.key as string);
   }
   for (const group of TEXT_TOKEN_GROUPS) {
-    for (const t of group.tokens) {
-      const val = style.getPropertyValue(`--${t.key}`).trim();
-      if (val) tokens[t.key] = val;
-    }
+    for (const t of group.tokens) allTokenKeys.push(t.key);
   }
+  for (const key of allTokenKeys) {
+    const val = style.getPropertyValue(`--${key}`).trim();
+    if (val) tokens[key] = val;
+  }
+  return tokens;
+}
+
+function readTokensFromStylesheets(isDark: boolean): KiwiTokens {
+  const tokens: KiwiTokens = {};
+  const allTokenKeys = new Set<string>();
+  for (const group of TOKEN_GROUPS) {
+    for (const t of group.tokens) allTokenKeys.add(t.key as string);
+  }
+  for (const group of TEXT_TOKEN_GROUPS) {
+    for (const t of group.tokens) allTokenKeys.add(t.key);
+  }
+
+  // Walk stylesheets and find values for the target mode
+  const targetSelector = isDark ? ".dark" : ":root";
+  try {
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (rule instanceof CSSStyleRule) {
+            const sel = rule.selectorText;
+            if (sel === targetSelector || (isDark && sel?.includes(".dark")) || (!isDark && sel === ":root")) {
+              for (const key of allTokenKeys) {
+                const val = rule.style.getPropertyValue(`--${key}`).trim();
+                if (val) tokens[key] = val;
+              }
+            }
+          }
+        }
+      } catch {
+        // cross-origin stylesheets throw
+      }
+    }
+  } catch {}
   return tokens;
 }
 
 interface Props {
   onClose: () => void;
   onPresetReset: () => void;
+  embedded?: boolean;
 }
 
-export function KiwiThemeEditor({ onClose, onPresetReset }: Props) {
+export function KiwiThemeEditor({ onClose, onPresetReset, embedded }: Props) {
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [lightTokens, setLightTokens] = useState<KiwiTokens>({});
   const [darkTokens, setDarkTokens] = useState<KiwiTokens>({});
@@ -221,11 +291,17 @@ export function KiwiThemeEditor({ onClose, onPresetReset }: Props) {
       setLightTokens(existing.light || {});
       setDarkTokens(existing.dark || {});
     } else {
+      // Read current mode from computed styles (most accurate)
       const current = getCurrentTokens();
+      // Read the opposite mode from stylesheets (since it's not applied to DOM)
+      const opposite = readTokensFromStylesheets(!isDark);
+
       if (isDark) {
         setDarkTokens(current);
+        if (Object.keys(opposite).length > 0) setLightTokens(opposite);
       } else {
         setLightTokens(current);
+        if (Object.keys(opposite).length > 0) setDarkTokens(opposite);
       }
     }
   }, [isDark]);
@@ -311,17 +387,19 @@ export function KiwiThemeEditor({ onClose, onPresetReset }: Props) {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="flex items-center gap-2 px-4 sm:px-6 py-4 border-b border-border shrink-0">
-        <h2 className="text-lg font-semibold flex-1">Theme Editor</h2>
-        <span className="text-xs text-muted-foreground px-2 py-0.5 rounded bg-muted">
-          {isDark ? "Dark" : "Light"} mode
-        </span>
-        <Button variant="ghost" size="icon" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </header>
+      {!embedded && (
+        <header className="flex items-center gap-2 px-4 sm:px-6 py-4 border-b border-border shrink-0">
+          <h2 className="text-lg font-semibold flex-1">Theme Editor</h2>
+          <span className="text-xs text-muted-foreground px-2 py-0.5 rounded bg-muted">
+            {isDark ? "Dark" : "Light"} mode
+          </span>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+      )}
 
-      <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-6 kiwi-scroll">
+      <div className={`flex-1 overflow-auto ${embedded ? "p-0 pt-2" : "p-4 sm:p-6"} space-y-6 kiwi-scroll`}>
         {TOKEN_GROUPS.map((group) => (
           <div key={group.label}>
             <h3 className="text-sm font-medium text-muted-foreground mb-3">
@@ -391,7 +469,7 @@ export function KiwiThemeEditor({ onClose, onPresetReset }: Props) {
         ))}
       </div>
 
-      <footer className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 border-t border-border shrink-0">
+      <footer className={`flex flex-wrap items-center gap-2 ${embedded ? "px-0 py-4" : "px-4 sm:px-6 py-3 border-t border-border"} shrink-0`}>
         <Button variant="outline" size="sm" onClick={handleExport}>
           <Download className="h-3.5 w-3.5 mr-1.5" />
           Export
