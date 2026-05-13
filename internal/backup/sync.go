@@ -18,16 +18,17 @@ const (
 )
 
 type Syncer struct {
-	root     string
-	remote   string
-	branch   string
-	interval time.Duration
+	root             string
+	remote           string
+	branch           string
+	interval         time.Duration
+	rebaseBeforePush bool
 
 	stopCh chan struct{}
 	done   sync.WaitGroup
 }
 
-func New(root, remote, branch, interval string) (*Syncer, error) {
+func New(root, remote, branch, interval string, rebaseBeforePush bool) (*Syncer, error) {
 	if remote == "" {
 		return nil, fmt.Errorf("backup remote is required")
 	}
@@ -43,11 +44,12 @@ func New(root, remote, branch, interval string) (*Syncer, error) {
 		dur = d
 	}
 	return &Syncer{
-		root:     root,
-		remote:   remote,
-		branch:   branch,
-		interval: dur,
-		stopCh:   make(chan struct{}),
+		root:             root,
+		remote:           remote,
+		branch:           branch,
+		interval:         dur,
+		rebaseBeforePush: rebaseBeforePush,
+		stopCh:           make(chan struct{}),
 	}, nil
 }
 
@@ -129,6 +131,13 @@ func (s *Syncer) Push(branch string) error {
 }
 
 func (s *Syncer) push(branch string) error {
+	if s.rebaseBeforePush {
+		if err := s.rebaseRemoteBranch(branch); err != nil {
+			log.Printf("backup: rebase before push failed: %v", err)
+			return err
+		}
+	}
+
 	err := s.cmd("git", "push", remoteName, branch)
 	if err != nil {
 		log.Printf("backup: push failed: %v", err)
@@ -145,6 +154,52 @@ func (s *Syncer) push(branch string) error {
 	}
 	log.Printf("backup: pushed + verified %s/%s", remoteName, branch)
 	return nil
+}
+
+// rebaseRemoteBranch fetches the backup branch and rebases local commits on
+// top before pushing. This makes the default backup path resilient to a common
+// multi-writer workflow: another client pushed first, then KiwiFS tries to back
+// up its own clean local commits. Dirty worktrees and merge conflicts are not
+// auto-resolved because doing so risks data loss; the backup loop logs the
+// failure and will retry after an operator or the user resolves the state.
+func (s *Syncer) rebaseRemoteBranch(branch string) error {
+	if _, err := s.output("git", "ls-remote", "--exit-code", remoteName, branch); err != nil {
+		// Nothing to rebase onto yet. The following push may create the branch.
+		return nil
+	}
+	if err := s.cmd("git", "fetch", remoteName, branch); err != nil {
+		return fmt.Errorf("fetch %s/%s: %w", remoteName, branch, err)
+	}
+	if clean, err := s.isWorktreeClean(); err != nil {
+		return err
+	} else if !clean {
+		return fmt.Errorf("worktree has uncommitted changes; refusing automatic rebase")
+	}
+	upstream := fmt.Sprintf("%s/%s", remoteName, branch)
+	local, err := s.output("git", "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("local rev-parse: %w", err)
+	}
+	remote, err := s.output("git", "rev-parse", upstream)
+	if err != nil {
+		return fmt.Errorf("remote rev-parse %s: %w", upstream, err)
+	}
+	if strings.TrimSpace(local) == strings.TrimSpace(remote) {
+		return nil
+	}
+	if err := s.cmd("git", "rebase", upstream); err != nil {
+		return fmt.Errorf("rebase %s: %w", upstream, err)
+	}
+	log.Printf("backup: rebased local branch onto %s before push", upstream)
+	return nil
+}
+
+func (s *Syncer) isWorktreeClean() (bool, error) {
+	status, err := s.output("git", "status", "--porcelain")
+	if err != nil {
+		return false, fmt.Errorf("git status: %w", err)
+	}
+	return strings.TrimSpace(status) == "", nil
 }
 
 // verifyPush re-queries the remote for the branch's head and checks it

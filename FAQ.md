@@ -194,7 +194,7 @@ Your knowledge base is a folder of markdown files with a `.git` directory. You c
 
 - `git push` to any git remote (GitHub, GitLab, your own server)
 - `kiwifs backup` for one-shot push to a configured git remote
-- Configure `[backup]` in `.kiwi/config.toml` for automatic scheduled pushes
+- Configure `[backup]` in `.kiwi/config.toml` for automatic scheduled pushes. By default KiwiFS fetches and rebases onto the backup branch before pushing, which lets another Git client push first without making the next backup fail with a non-fast-forward error. Set `rebase_before_push = false` or run `kiwifs backup --rebase-before-push=false` to opt out.
 - `aws s3 sync` via the S3 protocol
 - Plain `rsync` or `cp` — the files are the truth
 

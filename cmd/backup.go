@@ -21,12 +21,14 @@ func init() {
 	backupCmd.Flags().StringP("root", "r", "./knowledge", "knowledge root directory")
 	backupCmd.Flags().String("remote", "", "git remote URL (overrides config)")
 	backupCmd.Flags().String("branch", "", "branch to push (default: current branch)")
+	backupCmd.Flags().Bool("rebase-before-push", true, "fetch and rebase onto the backup branch before pushing")
 }
 
 func runBackup(cmd *cobra.Command, args []string) error {
 	root, _ := cmd.Flags().GetString("root")
 	remote, _ := cmd.Flags().GetString("remote")
 	branch, _ := cmd.Flags().GetString("branch")
+	rebaseBeforePush, _ := cmd.Flags().GetBool("rebase-before-push")
 
 	if remote == "" {
 		cfg, err := config.Load(root)
@@ -39,13 +41,16 @@ func runBackup(cmd *cobra.Command, args []string) error {
 			if branch == "" && cfg.Backup.Branch != "" {
 				branch = cfg.Backup.Branch
 			}
+			if !cmd.Flags().Changed("rebase-before-push") {
+				rebaseBeforePush = cfg.Backup.IsRebaseBeforePush()
+			}
 		}
 	}
 	if remote == "" {
 		return fmt.Errorf("no backup remote configured — pass --remote or set [backup] remote in .kiwi/config.toml")
 	}
 
-	syncer, err := backup.New(root, remote, branch, "")
+	syncer, err := backup.New(root, remote, branch, "", rebaseBeforePush)
 	if err != nil {
 		return err
 	}
