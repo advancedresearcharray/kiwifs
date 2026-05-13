@@ -21,7 +21,7 @@ export function StoryMarkdown({
   className = "kiwi-prose",
 }: {
   children: string;
-  innerRef?: RefObject<HTMLDivElement>;
+  innerRef?: RefObject<HTMLDivElement | null>;
   className?: string;
 }) {
   return (
