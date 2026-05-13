@@ -55,6 +55,14 @@ func buildTestServer(t *testing.T) *Server {
 	return NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
 }
 
+func buildTestServerWithRoot(t *testing.T) (*Server, string) {
+	t.Helper()
+	dir, pipe, cstore := buildTestPipeline(t)
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	return NewServer(cfg, pipe, nil, cstore, nil, nil, nil), dir
+}
+
 func buildSQLiteTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	dir := t.TempDir()
