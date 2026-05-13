@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/kiwifs/kiwifs/compare/v0.15.0...v0.15.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **ui:** parse hex, RGB, and HSL inputs in KiwiThemeEditor ([5da448d](https://github.com/kiwifs/kiwifs/commit/5da448d64139b7ccd6c2fafe3b3ed17285b00e67))
+
 ## [0.15.0](https://github.com/kiwifs/kiwifs/compare/v0.14.1...v0.15.0) (2026-05-13)
 
 
