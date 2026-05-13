@@ -243,6 +243,7 @@ type RenderState = {
   hovered: GNode | null;
   activePath?: string | null;
   foundPath: string[] | null;
+  pathFindActive: boolean;
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -256,6 +257,8 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
   const rafRef = useRef<number>(0);
   const dataRef = useRef<BuiltGraph | null>(null);
   const adjRef = useRef<Map<string, Set<string>>>(new Map());
+  const needsRedrawRef = useRef(true);
+  const simActiveRef = useRef(true);
 
   const [resp, setResp] = useState<GraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -290,6 +293,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     hovered: null,
     activePath,
     foundPath: null,
+    pathFindActive: false,
   });
 
   useEffect(() => {
@@ -300,8 +304,10 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       hovered,
       activePath,
       foundPath,
+      pathFindActive,
     };
-  }, [dirFilter, tagFilter, query, hovered, activePath, foundPath]);
+    needsRedrawRef.current = true;
+  }, [dirFilter, tagFilter, query, hovered, activePath, foundPath, pathFindActive]);
 
   // Fetch graph data
   useEffect(() => {
@@ -407,9 +413,22 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     // ── Render loop (Canvas 2D — no WebGL) ────────────────────────────────
 
     function render() {
+      if (!needsRedrawRef.current && !simActiveRef.current) {
+        rafRef.current = requestAnimationFrame(render);
+        return;
+      }
+      needsRedrawRef.current = false;
+
       const w = canvas!.clientWidth;
       const h = canvas!.clientHeight;
       const { x: tx, y: ty, scale } = transformRef.current;
+
+      // Viewport bounds in world space for culling offscreen elements
+      const vpMinX = -tx / scale;
+      const vpMinY = -ty / scale;
+      const vpMaxX = (w - tx) / scale;
+      const vpMaxY = (h - ty) / scale;
+      const vpPad = 50 / scale;
 
       ctx.clearRect(0, 0, w, h);
       ctx.save();
@@ -442,6 +461,14 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         const t = link.target as GNode;
         const sx = s.x, sy = s.y, tx = t.x, ty = t.y;
         if (sx == null || sy == null || tx == null || ty == null) continue;
+
+        // Viewport culling: skip if both endpoints are offscreen
+        if (
+          (sx < vpMinX - vpPad && tx < vpMinX - vpPad) ||
+          (sx > vpMaxX + vpPad && tx > vpMaxX + vpPad) ||
+          (sy < vpMinY - vpPad && ty < vpMinY - vpPad) ||
+          (sy > vpMaxY + vpPad && ty > vpMaxY + vpPad)
+        ) continue;
 
         // Filtering
         if (renderDirFilter && s.dir !== renderDirFilter && t.dir !== renderDirFilter) continue;
@@ -483,6 +510,10 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       for (const node of data.nodes) {
         const nx = node.x, ny = node.y;
         if (nx == null || ny == null) continue;
+
+        // Viewport culling: skip nodes entirely offscreen
+        const cullR = (node.radius / scale) * 4;
+        if (nx < vpMinX - cullR || nx > vpMaxX + cullR || ny < vpMinY - cullR || ny > vpMaxY + cullR) continue;
 
         // Filtering
         if (renderDirFilter && node.dir !== renderDirFilter) continue;
@@ -581,9 +612,16 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
 
     // Start the render loop
     rafRef.current = requestAnimationFrame(render);
+    needsRedrawRef.current = true;
+    simActiveRef.current = true;
 
-    // Stop simulation after it cools
-    sim.on("end", () => {});
+    sim.on("tick", () => {
+      needsRedrawRef.current = true;
+    });
+    sim.on("end", () => {
+      simActiveRef.current = false;
+      needsRedrawRef.current = true;
+    });
 
     return () => {
       cancelAnimationFrame(rafRef.current);
@@ -642,6 +680,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         };
         node.fx = node.x;
         node.fy = node.y;
+        simActiveRef.current = true;
         simRef.current?.alphaTarget(0.3).restart();
       } else {
         draggingRef.current = {
@@ -668,6 +707,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
 
       const drag = draggingRef.current;
       if (drag) {
+        needsRedrawRef.current = true;
         if (drag.pan) {
           transformRef.current.x = drag.startTx + (sx - drag.startX);
           transformRef.current.y = drag.startTy + (sy - drag.startY);
@@ -760,12 +800,14 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       y: rect.height / 2 - ((minY + maxY) / 2) * scale,
       scale,
     };
+    needsRedrawRef.current = true;
   }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
+    needsRedrawRef.current = true;
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;

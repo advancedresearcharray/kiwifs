@@ -22,7 +22,6 @@ func (h *Handlers) FeedAtom(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	c.Response().Header().Set(echo.HeaderContentType, "application/atom+xml; charset=UTF-8")
 	return c.Blob(http.StatusOK, "application/atom+xml; charset=UTF-8", []byte(atom))
 }
 

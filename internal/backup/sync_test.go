@@ -87,6 +87,51 @@ func TestPushRefusesRebaseWithDirtyWorktree(t *testing.T) {
 	}
 }
 
+func TestRebaseConflictAbortsCleanly(t *testing.T) {
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	seed := filepath.Join(root, "seed")
+	work := filepath.Join(root, "work")
+	other := filepath.Join(root, "other")
+
+	runGit(t, root, "init", "--bare", remote)
+	cloneAndConfigure(t, remote, seed)
+	writeFile(t, seed, "shared.md", "original\n")
+	runGit(t, seed, "add", ".")
+	runGit(t, seed, "commit", "-m", "initial")
+	runGit(t, seed, "push", "origin", "HEAD:main")
+
+	cloneAndConfigure(t, remote, work)
+	cloneAndConfigure(t, remote, other)
+
+	writeFile(t, other, "shared.md", "other version\n")
+	runGit(t, other, "add", ".")
+	runGit(t, other, "commit", "-m", "other edits shared")
+	runGit(t, other, "push", "origin", "main")
+
+	writeFile(t, work, "shared.md", "work version\n")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "work edits shared")
+
+	syncer, err := New(work, remote, "main", "", true)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = syncer.Push("main")
+	if err == nil {
+		t.Fatal("expected rebase conflict error, got nil")
+	}
+
+	status := runGitOutput(t, work, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("worktree should be clean after abort, got:\n%s", status)
+	}
+	rebaseDir := filepath.Join(work, ".git", "rebase-merge")
+	if _, statErr := os.Stat(rebaseDir); statErr == nil {
+		t.Fatal("rebase-merge directory still exists after abort")
+	}
+}
+
 func cloneAndConfigure(t *testing.T, remote, dir string) {
 	t.Helper()
 	runGit(t, filepath.Dir(dir), "clone", remote, dir)

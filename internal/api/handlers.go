@@ -64,12 +64,23 @@ type Handlers struct {
 
 	schemaReload func()
 
+	backupStatusFn func() any
+
 	graphCache atomic.Pointer[graphResponse]
 	graphGroup singleflight.Group
 }
 
 func (h *Handlers) invalidateGraphCache() {
 	h.graphCache.Store(nil)
+}
+
+// BackupStatus returns the backup syncer's last push result.
+func (h *Handlers) BackupStatus(c echo.Context) error {
+	if h.backupStatusFn == nil {
+		return c.JSON(http.StatusOK, map[string]any{"enabled": false})
+	}
+	status := h.backupStatusFn()
+	return c.JSON(http.StatusOK, map[string]any{"enabled": true, "status": status})
 }
 
 type treeEntry struct {

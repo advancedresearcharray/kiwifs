@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 let mermaidInitTheme: "dark" | "default" | null = null;
 
@@ -32,8 +32,11 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const renderIdRef = useRef(`kiwi-mermaid-${Math.random().toString(36).slice(2)}`);
+  const dragRef = useRef<{ startX: number; startY: number; startPanX: number; startPanY: number } | null>(null);
 
   const [isDark, setIsDark] = useState<boolean>(
     () =>
@@ -59,6 +62,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       setSvg(null);
       setError(null);
       setZoom(1);
+      setPan({ x: 0, y: 0 });
 
       try {
         const mermaid = await ensureInit(isDark ? "dark" : "default");
@@ -80,6 +84,57 @@ export function MermaidDiagram({ chart }: { chart: string }) {
     };
   }, [chart, isDark]);
 
+  // Scroll-wheel zoom (also handles trackpad pinch via ctrlKey)
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      setZoom((z) => clampZoom(z + delta));
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [svg]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    el.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPanX: pan.x,
+      startPanY: pan.y,
+    };
+    el.style.cursor = "grabbing";
+  }, [pan]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    setPan({
+      x: d.startPanX + (e.clientX - d.startX),
+      y: d.startPanY + (e.clientY - d.startY),
+    });
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    dragRef.current = null;
+    const el = viewportRef.current;
+    if (el) {
+      el.releasePointerCapture(e.pointerId);
+      el.style.cursor = "grab";
+    }
+  }, []);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
   if (error) {
     return (
       <figure className="kiwi-mermaid rounded-md border border-destructive/30 bg-destructive/5 p-4">
@@ -92,6 +147,8 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       </figure>
     );
   }
+
+  const isDefaultView = zoom === 1 && pan.x === 0 && pan.y === 0;
 
   return (
     <figure className="kiwi-mermaid relative rounded-md border border-border bg-card p-4">
@@ -114,13 +171,13 @@ export function MermaidDiagram({ chart }: { chart: string }) {
             <span className="min-w-12 px-1.5 py-1 text-center tabular-nums">
               {Math.round(zoom * 100)}%
             </span>
-            {zoom !== 1 && (
+            {!isDefaultView && (
               <button
                 type="button"
                 className="rounded-sm border border-border bg-card px-2 py-1 font-medium hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
-                onClick={() => setZoom(1)}
+                onClick={resetView}
                 aria-label="Reset Mermaid diagram zoom"
-                title="Reset zoom"
+                title="Reset zoom and pan"
               >
                 Reset
               </button>
@@ -136,14 +193,29 @@ export function MermaidDiagram({ chart }: { chart: string }) {
               +
             </button>
           </div>
-          <div className="overflow-auto pt-10">
+          <div
+            ref={viewportRef}
+            className="overflow-hidden pt-10"
+            style={{ cursor: "grab", touchAction: "none" }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+          >
             <div
               ref={containerRef}
-              className="mx-auto [&_svg]:h-auto [&_svg]:w-full"
-              style={{ width: `${zoom * 100}%` }}
+              className="mx-auto origin-center [&_svg]:h-auto [&_svg]:w-full"
+              style={{
+                width: `${zoom * 100}%`,
+                transform: `translate(${pan.x}px, ${pan.y}px)`,
+              }}
               dangerouslySetInnerHTML={{ __html: svg }}
             />
           </div>
+          {!isDefaultView && (
+            <div className="pointer-events-none absolute bottom-2 right-3 text-[10px] text-muted-foreground">
+              drag to pan · Ctrl+scroll to zoom
+            </div>
+          )}
         </>
       ) : (
         <div className="text-sm text-muted-foreground">

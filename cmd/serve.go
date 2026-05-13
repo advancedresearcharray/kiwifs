@@ -164,6 +164,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if berr != nil {
 			log.Printf("warning: backup sync disabled (%v)", berr)
 		} else {
+			stack.Server.SetBackupStatus(func() any { return syncer.Status() })
 			syncer.Start()
 			defer syncer.Close()
 		}
