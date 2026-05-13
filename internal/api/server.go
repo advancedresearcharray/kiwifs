@@ -58,6 +58,14 @@ func WithAuditLogger(al *AuditLogger) ServerOption {
 	return func(s *Server) { s.auditLogger = al }
 }
 
+func WithBackupStatus(fn func() any) ServerOption {
+	return func(s *Server) { s.backupStatusFn = fn }
+}
+
+func (s *Server) SetBackupStatus(fn func() any) {
+	s.backupStatusFn = fn
+}
+
 type Server struct {
 	cfg          *config.Config
 	pipe         *pipeline.Pipeline
@@ -73,6 +81,7 @@ type Server struct {
 	draftMgr      *draft.Manager
 	schemaReload  func()
 	auditLogger   *AuditLogger
+	backupStatusFn func() any
 
 	janitorSched  *janitor.Scheduler
 	janitorCancel context.CancelFunc
@@ -368,6 +377,7 @@ func (s *Server) setupRoutes() {
 		cfg:                 s.cfg,
 		connStore:            connStore,
 		schemaReload:         s.schemaReload,
+		backupStatusFn:       s.backupStatusFn,
 	}
 	prev := s.pipe.OnInvalidate
 	s.pipe.OnInvalidate = func() {
@@ -457,6 +467,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/timeline", h.Timeline)
 	api.GET("/feed.xml", h.FeedAtom)
 	api.GET("/feed.json", h.FeedJSON)
+	api.GET("/backup/status", h.BackupStatus)
 	api.GET("/peek", h.Peek)
 	api.GET("/section", h.SectionRead)
 	api.GET("/graph/walk", h.GraphWalk)

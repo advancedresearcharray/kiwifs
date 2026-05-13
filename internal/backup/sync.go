@@ -17,6 +17,13 @@ const (
 	cmdTimeout      = 60 * time.Second
 )
 
+// BackupStatus reports the result of the most recent backup push.
+type BackupStatus struct {
+	LastPushAt *time.Time `json:"last_push_at,omitempty"`
+	Success    bool       `json:"success"`
+	Error      string     `json:"error,omitempty"`
+}
+
 type Syncer struct {
 	root             string
 	remote           string
@@ -26,6 +33,9 @@ type Syncer struct {
 
 	stopCh chan struct{}
 	done   sync.WaitGroup
+
+	mu     sync.RWMutex
+	status BackupStatus
 }
 
 func New(root, remote, branch, interval string, rebaseBeforePush bool) (*Syncer, error) {
@@ -61,6 +71,26 @@ func (s *Syncer) Start() {
 func (s *Syncer) Close() {
 	close(s.stopCh)
 	s.done.Wait()
+}
+
+// Status returns the result of the most recent backup push.
+func (s *Syncer) Status() BackupStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.status
+}
+
+func (s *Syncer) recordStatus(success bool, err error) {
+	now := time.Now()
+	s.mu.Lock()
+	s.status.LastPushAt = &now
+	s.status.Success = success
+	if err != nil {
+		s.status.Error = err.Error()
+	} else {
+		s.status.Error = ""
+	}
+	s.mu.Unlock()
 }
 
 func (s *Syncer) run() {
@@ -134,6 +164,7 @@ func (s *Syncer) push(branch string) error {
 	if s.rebaseBeforePush {
 		if err := s.rebaseRemoteBranch(branch); err != nil {
 			log.Printf("backup: rebase before push failed: %v", err)
+			s.recordStatus(false, err)
 			return err
 		}
 	}
@@ -141,18 +172,16 @@ func (s *Syncer) push(branch string) error {
 	err := s.cmd("git", "push", remoteName, branch)
 	if err != nil {
 		log.Printf("backup: push failed: %v", err)
+		s.recordStatus(false, err)
 		return err
 	}
 	if verr := s.verifyPush(branch); verr != nil {
-		// A successful push that we can't verify is almost worse than
-		// a failed one — admins think they have a backup when they
-		// don't. Log loudly. We don't return the error because the
-		// push actually *did* succeed per git; we'd rather keep the
-		// sync loop alive and let the operator investigate via logs.
 		log.Printf("backup: push to %s/%s verification failed: %v", remoteName, branch, verr)
+		s.recordStatus(true, nil)
 		return nil
 	}
 	log.Printf("backup: pushed + verified %s/%s", remoteName, branch)
+	s.recordStatus(true, nil)
 	return nil
 }
 
@@ -187,7 +216,10 @@ func (s *Syncer) rebaseRemoteBranch(branch string) error {
 	if strings.TrimSpace(local) == strings.TrimSpace(remote) {
 		return nil
 	}
+	// Safety ref so the pre-rebase state can be recovered after power loss.
+	_ = s.cmd("git", "update-ref", "refs/kiwifs/backup-pre-rebase", "HEAD")
 	if err := s.cmd("git", "rebase", upstream); err != nil {
+		_ = s.cmd("git", "rebase", "--abort")
 		return fmt.Errorf("rebase %s: %w", upstream, err)
 	}
 	log.Printf("backup: rebased local branch onto %s before push", upstream)

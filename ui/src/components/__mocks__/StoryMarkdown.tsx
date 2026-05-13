@@ -25,7 +25,7 @@ export function StoryMarkdown({
   className?: string;
 }) {
   return (
-    <div ref={innerRef} className={className}>
+    <div ref={innerRef as React.Ref<HTMLDivElement>} className={className}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath, [remarkWikiLinks, { resolver }]]}
         rehypePlugins={[
