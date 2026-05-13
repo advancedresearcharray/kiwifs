@@ -49,10 +49,10 @@ type AuditConfig struct {
 
 // B.5 — Config-driven webhook entry (statically declared in config.toml).
 type WebhookEntryConfig struct {
-	URL        string   `toml:"url"`
-	Events     []string `toml:"events"`     // file.created, file.updated, file.deleted
-	Secret     string   `toml:"secret"`     // HMAC signing secret
-	PathGlob   string   `toml:"path_glob"`  // optional glob filter
+	URL      string   `toml:"url"`
+	Events   []string `toml:"events"`    // file.created, file.updated, file.deleted
+	Secret   string   `toml:"secret"`    // HMAC signing secret
+	PathGlob string   `toml:"path_glob"` // optional glob filter
 }
 
 type WebhooksConfig struct {
@@ -134,12 +134,18 @@ type MemoryConfig struct {
 
 // BackupConfig controls automatic git push to a remote repository.
 // When Remote is non-empty, the server pushes on a ticker so the
-// knowledge base has an off-host copy. Env vars KIWI_BACKUP_REMOTE
-// and KIWI_BACKUP_INTERVAL override TOML values for Docker-native config.
+// knowledge base has an off-host copy. Env vars KIWI_BACKUP_REMOTE,
+// KIWI_BACKUP_INTERVAL, and KIWI_BACKUP_REBASE_BEFORE_PUSH override TOML
+// values for Docker-native config.
 type BackupConfig struct {
-	Remote   string `toml:"remote"`   // e.g. "git@github.com:user/kb.git"
-	Interval string `toml:"interval"` // duration string, default "5m"
-	Branch   string `toml:"branch"`   // default: current branch
+	Remote           string `toml:"remote"`             // e.g. "git@github.com:user/kb.git"
+	Interval         string `toml:"interval"`           // duration string, default "5m"
+	Branch           string `toml:"branch"`             // default: current branch
+	RebaseBeforePush *bool  `toml:"rebase_before_push"` // default: true
+}
+
+func (b BackupConfig) IsRebaseBeforePush() bool {
+	return b.RebaseBeforePush == nil || *b.RebaseBeforePush
 }
 
 // UIConfig controls frontend behaviour. Toggled via [ui] in config.toml.
@@ -333,9 +339,17 @@ func applyBackupEnv(cfg *Config) {
 	if v := os.Getenv("KIWI_BACKUP_INTERVAL"); v != "" {
 		cfg.Backup.Interval = v
 	}
+	if v := os.Getenv("KIWI_BACKUP_REBASE_BEFORE_PUSH"); v != "" {
+		cfg.Backup.RebaseBeforePush = parseBoolPtr(v)
+	}
 	if v := os.Getenv("KIWI_PUBLIC_URL"); v != "" {
 		cfg.Server.PublicURL = v
 	}
+}
+
+func parseBoolPtr(v string) *bool {
+	b := strings.EqualFold(v, "1") || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes") || strings.EqualFold(v, "on")
+	return &b
 }
 
 // expandAllEnv walks every exported string field (at any nesting depth)

@@ -11,6 +11,14 @@ engine = "sqlite"
 [versioning]
 strategy = "git"
 
+# [backup]
+# remote = "git@github.com:user/kb.git"
+# interval = "5m"
+# branch = "main"
+# Rebase onto the backup branch before pushing. Defaults to true so
+# out-of-band pushes from another client are incorporated before backup.
+# rebase_before_push = true
+
 [memory]
 # Episodic files live here when memory_kind is unset (see docs/MEMORY.md).
 # episodes_path_prefix = "episodes/"

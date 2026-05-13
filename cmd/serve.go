@@ -160,7 +160,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	if cfg.Backup.Remote != "" {
-		syncer, berr := backup.New(root, cfg.Backup.Remote, cfg.Backup.Branch, cfg.Backup.Interval)
+		syncer, berr := backup.New(root, cfg.Backup.Remote, cfg.Backup.Branch, cfg.Backup.Interval, cfg.Backup.IsRebaseBeforePush())
 		if berr != nil {
 			log.Printf("warning: backup sync disabled (%v)", berr)
 		} else {

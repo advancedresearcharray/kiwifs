@@ -147,6 +147,32 @@ func TestPermalink(t *testing.T) {
 	}
 }
 
+func TestBackupRebaseBeforePushDefaultsTrue(t *testing.T) {
+	cfg := BackupConfig{}
+	if !cfg.IsRebaseBeforePush() {
+		t.Fatal("backup rebase_before_push should default to true")
+	}
+}
+
+func TestBackupRebaseBeforePushFromEnv(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[backup]
+rebase_before_push = true
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	t.Setenv("KIWI_BACKUP_REBASE_BEFORE_PUSH", "false")
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Backup.IsRebaseBeforePush() {
+		t.Fatal("env should override backup.rebase_before_push to false")
+	}
+}
+
 func TestVersioningMaxVersionsTOML(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := filepath.Join(root, ".kiwi")
