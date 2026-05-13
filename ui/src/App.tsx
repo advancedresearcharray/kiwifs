@@ -532,7 +532,7 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className="flex-1 overflow-auto kiwi-scroll relative">
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
             {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}

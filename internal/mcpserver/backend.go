@@ -192,6 +192,11 @@ type Backend interface {
 	CanvasRead(ctx context.Context, path string) (string, error)
 	CanvasWrite(ctx context.Context, path, content, actor string) (string, error)
 	Feed(ctx context.Context, limit int) (json.RawMessage, error)
+	WorkflowList(ctx context.Context) ([]WorkflowDef, error)
+	WorkflowGet(ctx context.Context, name string) (*WorkflowDef, error)
+	WorkflowSave(ctx context.Context, w WorkflowDef) error
+	WorkflowAdvance(ctx context.Context, path, targetState, actor string) (*WorkflowAdvanceResult, error)
+	WorkflowBoard(ctx context.Context, workflowName string) (*WorkflowBoardResult, error)
 }
 
 type DraftInfo struct {
@@ -352,6 +357,37 @@ type ViewFilter struct {
 type ViewSort struct {
 	Field string `json:"field"`
 	Order string `json:"order"`
+}
+
+// WorkflowDef is the MCP-transport representation of a workflow definition.
+type WorkflowDef struct {
+	Name        string              `json:"name"`
+	States      []WorkflowState     `json:"states"`
+	Transitions []WorkflowTransition `json:"transitions"`
+}
+
+type WorkflowState struct {
+	Name     string `json:"name"`
+	Color    string `json:"color,omitempty"`
+	Terminal bool   `json:"terminal,omitempty"`
+}
+
+type WorkflowTransition struct {
+	From         string `json:"from"`
+	To           string `json:"to"`
+	RequiredRole string `json:"required_role,omitempty"`
+}
+
+type WorkflowAdvanceResult struct {
+	Path      string `json:"path"`
+	FromState string `json:"from_state"`
+	ToState   string `json:"to_state"`
+	ETag      string `json:"etag"`
+}
+
+type WorkflowBoardResult struct {
+	Workflow WorkflowDef                   `json:"workflow"`
+	Board    map[string][]map[string]any   `json:"board"`
 }
 
 type TimelineResult struct {

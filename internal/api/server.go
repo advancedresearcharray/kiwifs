@@ -497,6 +497,13 @@ func (s *Server) setupRoutes() {
 	api.GET("/canvas", h.ReadCanvas)
 	api.PUT("/canvas", h.WriteCanvas)
 
+	// Workflow endpoints
+	api.GET("/workflows", h.ListWorkflows)
+	api.GET("/workflows/:name", h.GetWorkflow)
+	api.PUT("/workflows/:name", h.SaveWorkflow)
+	api.POST("/workflow/advance", h.AdvanceWorkflow)
+	api.GET("/workflow/board/:workflow", h.WorkflowBoard)
+
 	draftGrp := api.Group("/drafts")
 	draftGrp.POST("", h.CreateDraft)
 	draftGrp.GET("", h.ListDrafts)

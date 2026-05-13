@@ -672,6 +672,73 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleFeed(b),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_workflow_list",
+				mcp.WithDescription("List all workflow definitions. Workflows define state machines for pages (e.g. draft→review→published)."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleWorkflowList(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_workflow_get",
+				mcp.WithDescription("Get a specific workflow definition by name. Returns states, transitions, and terminal states."),
+				mcp.WithString("name", mcp.Required(), mcp.Description("Workflow name")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleWorkflowGet(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_workflow_save",
+				mcp.WithDescription("Save or update a workflow definition. Validates states and transitions before saving."),
+				mcp.WithString("name", mcp.Required(), mcp.Description("Workflow name")),
+				mcp.WithArray("states", mcp.Required(), mcp.Description("Array of {name, color, terminal} state definitions"),
+					mcp.Items(map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":     map[string]any{"type": "string"},
+							"color":    map[string]any{"type": "string"},
+							"terminal": map[string]any{"type": "boolean"},
+						},
+						"required": []string{"name"},
+					}),
+				),
+				mcp.WithArray("transitions", mcp.Required(), mcp.Description("Array of {from, to, required_role} transition definitions"),
+					mcp.Items(map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"from":          map[string]any{"type": "string"},
+							"to":            map[string]any{"type": "string"},
+							"required_role": map[string]any{"type": "string"},
+						},
+						"required": []string{"from", "to"},
+					}),
+				),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+			),
+			Handler: handleWorkflowSave(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_workflow_advance",
+				mcp.WithDescription("Advance a page's workflow state. Validates the transition is allowed by the workflow definition, then updates the page's frontmatter 'state' field."),
+				mcp.WithString("path", pathOpts...),
+				mcp.WithString("target_state", mcp.Required(), mcp.Description("State to transition to")),
+				mcp.WithString("actor", mcp.Description("Who is advancing — defaults to mcp-agent")),
+				mcp.WithDestructiveHintAnnotation(true),
+			),
+			Handler: handleWorkflowAdvance(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_workflow_board",
+				mcp.WithDescription("Get a Kanban board view: pages grouped by their workflow state. Use this to see all pages in each state of a workflow."),
+				mcp.WithString("name", mcp.Required(), mcp.Description("Workflow name")),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleWorkflowBoard(b),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_views_list",
 				mcp.WithDescription("List all saved view definitions (bases/views) in the knowledge base"),
 				mcp.WithReadOnlyHintAnnotation(true),
@@ -2793,6 +2860,141 @@ func handleClaimsList(b Backend) server.ToolHandlerFunc {
 
 		out, _ := json.MarshalIndent(map[string]any{"claims": claims}, "", "  ")
 		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleWorkflowList(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		workflows, err := b.WorkflowList(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to list workflows: %v", err)), nil
+		}
+		if len(workflows) == 0 {
+			return mcp.NewToolResultText("No workflows defined. Create one with kiwi_workflow_save."), nil
+		}
+		out, _ := json.MarshalIndent(map[string]any{"workflows": workflows}, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleWorkflowGet(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name, _ := req.GetArguments()["name"].(string)
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+		w, err := b.WorkflowGet(ctx, name)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get workflow: %v", err)), nil
+		}
+		out, _ := json.MarshalIndent(w, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleWorkflowSave(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		name, _ := args["name"].(string)
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+
+		w := WorkflowDef{Name: name}
+
+		if raw, ok := args["states"]; ok {
+			if arr, ok := raw.([]any); ok {
+				for _, item := range arr {
+					if m, ok := item.(map[string]any); ok {
+						s := WorkflowState{}
+						s.Name, _ = m["name"].(string)
+						s.Color, _ = m["color"].(string)
+						s.Terminal, _ = m["terminal"].(bool)
+						if s.Name != "" {
+							w.States = append(w.States, s)
+						}
+					}
+				}
+			}
+		}
+
+		if raw, ok := args["transitions"]; ok {
+			if arr, ok := raw.([]any); ok {
+				for _, item := range arr {
+					if m, ok := item.(map[string]any); ok {
+						t := WorkflowTransition{}
+						t.From, _ = m["from"].(string)
+						t.To, _ = m["to"].(string)
+						t.RequiredRole, _ = m["required_role"].(string)
+						if t.From != "" && t.To != "" {
+							w.Transitions = append(w.Transitions, t)
+						}
+					}
+				}
+			}
+		}
+
+		if err := b.WorkflowSave(ctx, w); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to save workflow: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Workflow %s saved with %d states and %d transitions", name, len(w.States), len(w.Transitions))), nil
+	}
+}
+
+func handleWorkflowAdvance(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		targetState, _ := args["target_state"].(string)
+		actor, _ := args["actor"].(string)
+
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		if targetState == "" {
+			return mcp.NewToolResultError("target_state is required"), nil
+		}
+
+		result, err := b.WorkflowAdvance(ctx, path, targetState, actor)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("workflow advance failed: %v", err)), nil
+		}
+
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleWorkflowBoard(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name, _ := req.GetArguments()["name"].(string)
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+
+		result, err := b.WorkflowBoard(ctx, name)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("workflow board failed: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Kanban Board: %s\n\n", result.Workflow.Name)
+		for _, state := range result.Workflow.States {
+			pages := result.Board[state.Name]
+			fmt.Fprintf(&sb, "=== %s (%d) ===\n", state.Name, len(pages))
+			for _, p := range pages {
+				path, _ := p["path"].(string)
+				title, _ := p["title"].(string)
+				if title != "" {
+					fmt.Fprintf(&sb, "  - %s (%s)\n", path, title)
+				} else {
+					fmt.Fprintf(&sb, "  - %s\n", path)
+				}
+			}
+			sb.WriteString("\n")
+		}
+		return mcp.NewToolResultText(sb.String()), nil
 	}
 }
 

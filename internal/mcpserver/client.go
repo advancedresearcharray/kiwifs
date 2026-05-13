@@ -821,3 +821,65 @@ func (r *RemoteBackend) CanvasWrite(ctx context.Context, path, content, actor st
 	}
 	return result.ETag, nil
 }
+
+func (r *RemoteBackend) WorkflowList(ctx context.Context) ([]WorkflowDef, error) {
+	var result struct {
+		Workflows []WorkflowDef `json:"workflows"`
+	}
+	if err := r.getJSON(ctx, r.apiPrefix+"/workflows", &result); err != nil {
+		return nil, err
+	}
+	return result.Workflows, nil
+}
+
+func (r *RemoteBackend) WorkflowGet(ctx context.Context, name string) (*WorkflowDef, error) {
+	var w WorkflowDef
+	if err := r.getJSON(ctx, r.apiPrefix+"/workflows/"+url.PathEscape(name), &w); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+func (r *RemoteBackend) WorkflowSave(ctx context.Context, w WorkflowDef) error {
+	body, err := json.Marshal(w)
+	if err != nil {
+		return err
+	}
+	resp, err := r.do(ctx, http.MethodPut, r.apiPrefix+"/workflows/"+url.PathEscape(w.Name),
+		strings.NewReader(string(body)), "Content-Type", "application/json")
+	if err != nil {
+		return err
+	}
+	_, err = r.readBody(resp)
+	return err
+}
+
+func (r *RemoteBackend) WorkflowAdvance(ctx context.Context, path, targetState, actor string) (*WorkflowAdvanceResult, error) {
+	body, _ := json.Marshal(map[string]string{
+		"path":         path,
+		"target_state": targetState,
+		"actor":        actor,
+	})
+	resp, err := r.do(ctx, http.MethodPost, r.apiPrefix+"/workflow/advance",
+		strings.NewReader(string(body)), "Content-Type", "application/json")
+	if err != nil {
+		return nil, err
+	}
+	raw, err := r.readBody(resp)
+	if err != nil {
+		return nil, err
+	}
+	var result WorkflowAdvanceResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RemoteBackend) WorkflowBoard(ctx context.Context, workflowName string) (*WorkflowBoardResult, error) {
+	var result WorkflowBoardResult
+	if err := r.getJSON(ctx, r.apiPrefix+"/workflow/board/"+url.PathEscape(workflowName), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
