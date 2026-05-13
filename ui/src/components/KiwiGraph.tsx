@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Loader2,
+  Maximize2,
   Route,
   Search as SearchIcon,
   Tag,
@@ -25,6 +26,7 @@ import { api, type GraphResponse, type TreeEntry } from "@kw/lib/api";
 import { buildResolver } from "@kw/lib/wikiLinks";
 import { titleize } from "@kw/lib/paths";
 import { cn } from "@kw/lib/cn";
+import { getGraphPerformanceProfile, type GraphPerformanceProfile } from "@kw/lib/graphPerformance";
 import {
   readKiwiGraphTheme,
   type KiwiGraphTheme,
@@ -96,6 +98,7 @@ type BuiltGraph = {
   dirs: string[];
   tags: string[];
   communityMap: Map<number, { color: string; count: number; topDir: string }>;
+  performance: GraphPerformanceProfile;
 };
 
 function buildGraphData(
@@ -206,6 +209,7 @@ function buildGraphData(
     dirs: Array.from(dirSet).sort(),
     tags: Array.from(tagSet).sort(),
     communityMap,
+    performance: getGraphPerformanceProfile(nodes.length),
   };
 }
 
@@ -231,6 +235,15 @@ function bfsPath(
   }
   return [];
 }
+
+type RenderState = {
+  dirFilter: string;
+  tagFilter: string;
+  query: string;
+  hovered: GNode | null;
+  activePath?: string | null;
+  foundPath: string[] | null;
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Main component
@@ -270,6 +283,25 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     startTy: number;
   } | null>(null);
   const mouseRef = useRef({ x: 0, y: 0 });
+  const renderStateRef = useRef<RenderState>({
+    dirFilter: "",
+    tagFilter: "",
+    query: "",
+    hovered: null,
+    activePath,
+    foundPath: null,
+  });
+
+  useEffect(() => {
+    renderStateRef.current = {
+      dirFilter,
+      tagFilter,
+      query,
+      hovered,
+      activePath,
+      foundPath,
+    };
+  }, [dirFilter, tagFilter, query, hovered, activePath, foundPath]);
 
   // Fetch graph data
   useEffect(() => {
@@ -350,24 +382,25 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     transformRef.current = { x: rect.width / 2, y: rect.height / 2, scale: 1 };
 
     // d3-force simulation
+    const perf = data.performance.d3;
     const sim = forceSimulation<GNode>(data.nodes)
       .force(
         "link",
         forceLink<GNode, GLink>(data.links)
           .id((d) => d.id)
-          .distance(60)
-          .strength(0.4),
+          .distance(perf.linkDistance)
+          .strength(perf.linkStrength),
       )
-      .force("charge", forceManyBody().strength(-120).distanceMax(300))
+      .force("charge", forceManyBody().strength(perf.chargeStrength).distanceMax(perf.chargeDistanceMax))
       .force("center", forceCenter(0, 0))
       .force(
         "collide",
         forceCollide<GNode>()
           .radius((d) => d.radius + 2)
-          .iterations(2),
+          .iterations(perf.collideIterations),
       )
-      .alphaDecay(0.02)
-      .velocityDecay(0.4);
+      .alphaDecay(perf.alphaDecay)
+      .velocityDecay(perf.velocityDecay);
 
     simRef.current = sim;
 
@@ -384,13 +417,21 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       ctx.scale(scale, scale);
 
       const isDark = document.documentElement.classList.contains("dark");
-      const qLower = query.trim().toLowerCase();
-      const pathSet = foundPath ? new Set(foundPath) : null;
+      const {
+        dirFilter: renderDirFilter,
+        tagFilter: renderTagFilter,
+        query: renderQuery,
+        hovered: renderHovered,
+        activePath: renderActivePath,
+        foundPath: renderFoundPath,
+      } = renderStateRef.current;
+      const qLower = renderQuery.trim().toLowerCase();
+      const pathSet = renderFoundPath ? new Set(renderFoundPath) : null;
 
       const hoveredNeighbors = new Set<string>();
-      if (hovered) {
-        hoveredNeighbors.add(hovered.id);
-        for (const n of adjRef.current.get(hovered.id) || [])
+      if (renderHovered) {
+        hoveredNeighbors.add(renderHovered.id);
+        for (const n of adjRef.current.get(renderHovered.id) || [])
           hoveredNeighbors.add(n);
       }
 
@@ -403,9 +444,9 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         if (sx == null || sy == null || tx == null || ty == null) continue;
 
         // Filtering
-        if (dirFilter && s.dir !== dirFilter && t.dir !== dirFilter) continue;
-        if (tagFilter) {
-          if (!s.tags.includes(tagFilter) && !t.tags.includes(tagFilter))
+        if (renderDirFilter && s.dir !== renderDirFilter && t.dir !== renderDirFilter) continue;
+        if (renderTagFilter) {
+          if (!s.tags.includes(renderTagFilter) && !t.tags.includes(renderTagFilter))
             continue;
         }
 
@@ -422,9 +463,9 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
           } else {
             alpha = 0.04;
           }
-        } else if (hovered) {
+        } else if (renderHovered) {
           const connected =
-            (s.id === hovered.id || t.id === hovered.id);
+            (s.id === renderHovered.id || t.id === renderHovered.id);
           alpha = connected ? 0.6 : 0.04;
           width = connected ? 1.5 : 0.3;
         }
@@ -444,11 +485,11 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         if (nx == null || ny == null) continue;
 
         // Filtering
-        if (dirFilter && node.dir !== dirFilter) continue;
-        if (tagFilter && !node.tags.includes(tagFilter)) continue;
+        if (renderDirFilter && node.dir !== renderDirFilter) continue;
+        if (renderTagFilter && !node.tags.includes(renderTagFilter)) continue;
 
-        const isActive = activePath === node.id;
-        const isHovered = hovered?.id === node.id;
+        const isActive = renderActivePath === node.id;
+        const isHovered = renderHovered?.id === node.id;
         const isNeighbor = hoveredNeighbors.has(node.id);
         const onPath = pathSet?.has(node.id) ?? false;
         const queryMatch = qLower
@@ -458,27 +499,30 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
 
         let nodeAlpha = 1;
         if (pathSet && !onPath) nodeAlpha = 0.1;
-        else if (hovered && !isNeighbor) nodeAlpha = 0.15;
+        else if (renderHovered && !isNeighbor) nodeAlpha = 0.15;
         else if (qLower && !queryMatch) nodeAlpha = 0.1;
 
         const r = node.radius / scale;
         const [cr, cg, cb] = hexToRgb(node.color);
         const highlighted = isHovered || isActive || onPath;
 
-        // Layer 1: Outer ambient glow (soft halo) — always present, stronger on highlight
-        const glowRadius = highlighted ? r * 4 : r * 2.2;
-        const glowAlpha = highlighted ? 0.35 * nodeAlpha : 0.12 * nodeAlpha;
-        const glow = ctx.createRadialGradient(
-          nx, ny, r * 0.3,
-          nx, ny, glowRadius,
-        );
-        glow.addColorStop(0, `rgba(${cr},${cg},${cb},${glowAlpha})`);
-        glow.addColorStop(0.5, `rgba(${cr},${cg},${cb},${glowAlpha * 0.4})`);
-        glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-        ctx.beginPath();
-        ctx.arc(nx, ny, glowRadius, 0, Math.PI * 2);
-        ctx.fillStyle = glow;
-        ctx.fill();
+        // Layer 1: Outer ambient glow. Large graphs skip non-highlight glows to
+        // avoid creating thousands of radial gradients per animation frame.
+        if (!data.performance.largeGraph || highlighted) {
+          const glowRadius = highlighted ? r * 4 : r * 2.2;
+          const glowAlpha = highlighted ? 0.35 * nodeAlpha : 0.12 * nodeAlpha;
+          const glow = ctx.createRadialGradient(
+            nx, ny, r * 0.3,
+            nx, ny, glowRadius,
+          );
+          glow.addColorStop(0, `rgba(${cr},${cg},${cb},${glowAlpha})`);
+          glow.addColorStop(0.5, `rgba(${cr},${cg},${cb},${glowAlpha * 0.4})`);
+          glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+          ctx.beginPath();
+          ctx.arc(nx, ny, glowRadius, 0, Math.PI * 2);
+          ctx.fillStyle = glow;
+          ctx.fill();
+        }
 
         // Layer 2: Core disc — soft-edged via gradient (no hard stroke)
         const core = ctx.createRadialGradient(nx, ny, 0, nx, ny, r);
@@ -504,7 +548,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
 
         // Labels — zoom-adaptive visibility
         const showLabel =
-          scale > 0.6 ||
+          (data.performance.renderLabelsByDefault && scale > 0.6) ||
           isHovered ||
           isActive ||
           onPath ||
@@ -546,7 +590,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       sim.stop();
       ro.disconnect();
     };
-  }, [resp, tree, dirFilter, tagFilter, query, hovered, activePath, foundPath, pathFindActive, sizeByPageRank, colorByCommunity]);
+  }, [resp, tree, sizeByPageRank, colorByCommunity]);
 
   // ── Mouse interactions ──────────────────────────────────────────────────────
 
@@ -681,6 +725,43 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     [onNavigate, pathFindActive, pathSource, pathTarget],
   );
 
+  const fitGraphToView = useCallback(() => {
+    const data = dataRef.current;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!data || !rect || data.nodes.length === 0) return;
+
+    const positioned = data.nodes.filter(
+      (n) => typeof n.x === "number" && typeof n.y === "number",
+    );
+    if (positioned.length === 0) return;
+
+    const xs = positioned.map((n) => n.x!);
+    const ys = positioned.map((n) => n.y!);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const graphWidth = Math.max(1, maxX - minX);
+    const graphHeight = Math.max(1, maxY - minY);
+    const padding = 48;
+    const scale = Math.max(
+      0.1,
+      Math.min(
+        8,
+        Math.min(
+          (rect.width - padding * 2) / graphWidth,
+          (rect.height - padding * 2) / graphHeight,
+        ),
+      ),
+    );
+
+    transformRef.current = {
+      x: rect.width / 2 - ((minX + maxX) / 2) * scale,
+      y: rect.height / 2 - ((minY + maxY) / 2) * scale,
+      scale,
+    };
+  }, []);
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const rect = containerRef.current?.getBoundingClientRect();
@@ -730,6 +811,11 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
             ? `${built.nodes.length} pages · ${built.links.length} links`
             : null}
         </div>
+        {built?.performance.largeGraph && (
+          <div className="text-xs text-muted-foreground hidden lg:block">
+            Large graph mode: labels appear on hover/search.
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           <div className="relative">
             <SearchIcon className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -801,6 +887,16 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
           />
           Color by community
         </label>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-xs gap-1"
+          onClick={fitGraphToView}
+          title="Fit graph to view"
+        >
+          <Maximize2 className="h-3 w-3" />
+          Fit graph
+        </Button>
         <Button
           variant={pathFindActive ? "secondary" : "outline"}
           size="sm"
