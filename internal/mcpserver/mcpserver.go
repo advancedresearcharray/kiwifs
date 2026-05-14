@@ -646,6 +646,21 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleCanvasWrite(b),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_canvas_generate",
+				mcp.WithDescription("Auto-generate a spatial canvas from the knowledge graph using Graphviz layout. "+
+					"Reads wiki-links between pages, computes optimal positions, and writes a .canvas.json file. "+
+					"Use this to create visual maps of knowledge structure that humans can review and rearrange. "+
+					"Layout options: 'dot' (hierarchical, default), 'neato' (radial/spring), 'fdp' (force-directed), 'circo' (circular)."),
+				mcp.WithString("path", mcp.Description("Output path for the canvas file (default: canvas.canvas.json)"), mcp.MaxLength(500)),
+				mcp.WithString("layout", mcp.Description("Layout algorithm: dot (hierarchical), neato (radial), fdp (force-directed), circo (circular). Default: dot")),
+				mcp.WithString("folder", mcp.Description("Only include pages under this folder prefix (e.g. 'pages/' or 'architecture/'). Empty = all pages.")),
+				mcp.WithBoolean("colorize", mcp.Description("Color nodes by community detection (Louvain clustering). Default: true")),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+			),
+			Handler: handleCanvasGenerate(b),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_versions",
 				mcp.WithDescription("List git version history for a file. Returns commit hashes, dates, authors, and messages. Use this to inspect page history and see who changed what."),
 				mcp.WithString("path", pathOpts...),
@@ -2807,6 +2822,28 @@ func handleCanvasWrite(b Backend) server.ToolHandlerFunc {
 		}
 
 		out, _ := json.MarshalIndent(map[string]any{"path": path, "etag": etag}, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func handleCanvasGenerate(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		path, _ := args["path"].(string)
+		layout, _ := args["layout"].(string)
+		folder, _ := args["folder"].(string)
+
+		colorize := true
+		if v, ok := args["colorize"].(bool); ok {
+			colorize = v
+		}
+
+		result, err := b.CanvasGenerate(ctx, path, layout, folder, colorize)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to generate canvas: %v", err)), nil
+		}
+
+		out, _ := json.MarshalIndent(result, "", "  ")
 		return mcp.NewToolResultText(string(out)), nil
 	}
 }

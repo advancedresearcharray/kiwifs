@@ -169,3 +169,137 @@ Content with [[wikilinks]] to related pages.
 - **Provenance.** Agent-created pages must set provenance on write.
 - **Prefer pages over episodes.** When querying, use consolidated
   pages as primary source. Fall back to episodes only if no page exists.
+
+## Canvas (visual knowledge maps)
+
+Generate spatial visualizations of the knowledge graph that humans can
+review, rearrange, and annotate.
+
+### Auto-generate a canvas from the link graph
+
+```
+kiwi_canvas_generate(
+  path: "maps/architecture.canvas.json",
+  layout: "dot",       // or "neato", "fdp", "circo"
+  folder: "pages/",    // scope to a subtree
+  colorize: true       // color nodes by topic cluster
+)
+```
+
+The agent picks the layout algorithm based on the graph shape:
+- `dot` (hierarchical) — best for dependency trees, taxonomies
+- `neato` (spring model) — best for peer-to-peer relationship graphs
+- `fdp` (force-directed) — best for large, loosely connected graphs
+- `circo` (circular) — best for cyclic processes, pipelines
+
+### Manually build a canvas
+
+For curated maps (e.g. onboarding, architecture overviews):
+
+1. `kiwi_canvas_list` — see existing canvases.
+2. `kiwi_canvas_read(path)` — read an existing canvas.
+3. Build or modify the nodes/edges JSON.
+4. `kiwi_canvas_write(path, content)` — save it.
+
+### Example: Map a topic cluster
+
+```
+kiwi_graph_analytics()
+  → cluster "payments" has 12 pages
+kiwi_canvas_generate(
+  path: "maps/payments.canvas.json",
+  folder: "pages/payments/",
+  layout: "dot",
+  colorize: true
+)
+  → saved with 12 nodes, 18 edges
+```
+
+Human opens the canvas in the UI, drags nodes into a cleaner layout,
+adds text annotations. Agent work + human polish.
+
+## Workflows & Kanban (state machines for pages)
+
+Manage page lifecycles with defined states and transitions.
+The Kanban board groups pages by their current workflow state.
+
+### Set up a workflow
+
+Workflows live in `.kiwi/workflows/` as YAML files. The agent creates
+and manages them:
+
+1. `kiwi_workflow_list` — see existing workflows.
+2. `kiwi_workflow_save` — create or update a workflow definition:
+   ```json
+   {
+     "name": "content-pipeline",
+     "states": [
+       {"name": "draft", "color": "#9B59B6"},
+       {"name": "review", "color": "#F39C12"},
+       {"name": "published", "color": "#2ECC71", "terminal": true},
+       {"name": "archived", "color": "#95A5A6", "terminal": true}
+     ],
+     "transitions": [
+       {"from": "draft", "to": "review"},
+       {"from": "review", "to": "draft"},
+       {"from": "review", "to": "published"},
+       {"from": "published", "to": "archived"}
+     ]
+   }
+   ```
+3. `kiwi_workflow_get(name)` — read a workflow definition.
+
+### Advance pages through the workflow
+
+Pages participate in workflows via the `status` frontmatter field:
+
+```
+kiwi_write("pages/new-feature.md", content_with_frontmatter, actor: "agent")
+  # frontmatter includes: status: draft
+
+kiwi_workflow_advance(
+  path: "pages/new-feature.md",
+  target_state: "review",
+  actor: "agent"
+)
+  → moved from "draft" to "review"
+```
+
+The agent can only advance along defined transitions. Invalid moves
+are rejected — this enforces process discipline.
+
+### View the Kanban board
+
+```
+kiwi_workflow_board(workflow: "content-pipeline")
+  → { "draft": [page1, page2], "review": [page3], "published": [page4, ...] }
+```
+
+### Example: Content pipeline agent
+
+```
+# 1. Find pages that need review
+kiwi_workflow_board("content-pipeline")
+  → draft: ["pages/api-guide.md", "pages/deploy-notes.md"]
+
+# 2. Review each draft
+kiwi_read("pages/api-guide.md")
+kiwi_lint("pages/api-guide.md")
+  → no issues
+kiwi_workflow_advance("pages/api-guide.md", "review", actor: "reviewer-agent")
+
+# 3. After human approval, publish
+kiwi_workflow_advance("pages/api-guide.md", "published", actor: "publisher-agent")
+```
+
+### Example: Automated triage
+
+```
+# Find all uncategorized pages (no status field)
+kiwi_query("SELECT path FROM pages WHERE status IS NULL")
+  → 5 pages without workflow state
+
+# Assign them to the pipeline as drafts
+for each page:
+  kiwi_workflow_advance(page, "draft", actor: "triage-agent")
+```

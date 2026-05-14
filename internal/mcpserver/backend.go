@@ -191,6 +191,7 @@ type Backend interface {
 	CanvasList(ctx context.Context) ([]string, error)
 	CanvasRead(ctx context.Context, path string) (string, error)
 	CanvasWrite(ctx context.Context, path, content, actor string) (string, error)
+	CanvasGenerate(ctx context.Context, path, layout, folder string, colorize bool) (*CanvasGenerateResult, error)
 	Feed(ctx context.Context, limit int) (json.RawMessage, error)
 	WorkflowList(ctx context.Context) ([]WorkflowDef, error)
 	WorkflowGet(ctx context.Context, name string) (*WorkflowDef, error)
@@ -401,4 +402,11 @@ type TimelineEvent struct {
 	Actor     string `json:"actor"`
 	Timestamp string `json:"timestamp"`
 	Message   string `json:"message"`
+}
+
+type CanvasGenerateResult struct {
+	Path      string `json:"path"`
+	ETag      string `json:"etag"`
+	NodeCount int    `json:"node_count"`
+	EdgeCount int    `json:"edge_count"`
 }

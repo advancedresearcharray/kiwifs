@@ -496,6 +496,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/canvases", h.ListCanvas)
 	api.GET("/canvas", h.ReadCanvas)
 	api.PUT("/canvas", h.WriteCanvas)
+	api.POST("/canvas/generate", h.GenerateCanvas)
 
 	// Workflow endpoints
 	api.GET("/workflows", h.ListWorkflows)

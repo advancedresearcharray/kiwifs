@@ -2271,6 +2271,83 @@ func (b *LocalBackend) CanvasWrite(ctx context.Context, path, content, actor str
 	return res.ETag, nil
 }
 
+func (b *LocalBackend) CanvasGenerate(ctx context.Context, path, layout, folder string, colorize bool) (*CanvasGenerateResult, error) {
+	if err := b.init(); err != nil {
+		return nil, err
+	}
+
+	if path == "" {
+		path = "canvas.canvas.json"
+	}
+	if !strings.HasSuffix(path, ".canvas.json") {
+		path += ".canvas.json"
+	}
+
+	if b.stack.Linker == nil {
+		return nil, fmt.Errorf("link index not available")
+	}
+
+	allEdges, err := b.stack.Linker.AllEdges(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read link graph: %w", err)
+	}
+
+	pageSet := make(map[string]struct{})
+	var filteredEdges []links.Edge
+	for _, e := range allEdges {
+		srcOk := folder == "" || strings.HasPrefix(e.Source, folder)
+		tgtOk := folder == "" || strings.HasPrefix(e.Target, folder)
+		if srcOk {
+			pageSet[e.Source] = struct{}{}
+		}
+		if tgtOk {
+			pageSet[e.Target] = struct{}{}
+		}
+		if srcOk && tgtOk {
+			filteredEdges = append(filteredEdges, e)
+		}
+	}
+
+	pages := make([]string, 0, len(pageSet))
+	for p := range pageSet {
+		pages = append(pages, p)
+	}
+
+	var communities map[string]int
+	if colorize {
+		communities = graphutil.DetectCommunitiesFromEdges(filteredEdges)
+	}
+
+	algo := graphutil.LayoutAlgorithm(layout)
+	switch algo {
+	case graphutil.LayoutHierarchical, graphutil.LayoutRadial, graphutil.LayoutForce, graphutil.LayoutCircular:
+	default:
+		algo = graphutil.LayoutHierarchical
+	}
+
+	canvasLayout, err := graphutil.GenerateCanvasLayout(ctx, filteredEdges, pages, algo, communities)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := json.MarshalIndent(canvasLayout, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := b.stack.Pipeline.Write(ctx, path, content, "canvas-generator")
+	if err != nil {
+		return nil, err
+	}
+
+	return &CanvasGenerateResult{
+		Path:      path,
+		ETag:      res.ETag,
+		NodeCount: len(canvasLayout.Nodes),
+		EdgeCount: len(canvasLayout.Edges),
+	}, nil
+}
+
 func (b *LocalBackend) WorkflowList(_ context.Context) ([]WorkflowDef, error) {
 	if err := b.init(); err != nil {
 		return nil, err

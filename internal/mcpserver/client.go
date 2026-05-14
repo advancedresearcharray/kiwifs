@@ -822,6 +822,29 @@ func (r *RemoteBackend) CanvasWrite(ctx context.Context, path, content, actor st
 	return result.ETag, nil
 }
 
+func (r *RemoteBackend) CanvasGenerate(ctx context.Context, path, layout, folder string, colorize bool) (*CanvasGenerateResult, error) {
+	reqBody, _ := json.Marshal(map[string]any{
+		"path":     path,
+		"layout":   layout,
+		"folder":   folder,
+		"colorize": colorize,
+	})
+	resp, err := r.do(ctx, http.MethodPost, r.apiPrefix+"/canvas/generate",
+		strings.NewReader(string(reqBody)), "Content-Type", "application/json")
+	if err != nil {
+		return nil, err
+	}
+	body, err := r.readBody(resp)
+	if err != nil {
+		return nil, err
+	}
+	var result CanvasGenerateResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (r *RemoteBackend) WorkflowList(ctx context.Context) ([]WorkflowDef, error) {
 	var result struct {
 		Workflows []WorkflowDef `json:"workflows"`
