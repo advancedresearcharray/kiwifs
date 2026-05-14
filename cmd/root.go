@@ -29,6 +29,13 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		// Async version check on every invocation (non-blocking, cached 24h)
+		if cmd.Name() != "update" {
+			CheckVersionAsync()
+		}
+	}
+
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(mountCmd)
@@ -36,4 +43,9 @@ func init() {
 	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(restoreCmd)
 	rootCmd.AddCommand(rulesCmd)
+	rootCmd.AddCommand(connectCmd)
+	rootCmd.AddCommand(loginCmd)
+	rootCmd.AddCommand(logoutCmd)
+	rootCmd.AddCommand(whoamiCmd)
+	rootCmd.AddCommand(updateCmd)
 }
