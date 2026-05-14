@@ -485,6 +485,19 @@ export const api = {
     });
   },
 
+  async generateCanvas(opts?: {
+    path?: string;
+    layout?: "dot" | "neato" | "fdp" | "circo";
+    folder?: string;
+    colorize?: boolean;
+  }): Promise<{ path: string; etag: string; node_count: number; edge_count: number }> {
+    return request(`${kiwiBase()}/canvas/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts ?? {}),
+    });
+  },
+
   // --- Timeline ---
 
   async getTimeline(params?: {
