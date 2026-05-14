@@ -12,6 +12,15 @@ describe("tree reveal helpers", () => {
     expect(next).not.toBe(previous);
   });
 
+  it("handles a root-level file by only adding the root entry", () => {
+    const previous = new Set<string>();
+
+    const next = nextExpandedForReveal(previous, "README.md");
+
+    expect([...next].sort()).toEqual([""]);
+    expect(next).not.toBe(previous);
+  });
+
   it("does nothing when no reveal path is available", () => {
     const previous = new Set(["existing"]);
 

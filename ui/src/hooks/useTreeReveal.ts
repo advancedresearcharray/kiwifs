@@ -22,12 +22,11 @@ export function useTreeRevealTargetFocus<T extends HTMLElement>(
   useEffect(() => {
     if (!shouldFocusRevealTarget(revealRequest, path)) return;
 
-    requestAnimationFrame(() => {
+    const id = requestAnimationFrame(() => {
       const node = nodeRef.current;
       node?.scrollIntoView({ block: "center", inline: "nearest" });
-      if (node instanceof HTMLButtonElement) {
-        node.focus({ preventScroll: true });
-      }
+      node?.focus({ preventScroll: true });
     });
+    return () => cancelAnimationFrame(id);
   }, [nodeRef, path, revealRequest]);
 }
