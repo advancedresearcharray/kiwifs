@@ -529,7 +529,19 @@ export const api = {
   },
 
   async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[] }> {
-    return request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
+    const raw: { workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]> } =
+      await request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
+
+    if (raw.columns) return raw as unknown as { columns: WorkflowColumn[] };
+
+    const wf = raw.workflow;
+    const board = raw.board ?? {};
+    const columns: WorkflowColumn[] = (wf?.states ?? []).map((s) => ({
+      state: s.name,
+      color: s.color,
+      pages: board[s.name] ?? [],
+    }));
+    return { columns };
   },
 
   async advanceWorkflow(path: string, workflow: string, targetState: string): Promise<void> {
