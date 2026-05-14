@@ -5,6 +5,7 @@ import {
   Clock,
   Clock4,
   Columns3,
+  Crosshair,
   Database,
   File,
   FileAxis3D,
@@ -51,6 +52,7 @@ import {
 import { api, getCurrentSpace, setCurrentSpace, sseUrl, type TreeEntry } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
 import { isMarkdown } from "./lib/paths";
+import { type TreeRevealRequest } from "./lib/treeReveal";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -82,6 +84,7 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
+  const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
 
   // Close all full-screen views. Called before opening a new one so only one
   // view is ever active — the ternary render chain in <main> checks them in
@@ -281,6 +284,12 @@ const handleSpaceSwitch = useCallback(() => {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  function revealActivePageInTree() {
+    if (!activePath) return;
+    setSidebarOpen(true);
+    setTreeRevealRequest((prev) => ({ path: activePath, nonce: (prev?.nonce ?? 0) + 1 }));
+  }
+
   function navigate(path: string) {
     if (!path) {
       const firstMd = tree ? firstMarkdown(tree) : null;
@@ -365,6 +374,9 @@ const handleSpaceSwitch = useCallback(() => {
           <div className="flex items-center gap-0.5">
             <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label="New page (⌘N)">
               <Plus className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={revealActivePageInTree} label="Reveal current page in tree" disabled={!activePath}>
+              <Crosshair className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
               <Network className="h-4 w-4" />
@@ -478,9 +490,16 @@ const handleSpaceSwitch = useCallback(() => {
                     ))}
                   </SidebarSection>
                 )}
-                <SidebarSection icon={<FileAxis3D className="h-3.5 w-3.5" />} title="Pages" storageKey="pages" defaultOpen>
+                <SidebarSection
+                  icon={<FileAxis3D className="h-3.5 w-3.5" />}
+                  title="Pages"
+                  storageKey="pages"
+                  defaultOpen
+                  expandSignal={treeRevealRequest?.nonce}
+                >
                   <KiwiTree
                     activePath={activePath}
+                    revealRequest={treeRevealRequest}
                     onSelect={navigate}
                     refreshKey={refreshKey}
                     onCreateChild={(folder) => {
@@ -744,10 +763,12 @@ function ToolbarButton({
   children,
   label,
   onClick,
+  disabled,
 }: {
   children: React.ReactNode;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Tooltip>
@@ -758,6 +779,7 @@ function ToolbarButton({
           className="h-8 w-8"
           aria-label={label}
           onClick={onClick}
+          disabled={disabled}
         >
           {children}
         </Button>
@@ -775,12 +797,14 @@ function SidebarSection({
   children,
   storageKey,
   defaultOpen,
+  expandSignal,
 }: {
   icon: React.ReactNode;
   title: string;
   children: React.ReactNode;
   storageKey?: string;
   defaultOpen?: boolean;
+  expandSignal?: number;
 }) {
   const [collapsed, setCollapsed] = useState(() => {
     if (!storageKey) return false;
@@ -790,6 +814,12 @@ function SidebarSection({
     } catch {}
     return !defaultOpen;
   });
+
+  useEffect(() => {
+    if (expandSignal == null) return;
+    setCollapsed(false);
+  }, [expandSignal]);
+
   return (
     <div className="border-b border-border/50 last:border-b-0">
       <button

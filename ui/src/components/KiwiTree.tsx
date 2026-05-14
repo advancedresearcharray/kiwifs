@@ -38,9 +38,12 @@ import {
 import { Button } from "@kw/components/ui/button";
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
+import { type TreeRevealRequest } from "@kw/lib/treeReveal";
+import { useTreeRevealExpansion, useTreeRevealTargetFocus } from "@kw/hooks/useTreeReveal";
 
 type Props = {
   activePath: string | null;
+  revealRequest?: TreeRevealRequest | null;
   onSelect: (path: string) => void;
   refreshKey?: number;
   onCreateChild?: (folder: string) => void;
@@ -63,7 +66,7 @@ type ConfirmDialog = {
   onConfirm: () => void;
 };
 
-export function KiwiTree({ activePath, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved }: Props) {
+export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved }: Props) {
   const [root, setRoot] = useState<TreeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
@@ -112,6 +115,8 @@ export function KiwiTree({ activePath, onSelect, refreshKey, onCreateChild, onDe
       })
       .catch((e) => setError(String(e)));
   }, [refreshKey]);
+
+  useTreeRevealExpansion(revealRequest, setExpanded);
 
   if (error) {
     return (
@@ -164,6 +169,7 @@ export function KiwiTree({ activePath, onSelect, refreshKey, onCreateChild, onDe
           entry={child}
           depth={0}
           activePath={activePath}
+          revealRequest={revealRequest}
           expanded={expanded}
           onToggle={toggle}
           onSelect={onSelect}
@@ -282,6 +288,7 @@ function Node({
   entry,
   depth,
   activePath,
+  revealRequest,
   expanded,
   onToggle,
   onSelect,
@@ -298,6 +305,7 @@ function Node({
   entry: TreeEntry;
   depth: number;
   activePath: string | null;
+  revealRequest?: TreeRevealRequest | null;
   expanded: Set<string>;
   onToggle: (p: string) => void;
   onSelect: (p: string) => void;
@@ -314,6 +322,9 @@ function Node({
   const path = stripTrailingSlash(entry.path);
   const isOpen = expanded.has(path);
   const isActive = activePath === path;
+  const nodeRef = useRef<HTMLButtonElement | HTMLAnchorElement | null>(null);
+
+  useTreeRevealTargetFocus(revealRequest, path, nodeRef);
 
   if (entry.isDir) {
     return (
@@ -487,6 +498,7 @@ function Node({
                 entry={c}
                 depth={depth + 1}
                 activePath={activePath}
+                revealRequest={revealRequest}
                 expanded={expanded}
                 onToggle={onToggle}
                 onSelect={onSelect}
@@ -510,6 +522,7 @@ function Node({
   if (!isMarkdown(path)) {
     return (
       <a
+        ref={nodeRef as React.Ref<HTMLAnchorElement>}
         href={`/api/kiwi${getCurrentSpace() && getCurrentSpace() !== "default" ? "/" + getCurrentSpace() : ""}/file?path=${encodeURIComponent(path)}`}
         target="_blank"
         rel="noreferrer"
@@ -529,6 +542,7 @@ function Node({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <button
+          ref={nodeRef as React.Ref<HTMLButtonElement>}
           type="button"
           onClick={() => onSelect(path)}
           draggable
