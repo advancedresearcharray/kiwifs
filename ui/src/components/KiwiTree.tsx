@@ -38,11 +38,8 @@ import {
 import { Button } from "@kw/components/ui/button";
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
-
-type TreeRevealRequest = {
-  path: string;
-  nonce: number;
-};
+import { type TreeRevealRequest } from "@kw/lib/treeReveal";
+import { useTreeRevealExpansion, useTreeRevealTargetFocus } from "@kw/hooks/useTreeReveal";
 
 type Props = {
   activePath: string | null;
@@ -119,17 +116,7 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
       .catch((e) => setError(String(e)));
   }, [refreshKey]);
 
-  useEffect(() => {
-    if (!revealRequest?.path) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.add("");
-      for (const parent of parentPaths(revealRequest.path)) {
-        next.add(parent);
-      }
-      return next;
-    });
-  }, [revealRequest]);
+  useTreeRevealExpansion(revealRequest, setExpanded);
 
   if (error) {
     return (
@@ -337,15 +324,7 @@ function Node({
   const isActive = activePath === path;
   const nodeRef = useRef<HTMLButtonElement | HTMLAnchorElement | null>(null);
 
-  useEffect(() => {
-    if (!revealRequest || revealRequest.path !== path) return;
-    requestAnimationFrame(() => {
-      nodeRef.current?.scrollIntoView({ block: "center", inline: "nearest" });
-      if (nodeRef.current instanceof HTMLButtonElement) {
-        nodeRef.current.focus({ preventScroll: true });
-      }
-    });
-  }, [path, revealRequest]);
+  useTreeRevealTargetFocus(revealRequest, path, nodeRef);
 
   if (entry.isDir) {
     return (
@@ -641,15 +620,6 @@ function Node({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
-
-function parentPaths(path: string): string[] {
-  const parts = stripTrailingSlash(path).split("/").filter(Boolean);
-  const parents: string[] = [];
-  for (let i = 1; i < parts.length; i += 1) {
-    parents.push(parts.slice(0, i).join("/"));
-  }
-  return parents;
 }
 
 function collectFiles(entry: TreeEntry): string[] {

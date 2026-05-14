@@ -52,6 +52,7 @@ import {
 import { api, getCurrentSpace, setCurrentSpace, sseUrl, type TreeEntry } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
 import { isMarkdown } from "./lib/paths";
+import { type TreeRevealRequest } from "./lib/treeReveal";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -83,7 +84,7 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
-  const [treeRevealRequest, setTreeRevealRequest] = useState<{ path: string; nonce: number } | null>(null);
+  const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
 
   // Close all full-screen views. Called before opening a new one so only one
   // view is ever active — the ternary render chain in <main> checks them in
