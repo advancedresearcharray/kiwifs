@@ -39,8 +39,14 @@ import { Button } from "@kw/components/ui/button";
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
 
+type TreeRevealRequest = {
+  path: string;
+  nonce: number;
+};
+
 type Props = {
   activePath: string | null;
+  revealRequest?: TreeRevealRequest | null;
   onSelect: (path: string) => void;
   refreshKey?: number;
   onCreateChild?: (folder: string) => void;
@@ -63,7 +69,7 @@ type ConfirmDialog = {
   onConfirm: () => void;
 };
 
-export function KiwiTree({ activePath, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved }: Props) {
+export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved }: Props) {
   const [root, setRoot] = useState<TreeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
@@ -112,6 +118,18 @@ export function KiwiTree({ activePath, onSelect, refreshKey, onCreateChild, onDe
       })
       .catch((e) => setError(String(e)));
   }, [refreshKey]);
+
+  useEffect(() => {
+    if (!revealRequest?.path) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add("");
+      for (const parent of parentPaths(revealRequest.path)) {
+        next.add(parent);
+      }
+      return next;
+    });
+  }, [revealRequest]);
 
   if (error) {
     return (
@@ -164,6 +182,7 @@ export function KiwiTree({ activePath, onSelect, refreshKey, onCreateChild, onDe
           entry={child}
           depth={0}
           activePath={activePath}
+          revealRequest={revealRequest}
           expanded={expanded}
           onToggle={toggle}
           onSelect={onSelect}
@@ -282,6 +301,7 @@ function Node({
   entry,
   depth,
   activePath,
+  revealRequest,
   expanded,
   onToggle,
   onSelect,
@@ -298,6 +318,7 @@ function Node({
   entry: TreeEntry;
   depth: number;
   activePath: string | null;
+  revealRequest?: TreeRevealRequest | null;
   expanded: Set<string>;
   onToggle: (p: string) => void;
   onSelect: (p: string) => void;
@@ -314,6 +335,17 @@ function Node({
   const path = stripTrailingSlash(entry.path);
   const isOpen = expanded.has(path);
   const isActive = activePath === path;
+  const nodeRef = useRef<HTMLButtonElement | HTMLAnchorElement | null>(null);
+
+  useEffect(() => {
+    if (!revealRequest || revealRequest.path !== path) return;
+    requestAnimationFrame(() => {
+      nodeRef.current?.scrollIntoView({ block: "center", inline: "nearest" });
+      if (nodeRef.current instanceof HTMLButtonElement) {
+        nodeRef.current.focus({ preventScroll: true });
+      }
+    });
+  }, [path, revealRequest]);
 
   if (entry.isDir) {
     return (
@@ -487,6 +519,7 @@ function Node({
                 entry={c}
                 depth={depth + 1}
                 activePath={activePath}
+                revealRequest={revealRequest}
                 expanded={expanded}
                 onToggle={onToggle}
                 onSelect={onSelect}
@@ -510,6 +543,7 @@ function Node({
   if (!isMarkdown(path)) {
     return (
       <a
+        ref={nodeRef as React.Ref<HTMLAnchorElement>}
         href={`/api/kiwi${getCurrentSpace() && getCurrentSpace() !== "default" ? "/" + getCurrentSpace() : ""}/file?path=${encodeURIComponent(path)}`}
         target="_blank"
         rel="noreferrer"
@@ -529,6 +563,7 @@ function Node({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <button
+          ref={nodeRef as React.Ref<HTMLButtonElement>}
           type="button"
           onClick={() => onSelect(path)}
           draggable
@@ -606,6 +641,15 @@ function Node({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+function parentPaths(path: string): string[] {
+  const parts = stripTrailingSlash(path).split("/").filter(Boolean);
+  const parents: string[] = [];
+  for (let i = 1; i < parts.length; i += 1) {
+    parents.push(parts.slice(0, i).join("/"));
+  }
+  return parents;
 }
 
 function collectFiles(entry: TreeEntry): string[] {
