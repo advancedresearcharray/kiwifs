@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/kiwifs/kiwifs/compare/v0.16.0...v0.17.0) (2026-05-14)
+
+
+### Features
+
+* agent-driven canvas generation with Graphviz auto-layout ([4595b69](https://github.com/kiwifs/kiwifs/commit/4595b695fdd6bd18432629996b4c2fd756997884))
+
 ## [0.16.0](https://github.com/kiwifs/kiwifs/compare/v0.15.1...v0.16.0) (2026-05-14)
 
 
