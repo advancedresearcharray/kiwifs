@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/kiwifs/kiwifs/compare/v0.15.1...v0.16.0) (2026-05-14)
+
+
+### Features
+
+* **ui:** reveal current page in tree ([406cbb1](https://github.com/kiwifs/kiwifs/commit/406cbb1bfd5bbb05d8a841856ede5256c3698d29))
+* **ui:** reveal current page in tree ([5af338b](https://github.com/kiwifs/kiwifs/commit/5af338b29462650a8504ab6bbfc83efe201f0223))
+
+
+### Bug Fixes
+
+* **ui:** add rAF cleanup, focus anchors in tree reveal ([124e91a](https://github.com/kiwifs/kiwifs/commit/124e91afa82eacfc85167d3b2901e3a2560a5855))
+
 ## [0.15.1](https://github.com/kiwifs/kiwifs/compare/v0.15.0...v0.15.1) (2026-05-13)
 
 
