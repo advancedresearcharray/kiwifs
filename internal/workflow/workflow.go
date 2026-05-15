@@ -38,13 +38,29 @@ type Transition struct {
 	RequiredRole string `json:"required_role,omitempty"` // optional RBAC gate
 }
 
+// ValidateName checks that a workflow name maps to exactly one JSON file under
+// .kiwi/workflows. Display names may contain spaces or non-ASCII characters,
+// but path separators and cleaned path components are rejected.
+func ValidateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("workflow name cannot be empty")
+	}
+	if name != strings.TrimSpace(name) {
+		return fmt.Errorf("workflow name cannot have leading or trailing whitespace")
+	}
+	if name == "." || name == ".." || filepath.Clean(name) != name || strings.ContainsAny(name, `/\\`) {
+		return fmt.Errorf("invalid workflow name: %s", name)
+	}
+	return nil
+}
+
 // Validate checks internal consistency of a workflow definition:
 //   - all transition endpoints reference defined states
 //   - terminal states have no outbound transitions
 //   - no duplicate state names
 func Validate(w Workflow) error {
-	if w.Name == "" {
-		return fmt.Errorf("workflow name cannot be empty")
+	if err := ValidateName(w.Name); err != nil {
+		return err
 	}
 	if len(w.States) == 0 {
 		return fmt.Errorf("workflow must have at least one state")
@@ -126,6 +142,9 @@ func Load(kiwiDir string) ([]Workflow, error) {
 
 // Get reads a single workflow definition by name.
 func Get(kiwiDir, name string) (Workflow, error) {
+	if err := ValidateName(name); err != nil {
+		return Workflow{}, err
+	}
 	path := filepath.Join(kiwiDir, ".kiwi", "workflows", name+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -160,6 +179,22 @@ func Save(kiwiDir string, w Workflow) error {
 	path := filepath.Join(dir, w.Name+".json")
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write workflow: %w", err)
+	}
+	return nil
+}
+
+// Delete removes a workflow definition from .kiwi/workflows/<name>.json.
+func Delete(kiwiDir, name string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+
+	path := filepath.Join(kiwiDir, ".kiwi", "workflows", name+".json")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workflow %q not found", name)
+		}
+		return fmt.Errorf("delete workflow %q: %w", name, err)
 	}
 	return nil
 }

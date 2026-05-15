@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDraggable } from "@dnd-kit/core";
 import { getCurrentSpace } from "../lib/api";
 import { TreeSkeleton } from "./TreeSkeleton";
 import {
@@ -39,6 +40,7 @@ import { Button } from "@kw/components/ui/button";
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
 import { type TreeRevealRequest } from "@kw/lib/treeReveal";
+import { createTreePageDragData } from "@kw/lib/kanbanDnd";
 import { useTreeRevealExpansion, useTreeRevealTargetFocus } from "@kw/hooks/useTreeReveal";
 
 type Props = {
@@ -50,6 +52,7 @@ type Props = {
   onDeleted?: () => void;
   onDuplicated?: (newPath: string) => void;
   onMoved?: (newPath: string) => void;
+  enableKanbanDrag?: boolean;
 };
 
 type PromptDialog = {
@@ -66,7 +69,7 @@ type ConfirmDialog = {
   onConfirm: () => void;
 };
 
-export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved }: Props) {
+export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved, enableKanbanDrag = false }: Props) {
   const [root, setRoot] = useState<TreeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
@@ -182,6 +185,7 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
           setDropTarget={setDropTarget}
           openPromptDialog={openPromptDialog}
           openConfirmDialog={setConfirmDialog}
+          enableKanbanDrag={enableKanbanDrag}
         />
       ))}
 
@@ -301,6 +305,7 @@ function Node({
   setDropTarget,
   openPromptDialog,
   openConfirmDialog,
+  enableKanbanDrag,
 }: {
   entry: TreeEntry;
   depth: number;
@@ -318,11 +323,21 @@ function Node({
   setDropTarget: (path: string | null) => void;
   openPromptDialog: (d: PromptDialog) => void;
   openConfirmDialog: (d: ConfirmDialog) => void;
+  enableKanbanDrag: boolean;
 }) {
   const path = stripTrailingSlash(entry.path);
   const isOpen = expanded.has(path);
   const isActive = activePath === path;
   const nodeRef = useRef<HTMLButtonElement | HTMLAnchorElement | null>(null);
+  const draggable = useDraggable({
+    id: `tree-page:${path}`,
+    data: createTreePageDragData(path, stem(entry.name)),
+    disabled: !enableKanbanDrag || entry.isDir || !isMarkdown(path),
+  });
+  const setMarkdownNodeRef = (node: HTMLButtonElement | null) => {
+    nodeRef.current = node;
+    draggable.setNodeRef(node);
+  };
 
   useTreeRevealTargetFocus(revealRequest, path, nodeRef);
 
@@ -511,6 +526,7 @@ function Node({
                 setDropTarget={setDropTarget}
                 openPromptDialog={openPromptDialog}
                 openConfirmDialog={openConfirmDialog}
+                enableKanbanDrag={enableKanbanDrag}
               />
             ))}
           </div>
@@ -542,11 +558,17 @@ function Node({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <button
-          ref={nodeRef as React.Ref<HTMLButtonElement>}
+          ref={setMarkdownNodeRef}
           type="button"
           onClick={() => onSelect(path)}
-          draggable
+          draggable={!enableKanbanDrag}
+          {...draggable.attributes}
+          {...draggable.listeners}
           onDragStart={(e) => {
+            if (enableKanbanDrag) {
+              e.preventDefault();
+              return;
+            }
             dragPath.current = path;
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.setData("text/plain", path);
@@ -559,6 +581,7 @@ function Node({
             "w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left transition-colors",
             "hover:bg-accent hover:text-accent-foreground",
             isActive && "bg-accent text-accent-foreground font-medium",
+            draggable.isDragging && "opacity-50",
           )}
           style={{ paddingLeft: 8 + depth * 12 + 14 }}
         >

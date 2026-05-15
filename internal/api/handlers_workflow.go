@@ -15,6 +15,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const workflowRequestBodyLimit = 1 << 20
+
 // ListWorkflows returns all workflow definitions from .kiwi/workflows/*.json
 func (h *Handlers) ListWorkflows(c echo.Context) error {
 	workflows, err := workflow.Load(h.root)
@@ -48,7 +50,8 @@ func (h *Handlers) SaveWorkflow(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "workflow name required")
 	}
 
-	body, err := io.ReadAll(c.Request().Body)
+	limitedBody := http.MaxBytesReader(c.Response(), c.Request().Body, workflowRequestBodyLimit)
+	body, err := io.ReadAll(limitedBody)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
@@ -66,6 +69,99 @@ func (h *Handlers) SaveWorkflow(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"status": "saved", "workflow": w})
 }
 
+// DeleteWorkflow removes a workflow definition. It does not edit pages that
+// reference the workflow in frontmatter.
+func (h *Handlers) DeleteWorkflow(c echo.Context) error {
+	name := c.Param("name")
+	if name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "workflow name required")
+	}
+
+	if err := workflow.Delete(h.root, name); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{"status": "deleted", "name": name})
+}
+
+// AssignWorkflow adds an existing page to a workflow/state column, or moves it
+// into a workflow column regardless of its previous workflow membership.
+func (h *Handlers) AssignWorkflow(c echo.Context) error {
+	limitedBody := http.MaxBytesReader(c.Response(), c.Request().Body, workflowRequestBodyLimit)
+	body, err := io.ReadAll(limitedBody)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	var req struct {
+		Path     string `json:"path"`
+		Workflow string `json:"workflow"`
+		State    string `json:"state"`
+		Actor    string `json:"actor"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid JSON")
+	}
+	if req.Path == "" || req.Workflow == "" || req.State == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "path, workflow, and state are required")
+	}
+	if !strings.HasSuffix(strings.ToLower(req.Path), ".md") {
+		return echo.NewHTTPError(http.StatusBadRequest, "workflow assignment only supports markdown pages")
+	}
+	if err := workflow.ValidateName(req.Workflow); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	actor := req.Actor
+	if actor == "" {
+		actor = c.Request().Header.Get("X-Actor")
+	}
+	if actor == "" {
+		actor = "system"
+	}
+
+	w, err := workflow.Get(h.root, req.Workflow)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "workflow not found: "+err.Error())
+	}
+	if !workflowHasState(w, req.State) {
+		return echo.NewHTTPError(http.StatusBadRequest, "workflow state not found: "+req.State)
+	}
+
+	content, err := h.store.Read(c.Request().Context(), req.Path)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "page not found: "+err.Error())
+	}
+
+	updated, err := setFrontmatterFields(content, map[string]string{
+		"workflow": req.Workflow,
+		"state":    req.State,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to update workflow: "+err.Error())
+	}
+
+	result, err := h.pipe.Write(c.Request().Context(), req.Path, updated, actor)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"path":     req.Path,
+		"workflow": req.Workflow,
+		"state":    req.State,
+		"etag":     result.ETag,
+	})
+}
+
+func workflowHasState(w workflow.Workflow, stateName string) bool {
+	for _, state := range w.States {
+		if state.Name == stateName {
+			return true
+		}
+	}
+	return false
+}
+
 // AdvanceWorkflow moves a page from one workflow state to another.
 //
 // Request body: { "path": "...", "target_state": "...", "actor": "..." }
@@ -76,7 +172,8 @@ func (h *Handlers) SaveWorkflow(c echo.Context) error {
 //  3. Validates the transition
 //  4. Updates frontmatter state and writes the page
 func (h *Handlers) AdvanceWorkflow(c echo.Context) error {
-	body, err := io.ReadAll(c.Request().Body)
+	limitedBody := http.MaxBytesReader(c.Response(), c.Request().Body, workflowRequestBodyLimit)
+	body, err := io.ReadAll(limitedBody)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
@@ -207,7 +304,7 @@ func (h *Handlers) WorkflowBoard(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"workflow": w,
-		"board":   board,
+		"board":    board,
 	})
 }
 
@@ -215,16 +312,26 @@ func (h *Handlers) WorkflowBoard(c echo.Context) error {
 // markdown document and returns the reconstructed document. It preserves
 // the body and other frontmatter fields.
 func setFrontmatterField(content []byte, key, value string) ([]byte, error) {
+	return setFrontmatterFields(content, map[string]string{key: value})
+}
+
+func setFrontmatterFields(content []byte, fields map[string]string) ([]byte, error) {
 	fmRaw, body, err := markdown.SplitFrontmatter(content)
-	if err != nil || len(fmRaw) == 0 {
-		return nil, fmt.Errorf("no frontmatter found")
+	if err != nil {
+		return nil, fmt.Errorf("split frontmatter: %w", err)
 	}
 
-	var fm map[string]any
-	if err := yaml.Unmarshal(fmRaw, &fm); err != nil {
-		return nil, fmt.Errorf("parse frontmatter: %w", err)
+	fm := map[string]any{}
+	if len(fmRaw) > 0 {
+		if err := yaml.Unmarshal(fmRaw, &fm); err != nil {
+			return nil, fmt.Errorf("parse frontmatter: %w", err)
+		}
+	} else {
+		body = content
 	}
-	fm[key] = value
+	for key, value := range fields {
+		fm[key] = value
+	}
 
 	newFM, err := yaml.Marshal(fm)
 	if err != nil {

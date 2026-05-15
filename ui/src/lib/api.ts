@@ -528,8 +528,22 @@ export const api = {
     return request(`${kiwiBase()}/workflows`);
   },
 
+  async saveWorkflow(workflow: WorkflowDef): Promise<{ status: string; workflow: WorkflowDef }> {
+    return request(`${kiwiBase()}/workflows/${encodeURIComponent(workflow.name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(workflow),
+    });
+  },
+
+  async deleteWorkflow(name: string): Promise<{ status: string; name: string }> {
+    return request(`${kiwiBase()}/workflows/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+  },
+
   async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[] }> {
-    const raw: { workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]>; columns?: WorkflowColumn[] } =
+    const raw: { columns?: WorkflowColumn[]; workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]> } =
       await request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
 
     if (raw.columns) return { columns: raw.columns };
@@ -549,6 +563,14 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path, workflow, target_state: targetState }),
+    });
+  },
+
+  async assignWorkflow(path: string, workflow: string, state: string): Promise<{ path: string; workflow: string; state: string; etag: string }> {
+    return request(`${kiwiBase()}/workflow/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, workflow, state }),
     });
   },
 

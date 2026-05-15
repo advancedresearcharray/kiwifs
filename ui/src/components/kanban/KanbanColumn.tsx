@@ -1,5 +1,6 @@
 // Single Kanban column — wraps children in a droppable sortable context.
 
+import { Plus } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -14,9 +15,10 @@ type Props = {
   count: number;
   children: ReactNode;
   items: string[];
+  onAdd?: (state: string) => void;
 };
 
-export function KanbanColumn({ id, state, color, count, children, items }: Props) {
+export function KanbanColumn({ id, state, color, count, children, items, onAdd }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
@@ -35,6 +37,16 @@ export function KanbanColumn({ id, state, color, count, children, items }: Props
         <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
           {count}
         </span>
+        {onAdd && (
+          <button
+            type="button"
+            onClick={() => onAdd(state)}
+            className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+            aria-label={`Add card to ${state}`}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Droppable area */}

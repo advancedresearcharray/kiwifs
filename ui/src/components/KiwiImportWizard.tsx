@@ -3,9 +3,10 @@ import { ArrowLeft, ArrowRight, CheckCircle, Loader2, Upload } from "lucide-reac
 import { Button } from "./ui/button";
 import { api } from "../lib/api";
 
-type SourceType = "firestore" | "postgres" | "mysql" | "mongodb" | "notion" | "airtable" | "csv";
+type SourceType = "markdown" | "firestore" | "postgres" | "mysql" | "mongodb" | "notion" | "airtable" | "csv";
 
 const SOURCE_OPTIONS: { type: SourceType; label: string; icon: string; description: string }[] = [
+  { type: "markdown", label: "Markdown", icon: "\uD83D\uDCC1", description: "Folder of .md files" },
   { type: "firestore", label: "Firestore", icon: "\uD83D\uDD25", description: "Google Cloud Firestore" },
   { type: "postgres", label: "PostgreSQL", icon: "\uD83D\uDC18", description: "PostgreSQL database" },
   { type: "mysql", label: "MySQL", icon: "\uD83D\uDC2C", description: "MySQL / MariaDB" },
@@ -28,6 +29,8 @@ type WizardState = {
   tableId: string;
   apiKey: string;
   credentials: unknown | null;
+  // File/path params (markdown)
+  path: string;
   // Browse results
   tables: { name: string; estimated_count?: number }[];
   selectedTable: string;
@@ -51,6 +54,7 @@ const initialState: WizardState = {
   tableId: "",
   apiKey: "",
   credentials: null,
+  path: "",
   tables: [],
   selectedTable: "",
   prefix: "",
@@ -122,7 +126,9 @@ export function KiwiImportWizard({
         from: state.sourceType,
         limit: 5,
       };
-      if (state.sourceType === "firestore") {
+      if (state.sourceType === "markdown") {
+        params.path = state.path;
+      } else if (state.sourceType === "firestore") {
         params.project = state.project;
         params.collection = state.selectedTable;
         if (state.credentials) params.credentials = state.credentials;
@@ -161,7 +167,9 @@ export function KiwiImportWizard({
       };
       if (state.idColumn) params.id_column = state.idColumn;
 
-      if (state.sourceType === "firestore") {
+      if (state.sourceType === "markdown") {
+        params.path = state.path;
+      } else if (state.sourceType === "firestore") {
         params.project = state.project;
         params.collection = state.selectedTable;
         if (state.credentials) params.credentials = state.credentials;
@@ -190,8 +198,8 @@ export function KiwiImportWizard({
     }
   };
 
-  // Can we skip browse? (Notion/Airtable don't have browse)
-  const skipsBrowse = state.sourceType === "notion" || state.sourceType === "airtable" || state.sourceType === "csv";
+  // Can we skip browse? (markdown/Notion/Airtable don't have browse)
+  const skipsBrowse = state.sourceType === "markdown" || state.sourceType === "notion" || state.sourceType === "airtable" || state.sourceType === "csv";
 
   return (
     <div className="max-w-3xl mx-auto p-6">
@@ -365,10 +373,38 @@ export function KiwiImportWizard({
             </>
           )}
 
+          {state.sourceType === "markdown" && (
+            <label className="block">
+              <span className="text-sm font-medium">Directory Path</span>
+              <input
+                type="text"
+                value={state.path}
+                onChange={(e) => update({ path: e.target.value })}
+                placeholder="/path/to/docs or ./docs"
+                className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Path to the folder containing your markdown files (relative or absolute)
+              </p>
+            </label>
+          )}
+
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             {skipsBrowse ? (
-              <Button onClick={() => { update({ selectedTable: state.databaseId || state.tableId || "data" }); handlePreview(); }} disabled={loading}>
+              <Button onClick={() => {
+                // Set selectedTable based on source type for proper naming
+                let tableName = "data";
+                if (state.sourceType === "markdown") {
+                  tableName = state.path.split(/[/\\]/).filter(Boolean).pop() || "docs";
+                } else if (state.databaseId) {
+                  tableName = state.databaseId;
+                } else if (state.tableId) {
+                  tableName = state.tableId;
+                }
+                update({ selectedTable: tableName });
+                handlePreview();
+              }} disabled={loading}>
                 {loading && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
                 Preview
                 <ArrowRight className="h-4 w-4 ml-1.5" />
