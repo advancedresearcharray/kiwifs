@@ -529,10 +529,10 @@ export const api = {
   },
 
   async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[] }> {
-    const raw: { workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]> } =
+    const raw: { workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]>; columns?: WorkflowColumn[] } =
       await request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
 
-    if (raw.columns) return raw as unknown as { columns: WorkflowColumn[] };
+    if (raw.columns) return { columns: raw.columns };
 
     const wf = raw.workflow;
     const board = raw.board ?? {};
