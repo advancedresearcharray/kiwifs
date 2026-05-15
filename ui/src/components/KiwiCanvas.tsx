@@ -1,18 +1,17 @@
-// KiwiCanvas — Infinite whiteboard powered by tldraw for spatial note
+// KiwiCanvas — Infinite whiteboard powered by Excalidraw for spatial note
 // organization. Loads/saves in JSON Canvas format.
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, type Editor } from "tldraw";
-import "tldraw/tldraw.css";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import "@excalidraw/excalidraw/index.css";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { api } from "@kw/lib/api";
 import { Button } from "@kw/components/ui/button";
 import {
-  jsonCanvasToShapes,
-  shapesToJsonCanvas,
+  excalidrawSceneToJsonCanvas,
+  jsonCanvasToExcalidrawScene,
+  type ExcalidrawSceneLike,
   type JSONCanvas,
-  type TldrawShapeRecord,
-} from "./canvas/canvasAdapter";
+} from "@kw/lib/jsonCanvasExcalidraw";
 
 type Props = {
   path: string | null;
@@ -20,19 +19,25 @@ type Props = {
   onNavigate: (path: string) => void;
 };
 
+const ExcalidrawCanvas = lazy(() =>
+  import("@excalidraw/excalidraw").then((module) => ({ default: module.Excalidraw })),
+);
+
 export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
   void _onNavigate; // Reserved for future page-shape double-click navigation
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [initialCanvas, setInitialCanvas] = useState<JSONCanvas | null>(null);
-  const editorRef = useRef<Editor | null>(null);
+  const [initialScene, setInitialScene] = useState<ExcalidrawSceneLike | null>(null);
+  const sceneRef = useRef<ExcalidrawSceneLike | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load canvas
   useEffect(() => {
     if (!path) {
+      const blankScene = jsonCanvasToExcalidrawScene({ nodes: [], edges: [] });
+      sceneRef.current = blankScene;
+      setInitialScene(blankScene);
       setLoading(false);
-      setInitialCanvas({ nodes: [], edges: [] });
       return;
     }
     setLoading(true);
@@ -43,32 +48,25 @@ export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
           nodes: (data.nodes as JSONCanvas["nodes"]) || [],
           edges: (data.edges as JSONCanvas["edges"]) || [],
         };
-        setInitialCanvas(canvas);
+        const scene = jsonCanvasToExcalidrawScene(canvas);
+        sceneRef.current = scene;
+        setInitialScene(scene);
       })
       .catch(() => {
         // 404 or any error: start with a blank canvas (will be created on first save)
-        setInitialCanvas({ nodes: [], edges: [] });
+        const scene = jsonCanvasToExcalidrawScene({ nodes: [], edges: [] });
+        sceneRef.current = scene;
+        setInitialScene(scene);
       })
       .finally(() => setLoading(false));
   }, [path]);
 
   // Save handler
   const save = useCallback(async () => {
-    if (!editorRef.current || !path) return;
+    if (!sceneRef.current || !path) return;
     setSaving(true);
     try {
-      const editor = editorRef.current;
-      // Get all shapes from the editor
-      const allShapes = editor.getCurrentPageShapes();
-      const records: TldrawShapeRecord[] = allShapes.map((s) => ({
-        id: s.id,
-        type: s.type,
-        x: s.x,
-        y: s.y,
-        props: s.props as Record<string, unknown>,
-        meta: (s.meta as Record<string, unknown>) || {},
-      }));
-      const canvas = shapesToJsonCanvas(records);
+      const canvas = excalidrawSceneToJsonCanvas(sceneRef.current.elements);
       await api.saveCanvas(path, canvas as unknown as Record<string, unknown>);
     } catch (e) {
       console.error("Canvas save failed:", e);
@@ -104,56 +102,21 @@ export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
     };
   }, []);
 
-  const handleMount = useCallback(
-    (editor: Editor) => {
-      editorRef.current = editor;
-
-      // Load initial shapes from JSON Canvas
-      if (initialCanvas && initialCanvas.nodes.length > 0) {
-        const shapes = jsonCanvasToShapes(initialCanvas);
-        for (const shape of shapes) {
-          try {
-            editor.createShape({
-              id: shape.id as any,
-              type: shape.type as any,
-              x: shape.x,
-              y: shape.y,
-              props: shape.props,
-              meta: shape.meta as any,
-            });
-          } catch {
-            // Shape type might not be supported, skip
-          }
-        }
-
-        // Zoom to fit after adding shapes
-        setTimeout(() => {
-          editor.zoomToFit({ animation: { duration: 200 } });
-        }, 100);
-      }
-
-      // Listen for changes for auto-save
-      editor.store.listen(() => {
-        scheduleAutosave();
-      });
-
-      // Double-click note shapes to navigate to kiwi pages
-      editor.on("event", (info) => {
-        if (info.type === "pointer" && info.name === "pointer_down") {
-          // Check for double-click navigation
-          const selectedShapes = editor.getSelectedShapes();
-          if (selectedShapes.length === 1) {
-            const shape = selectedShapes[0]!;
-            const meta = (shape.meta as Record<string, unknown>) || {};
-            if (meta.kiwiPath && typeof meta.kiwiPath === "string") {
-              // Will be navigated on double-click via a timeout check
-              // tldraw handles double-click natively for text editing
-            }
-          }
-        }
-      });
+  const handleChange = useCallback(
+    (elements: readonly unknown[], appState: unknown, files: unknown) => {
+      if (!sceneRef.current) return;
+      sceneRef.current = {
+        ...sceneRef.current,
+        elements: elements as ExcalidrawSceneLike["elements"],
+        appState: {
+          ...(appState as Record<string, unknown>),
+          collaborators: new Map(),
+        },
+        files: (files as Record<string, unknown>) ?? {},
+      };
+      scheduleAutosave();
     },
-    [initialCanvas, scheduleAutosave],
+    [scheduleAutosave],
   );
 
   return (
@@ -187,17 +150,22 @@ export function KiwiCanvas({ path, onClose, onNavigate: _onNavigate }: Props) {
 
       {/* Canvas area */}
       <div className="flex-1 relative">
-        {loading ? (
+        {loading || !initialScene ? (
           <div className="absolute inset-0 grid place-items-center text-muted-foreground">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading canvas...
             </div>
           </div>
         ) : (
-          <Tldraw
-            onMount={handleMount}
-            autoFocus
-          />
+          <div className="absolute inset-0 overflow-hidden bg-background">
+            <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading Excalidraw canvas…</div>}>
+              <ExcalidrawCanvas
+                key={path ?? "new-canvas"}
+                initialData={initialScene as never}
+                onChange={handleChange as never}
+              />
+            </Suspense>
+          </div>
         )}
       </div>
     </div>
