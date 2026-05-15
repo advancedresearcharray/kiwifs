@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.17.1](https://github.com/kiwifs/kiwifs/compare/v0.17.0...v0.17.1) (2026-05-15)
+
+
+### Features
+
+* **cli:** connect, login, and update commands ([12b181e](https://github.com/kiwifs/kiwifs/commit/12b181e5745ddfd9de6205a8737d2afc707a3811))
+* create and manage kanban boards ([9754d25](https://github.com/kiwifs/kiwifs/commit/9754d259ac13a87823af8d103d829ffec6ce9288))
+* **kanban:** create cards from board ([7d39595](https://github.com/kiwifs/kiwifs/commit/7d39595dccdcf38f8820ce0b9a57a119adc77f1e))
+* **ui:** create kanban workflow boards ([2c534c4](https://github.com/kiwifs/kiwifs/commit/2c534c431263aa52351b2a6e1b75de0d300dec50))
+* **ui:** delete kanban workflow boards ([6e719d0](https://github.com/kiwifs/kiwifs/commit/6e719d05de4d391c6a66d867cebd09bfbcad8fdc))
+* **ui:** edit kanban workflow columns ([896db34](https://github.com/kiwifs/kiwifs/commit/896db3469e4180b61872c2a778383123953b7612))
+
+
+### Bug Fixes
+
+* resolve TS2339 in workflow board type ([54d0fce](https://github.com/kiwifs/kiwifs/commit/54d0fcefcc563dbd8cd04ec05fbd1a0a2bd5aa6e))
+* **ui:** adapt getWorkflowBoard to workflow+board API shape ([bcef178](https://github.com/kiwifs/kiwifs/commit/bcef178dfccaf721016fba03d112adebc3eeab68))
+
 ## [0.17.0](https://github.com/kiwifs/kiwifs/compare/v0.16.0...v0.17.0) (2026-05-14)
 
 
