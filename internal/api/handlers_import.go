@@ -18,6 +18,7 @@ type importRequest struct {
 	URI         string          `json:"uri"`
 	DB          string          `json:"db"`
 	File        string          `json:"file"`
+	Path        string          `json:"path"` // Directory path (markdown, obsidian, confluence)
 	Table       string          `json:"table"`
 	Collection  string          `json:"collection"`
 	Database    string          `json:"database"`
@@ -203,8 +204,13 @@ func buildAPISource(req importRequest) (importer.Source, error) {
 			return nil, fmt.Errorf("table_id is required for airtable")
 		}
 		return importer.NewAirtable(apiKey, req.BaseID, req.TableID)
+	case "markdown":
+		if req.Path == "" {
+			return nil, fmt.Errorf("path is required for markdown")
+		}
+		return importer.NewMarkdown(req.Path, importer.MarkdownOpts{})
 	default:
-		supported := strings.Join([]string{"postgres", "mysql", "firestore", "sqlite", "mongodb", "csv", "json", "jsonl", "notion", "airtable"}, ", ")
+		supported := strings.Join([]string{"markdown", "postgres", "mysql", "firestore", "sqlite", "mongodb", "csv", "json", "jsonl", "notion", "airtable"}, ", ")
 		return nil, fmt.Errorf("unknown source type %q (supported: %s)", req.From, supported)
 	}
 }
