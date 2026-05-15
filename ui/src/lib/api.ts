@@ -528,6 +528,14 @@ export const api = {
     return request(`${kiwiBase()}/workflows`);
   },
 
+  async saveWorkflow(workflow: WorkflowDef): Promise<{ status: string; workflow: WorkflowDef }> {
+    return request(`${kiwiBase()}/workflows/${encodeURIComponent(workflow.name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(workflow),
+    });
+  },
+
   async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[] }> {
     const raw: { workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]>; columns?: WorkflowColumn[] } =
       await request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
