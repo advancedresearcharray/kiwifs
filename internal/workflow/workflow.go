@@ -163,3 +163,19 @@ func Save(kiwiDir string, w Workflow) error {
 	}
 	return nil
 }
+
+// Delete removes a workflow definition from .kiwi/workflows/<name>.json.
+func Delete(kiwiDir, name string) error {
+	if name == "" {
+		return fmt.Errorf("workflow name cannot be empty")
+	}
+
+	path := filepath.Join(kiwiDir, ".kiwi", "workflows", name+".json")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workflow %q not found", name)
+		}
+		return fmt.Errorf("delete workflow %q: %w", name, err)
+	}
+	return nil
+}

@@ -536,8 +536,14 @@ export const api = {
     });
   },
 
+  async deleteWorkflow(name: string): Promise<{ status: string; name: string }> {
+    return request(`${kiwiBase()}/workflows/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+  },
+
   async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[] }> {
-    const raw: { workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]>; columns?: WorkflowColumn[] } =
+    const raw: { columns?: WorkflowColumn[]; workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]> } =
       await request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
 
     if (raw.columns) return { columns: raw.columns };

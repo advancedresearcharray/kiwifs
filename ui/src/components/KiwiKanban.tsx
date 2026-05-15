@@ -8,7 +8,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
 import { api, type WorkflowColumn, type WorkflowDef, type WorkflowPage } from "@kw/lib/api";
 import { createDefaultWorkflow, normalizeWorkflowName, parseWorkflowStates } from "@kw/lib/workflow";
 import { Button } from "@kw/components/ui/button";
@@ -53,6 +53,9 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
   const [newWorkflowStates, setNewWorkflowStates] = useState(DEFAULT_WORKFLOW_STATES);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadWorkflows = useCallback(async (preferredWorkflow?: string) => {
     setLoading(true);
@@ -202,6 +205,22 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     }
   };
 
+  const handleDeleteWorkflow = async () => {
+    if (!activeWorkflow) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteWorkflow(activeWorkflow);
+      setDeleteOpen(false);
+      await loadWorkflows();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete workflow.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
@@ -234,6 +253,20 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
           <Plus className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">New board</span>
         </Button>
+
+        {activeWorkflow && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteOpen(true);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Delete board</span>
+          </Button>
+        )}
       </div>
 
       {/* Board */}
@@ -335,6 +368,29 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
             <Button onClick={() => void handleCreateWorkflow()} disabled={creating}>
               {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
               Create board
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Kanban board</DialogTitle>
+            <DialogDescription>
+              Delete workflow JSON for "{activeWorkflow}". Existing markdown pages are not modified; cards that still reference this workflow will no longer appear until their frontmatter is changed.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => void handleDeleteWorkflow()} disabled={deleting || !activeWorkflow}>
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Delete board
             </Button>
           </DialogFooter>
         </DialogContent>

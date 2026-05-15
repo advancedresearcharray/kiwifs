@@ -191,3 +191,29 @@ func TestSave_InvalidWorkflow(t *testing.T) {
 		t.Fatal("expected error for invalid workflow")
 	}
 }
+
+func TestDelete(t *testing.T) {
+	dir := t.TempDir()
+	w := Workflow{
+		Name:        "review",
+		States:      []State{{Name: "draft"}, {Name: "published"}},
+		Transitions: []Transition{{From: "draft", To: "published"}},
+	}
+
+	if err := Save(dir, w); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := Delete(dir, "review"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := Get(dir, "review"); err == nil {
+		t.Fatal("expected deleted workflow to be missing")
+	}
+}
+
+func TestDelete_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	if err := Delete(dir, "missing"); err == nil {
+		t.Fatal("expected error for nonexistent workflow")
+	}
+}

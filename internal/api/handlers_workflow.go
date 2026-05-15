@@ -66,6 +66,21 @@ func (h *Handlers) SaveWorkflow(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"status": "saved", "workflow": w})
 }
 
+// DeleteWorkflow removes a workflow definition. It does not edit pages that
+// reference the workflow in frontmatter.
+func (h *Handlers) DeleteWorkflow(c echo.Context) error {
+	name := c.Param("name")
+	if name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "workflow name required")
+	}
+
+	if err := workflow.Delete(h.root, name); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{"status": "deleted", "name": name})
+}
+
 // AdvanceWorkflow moves a page from one workflow state to another.
 //
 // Request body: { "path": "...", "target_state": "...", "actor": "..." }
@@ -207,7 +222,7 @@ func (h *Handlers) WorkflowBoard(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"workflow": w,
-		"board":   board,
+		"board":    board,
 	})
 }
 
