@@ -178,7 +178,7 @@ kiwifs mcp --remote http://host:3333   # proxy to a running KiwiFS server
 
 29 tools including `kiwi_read`, `kiwi_write`, `kiwi_search`, `kiwi_tree`, `kiwi_query`, `kiwi_import`, `kiwi_export`, `kiwi_context`, `kiwi_bulk_write`, `kiwi_search_semantic`, `kiwi_backlinks`, `kiwi_analytics`, `kiwi_suggestions`, `kiwi_velocity`, and more. Plus resources (`kiwi://schema`, `kiwi://file/{path}`, `kiwi://tree/{path}`).
 
-**Claude Desktop / Cursor:**
+**Local (Claude Desktop / Cursor / any MCP client):**
 ```json
 {
   "mcpServers": {
@@ -188,6 +188,23 @@ kiwifs mcp --remote http://host:3333   # proxy to a running KiwiFS server
     }
   }
 }
+```
+
+**Cloud (KiwiFS Cloud workspace):**
+```json
+{
+  "mcpServers": {
+    "kiwi": {
+      "url": "https://api.kiwifs.com/api/workspaces/my-workspace/mcp",
+      "headers": { "Authorization": "Bearer ${env:KIWI_API_KEY}" }
+    }
+  }
+}
+```
+
+Or auto-configure all detected clients with one command:
+```bash
+kiwifs connect my-workspace --write auto
 ```
 
 ### Search (three tiers)
@@ -436,6 +453,9 @@ Every feature is accessible via `kiwifs <command>`:
 | `kiwifs mount` | FUSE-mount a remote KiwiFS server as a local folder |
 | `kiwifs reindex` | Rebuild search indexes from files (FTS5 + vector + metadata) |
 | `kiwifs lint` | Validate workspace (orphan pages, broken links, missing frontmatter) |
+| `kiwifs connect` | Auto-configure MCP in your IDE (Cursor, Claude Code, VS Code, Windsurf, etc.) |
+| `kiwifs login` | Browser-based login via WorkOS (global credential for CLI + cloud) |
+| `kiwifs update` | Self-update to the latest release |
 | `kiwifs backup` | Push to a git remote for off-site backup |
 | `kiwifs restore` | Clone from a git remote and rebuild indexes |
 | `kiwifs janitor` | Run a content health scan (stale pages, contradictions, orphans) |
@@ -450,8 +470,14 @@ All commands support `--help` for full flag reference.
 ### 1. Install
 
 ```bash
+# Homebrew (macOS / Linux)
+brew install kiwifs/tap/kiwifs
+
 # One-line install (macOS / Linux)
 curl -fsSL https://raw.githubusercontent.com/kiwifs/kiwifs/main/install.sh | sh
+
+# Go
+go install github.com/kiwifs/kiwifs@latest
 ```
 
 Or run with Docker:
@@ -464,8 +490,7 @@ Or build from source (requires Go 1.25+ and Node.js 20+):
 
 ```bash
 git clone https://github.com/kiwifs/kiwifs.git && cd kiwifs
-cd ui && npm install && npm run build && cd ..
-go build -o kiwifs .
+make build
 ```
 
 ### 2. Initialize
