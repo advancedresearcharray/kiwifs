@@ -81,7 +81,6 @@
     "tailwind-merge": "^2.5.5",
     "tailwindcss": "^4",
     "tailwindcss-animate": "^1.0.7",
-    "tldraw": "^5.0.0",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0"
   },
