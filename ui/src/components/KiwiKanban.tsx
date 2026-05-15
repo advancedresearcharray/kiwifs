@@ -8,9 +8,14 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api, type WorkflowColumn, type WorkflowDef, type WorkflowPage } from "@kw/lib/api";
-import { createDefaultWorkflow, normalizeWorkflowName, parseWorkflowStates } from "@kw/lib/workflow";
+import {
+  createDefaultWorkflow,
+  normalizeWorkflowName,
+  parseWorkflowStates,
+  updateWorkflowStates,
+} from "@kw/lib/workflow";
 import { Button } from "@kw/components/ui/button";
 import {
   Dialog,
@@ -39,8 +44,13 @@ type Props = {
 };
 
 type Workflow = WorkflowDef;
+type EditStateRow = WorkflowDef["states"][number] & { id: string };
 
 const DEFAULT_WORKFLOW_STATES = "todo, doing, done";
+
+function makeEditRows(workflow: WorkflowDef): EditStateRow[] {
+  return workflow.states.map((state, index) => ({ ...state, id: `${state.name}-${index}` }));
+}
 
 export function KiwiKanban({ onClose, onNavigate }: Props) {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -56,6 +66,12 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRows, setEditRows] = useState<EditStateRow[]>([]);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const activeWorkflowDef = workflows.find((workflow) => workflow.name === activeWorkflow) ?? null;
 
   const loadWorkflows = useCallback(async (preferredWorkflow?: string) => {
     setLoading(true);
@@ -221,6 +237,49 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     }
   };
 
+  const handleOpenEdit = () => {
+    if (!activeWorkflowDef) return;
+    setEditRows(makeEditRows(activeWorkflowDef));
+    setEditError(null);
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!activeWorkflowDef || !activeWorkflow) return;
+
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const updatedWorkflow = updateWorkflowStates(
+        activeWorkflowDef,
+        editRows.map((row) => ({ name: row.name, color: row.color })),
+      );
+      await api.saveWorkflow(updatedWorkflow);
+      setEditOpen(false);
+      await loadWorkflows(activeWorkflow);
+      await loadBoard(activeWorkflow);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save columns.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleAddEditRow = () => {
+    setEditRows((rows) => [
+      ...rows,
+      { id: `new-${Date.now()}`, name: "", color: "#9B59B6" },
+    ]);
+  };
+
+  const handleRemoveEditRow = (id: string) => {
+    setEditRows((rows) => rows.filter((row) => row.id !== id));
+  };
+
+  const handleEditRowName = (id: string, name: string) => {
+    setEditRows((rows) => rows.map((row) => (row.id === id ? { ...row, name } : row)));
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
@@ -253,6 +312,17 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
           <Plus className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">New board</span>
         </Button>
+
+        {activeWorkflow && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleOpenEdit}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Edit columns</span>
+          </Button>
+        )}
 
         {activeWorkflow && (
           <Button
@@ -368,6 +438,64 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
             <Button onClick={() => void handleCreateWorkflow()} disabled={creating}>
               {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
               Create board
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit columns</DialogTitle>
+            <DialogDescription>
+              Add, remove, or rename columns for "{activeWorkflow}". This saves the workflow JSON and rebuilds adjacent two-way transitions. Existing card frontmatter is not rewritten automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {editRows.map((row, index) => (
+              <div key={row.id} className="flex items-center gap-2">
+                <div
+                  className="h-4 w-4 rounded-full border border-border shrink-0"
+                  style={{ backgroundColor: row.color }}
+                  aria-hidden="true"
+                />
+                <Input
+                  value={row.name}
+                  onChange={(event) => handleEditRowName(row.id, event.target.value)}
+                  placeholder={`Column ${index + 1}`}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemoveEditRow(row.id)}
+                  disabled={savingEdit || editRows.length <= 1}
+                  aria-label={`Remove column ${row.name || index + 1}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+
+            <Button type="button" variant="outline" size="sm" onClick={handleAddEditRow} disabled={savingEdit}>
+              <Plus className="h-3.5 w-3.5" />
+              Add column
+            </Button>
+
+            <p className="text-xs text-muted-foreground">
+              Renamed or removed columns may hide existing cards until those pages' frontmatter state values are updated.
+            </p>
+            {editError && <p className="text-sm text-destructive">{editError}</p>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={savingEdit}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSaveEdit()} disabled={savingEdit}>
+              {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+              Save columns
             </Button>
           </DialogFooter>
         </DialogContent>
