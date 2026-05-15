@@ -34,6 +34,31 @@ func TestValidate_EmptyName(t *testing.T) {
 	}
 }
 
+func TestValidateNameRejectsPathLikeNames(t *testing.T) {
+	invalid := []string{"../outside", "nested/tasks", `nested\\tasks`, ".", "..", " tasks"}
+	for _, name := range invalid {
+		if err := ValidateName(name); err == nil {
+			t.Fatalf("expected invalid workflow name %q", name)
+		}
+	}
+}
+
+func TestValidateNameAllowsDisplayNames(t *testing.T) {
+	valid := []string{"content pipeline", "테스트", "오픈소스 계획"}
+	for _, name := range valid {
+		if err := ValidateName(name); err != nil {
+			t.Fatalf("expected valid workflow name %q: %v", name, err)
+		}
+	}
+}
+
+func TestGetRejectsPathTraversalName(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Get(dir, "../outside"); err == nil {
+		t.Fatal("expected error for path traversal workflow name")
+	}
+}
+
 func TestValidate_NoStates(t *testing.T) {
 	w := Workflow{Name: "x"}
 	if err := Validate(w); err == nil {

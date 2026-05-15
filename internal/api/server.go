@@ -513,6 +513,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/workflows/:name", h.GetWorkflow)
 	api.PUT("/workflows/:name", h.SaveWorkflow)
 	api.DELETE("/workflows/:name", h.DeleteWorkflow)
+	api.POST("/workflow/assign", h.AssignWorkflow)
 	api.POST("/workflow/advance", h.AdvanceWorkflow)
 	api.GET("/workflow/board/:workflow", h.WorkflowBoard)
 

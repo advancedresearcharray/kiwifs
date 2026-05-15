@@ -566,6 +566,14 @@ export const api = {
     });
   },
 
+  async assignWorkflow(path: string, workflow: string, state: string): Promise<{ path: string; workflow: string; state: string; etag: string }> {
+    return request(`${kiwiBase()}/workflow/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, workflow, state }),
+    });
+  },
+
   // --- Web Clipper ---
 
   async clipUrl(params: { url: string; title?: string; tags?: string[]; folder?: string }): Promise<{ path: string; title: string; excerpt: string }> {

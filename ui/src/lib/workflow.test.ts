@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   addWorkflowState,
   createDefaultWorkflow,
+  createKanbanCardMarkdown,
+  defaultKanbanCardPath,
   deleteWorkflowState,
   normalizeWorkflowName,
   parseWorkflowStates,
@@ -110,5 +112,25 @@ describe("workflow helpers", () => {
         { from: "done", to: "todo" },
       ],
     });
+  });
+
+  it("builds markdown for a new Kanban card", () => {
+    expect(
+      createKanbanCardMarkdown({
+        title: 'Fix "billing" flow',
+        workflow: "앞으로할일",
+        state: "todo",
+        body: "Check the retry path.",
+      }),
+    ).toBe(
+      '---\ntitle: "Fix \\"billing\\" flow"\nworkflow: "앞으로할일"\nstate: "todo"\n---\n# Fix "billing" flow\n\nCheck the retry path.\n',
+    );
+  });
+
+  it("creates a safe default path for a new Kanban card", () => {
+    expect(defaultKanbanCardPath("Bug: 로그인/결제 flow!", "tasks")).toBe(
+      "tasks/bug-로그인-결제-flow.md",
+    );
+    expect(defaultKanbanCardPath("   ", "tasks")).toMatch(/^tasks\/card-\d+\.md$/);
   });
 });

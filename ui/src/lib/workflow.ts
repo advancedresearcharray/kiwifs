@@ -1,5 +1,12 @@
 import type { WorkflowDef } from "./api";
 
+export type KanbanCardDraft = {
+  title: string;
+  workflow: string;
+  state: string;
+  body?: string;
+};
+
 const DEFAULT_STATE_COLORS = ["#9B59B6", "#3498DB", "#2ECC71", "#F39C12", "#E74C3C"];
 
 export function normalizeWorkflowName(input: string): string {
@@ -81,6 +88,39 @@ export function updateWorkflowStates(
     states: normalizedStates,
     transitions: createAdjacentTransitions(stateNames),
   };
+}
+
+export function defaultKanbanCardPath(title: string, workflowName: string): string {
+  const folder = slugifyPathSegment(workflowName) || "kanban";
+  const slug = slugifyPathSegment(title) || `card-${Date.now()}`;
+  return `${folder}/${slug}.md`;
+}
+
+export function createKanbanCardMarkdown(draft: KanbanCardDraft): string {
+  const title = draft.title.trim() || "Untitled card";
+  const body = draft.body?.trim() ? `\n\n${draft.body.trim()}\n` : "\n";
+  return [
+    "---",
+    `title: ${quoteYamlString(title)}`,
+    `workflow: ${quoteYamlString(draft.workflow)}`,
+    `state: ${quoteYamlString(draft.state)}`,
+    "---",
+    `# ${title}`,
+  ].join("\n") + body;
+}
+
+function quoteYamlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function slugifyPathSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\\/]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }
 
 function normalizeStateName(input: string): string {

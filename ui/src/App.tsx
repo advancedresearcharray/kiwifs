@@ -34,6 +34,7 @@ import { KiwiBases } from "./components/KiwiBases";
 import { KiwiCanvas } from "./components/KiwiCanvas";
 import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
+import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { KiwiClipDialog } from "./components/KiwiClipDialog";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
@@ -334,7 +335,8 @@ const handleSpaceSwitch = useCallback(() => {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="h-full flex flex-col bg-background text-foreground">
+      <KanbanDragProvider>
+        <div className="h-full flex flex-col bg-background text-foreground">
         {/* ── Header: full-width app bar ── */}
         <header className="h-12 shrink-0 border-b border-border bg-card flex items-center px-3 gap-2">
           {/* Left zone: sidebar toggle + logo + space */}
@@ -518,6 +520,7 @@ const handleSpaceSwitch = useCallback(() => {
                       setRefreshKey((k) => k + 1);
                       navigate(p);
                     }}
+                    enableKanbanDrag={kanbanOpen}
                   />
                 </SidebarSection>
               </div>
@@ -648,7 +651,8 @@ const handleSpaceSwitch = useCallback(() => {
             )}
           </main>
         </div>
-      </div>
+        </div>
+      </KanbanDragProvider>
 
       {/* Modals */}
       <KiwiSearch

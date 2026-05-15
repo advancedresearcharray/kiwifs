@@ -1,20 +1,21 @@
 // KiwiKanban — Drag-and-drop Kanban board showing pages grouped by workflow state.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  DndContext,
   DragOverlay,
-  closestCorners,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { ArrowLeft, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
-import { api, type WorkflowColumn, type WorkflowDef, type WorkflowPage } from "@kw/lib/api";
+import { api, type SearchResult, type WorkflowColumn, type WorkflowDef, type WorkflowPage } from "@kw/lib/api";
 import {
+  createKanbanCardMarkdown,
+  defaultKanbanCardPath,
   createDefaultWorkflow,
   normalizeWorkflowName,
   updateWorkflowStates,
 } from "@kw/lib/workflow";
+import { getKanbanDragData, isKanbanCardDragData, isTreePageDragData } from "@kw/lib/kanbanDnd";
 import { Button } from "@kw/components/ui/button";
 import {
   Dialog,
@@ -26,6 +27,7 @@ import {
 } from "@kw/components/ui/dialog";
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
+import { Textarea } from "@kw/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -35,6 +37,7 @@ import {
 } from "@kw/components/ui/select";
 import { KanbanColumn } from "./kanban/KanbanColumn";
 import { KanbanCard } from "./kanban/KanbanCard";
+import { useKanbanDragHandlers } from "./kanban/KanbanDragProvider";
 
 type Props = {
   onClose: () => void;
@@ -43,8 +46,34 @@ type Props = {
 
 type Workflow = WorkflowDef;
 type EditStateRow = WorkflowDef["states"][number] & { id: string };
+type AddCardMode = "new" | "existing";
+
+type AddCardDialogState = {
+  open: boolean;
+  state: string;
+  mode: AddCardMode;
+  title: string;
+  path: string;
+  body: string;
+  query: string;
+  results: SearchResult[];
+  error: string | null;
+  busy: boolean;
+};
 
 const DEFAULT_WORKFLOW_STATES = ["todo", "doing", "done"];
+const emptyAddCardDialog: AddCardDialogState = {
+  open: false,
+  state: "",
+  mode: "new",
+  title: "",
+  path: "",
+  body: "",
+  query: "",
+  results: [],
+  error: null,
+  busy: false,
+};
 
 function makeEditRows(workflow: WorkflowDef): EditStateRow[] {
   return workflow.states.map((state, index) => ({ ...state, id: `${state.name}-${index}` }));
@@ -128,6 +157,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
   const [editRows, setEditRows] = useState<EditStateRow[]>([]);
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [addCard, setAddCard] = useState<AddCardDialogState>(emptyAddCardDialog);
 
   const activeWorkflowDef = workflows.find((workflow) => workflow.name === activeWorkflow) ?? null;
 
@@ -180,45 +210,60 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
   }, [activeWorkflow, loadBoard]);
 
   // Find which column a page belongs to
-  const findColumnForPage = (path: string): string | null => {
+  const findColumnForPage = useCallback((path: string): string | null => {
     for (const col of columns) {
       if (col.pages.some((p) => p.path === path)) return col.state;
     }
     return null;
-  };
+  }, [columns]);
+
+  const findTargetState = useCallback((overId: string): string | null => {
+    const overCol = columns.find((c) => c.state === overId);
+    if (overCol) return overCol.state;
+    return findColumnForPage(overId);
+  }, [columns, findColumnForPage]);
 
   // Drag handlers
-  const handleDragStart = (event: DragStartEvent) => {
-    const pageId = event.active.id as string;
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const dragData = getKanbanDragData(event.active.data.current);
+    if (isTreePageDragData(dragData)) {
+      setDraggingPage({ path: dragData.path, title: dragData.title });
+      return;
+    }
+
+    if (!isKanbanCardDragData(dragData)) return;
     for (const col of columns) {
-      const page = col.pages.find((p) => p.path === pageId);
+      const page = col.pages.find((p) => p.path === dragData.path);
       if (page) {
         setDraggingPage(page);
         break;
       }
     }
-  };
+  }, [columns]);
 
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     setDraggingPage(null);
     const { active, over } = event;
     if (!over || !activeWorkflow) return;
 
-    const pagePath = active.id as string;
-    const sourceState = findColumnForPage(pagePath);
-    // The over ID could be a column ID or another page's ID
-    let targetState: string | null = null;
+    const dragData = getKanbanDragData(active.data.current);
+    if (!dragData) return;
 
-    // Check if dropped on a column
-    const overCol = columns.find((c) => c.state === over.id);
-    if (overCol) {
-      targetState = overCol.state;
-    } else {
-      // Dropped on another page — find its column
-      targetState = findColumnForPage(over.id as string);
-    }
+    const pagePath = dragData.path;
+    const sourceState = isKanbanCardDragData(dragData) ? findColumnForPage(pagePath) : null;
+    const targetState = findTargetState(String(over.id));
 
     if (!targetState || targetState === sourceState) return;
+
+    if (isTreePageDragData(dragData)) {
+      try {
+        await api.assignWorkflow(pagePath, activeWorkflow, targetState);
+        await loadBoard(activeWorkflow);
+      } catch {
+        await loadBoard(activeWorkflow);
+      }
+      return;
+    }
 
     // Optimistic update
     setColumns((prev) =>
@@ -245,7 +290,14 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
       // Revert on error
       loadBoard(activeWorkflow);
     }
-  };
+  }, [activeWorkflow, findColumnForPage, findTargetState, loadBoard]);
+
+  const dragHandlers = useMemo(() => ({
+    onDragStart: handleDragStart,
+    onDragEnd: handleDragEnd,
+  }), [handleDragStart, handleDragEnd]);
+
+  useKanbanDragHandlers(dragHandlers);
 
   const handleCreateWorkflow = async () => {
     const name = normalizeWorkflowName(newWorkflowName);
@@ -367,6 +419,103 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     setEditRows((rows) => rows.map((row) => (row.id === id ? { ...row, color } : row)));
   };
 
+  const handleOpenAddCard = (state: string) => {
+    if (!activeWorkflow) return;
+    const title = "";
+    setAddCard({
+      ...emptyAddCardDialog,
+      open: true,
+      state,
+      title,
+      path: "",
+    });
+  };
+
+  const handleNewCardTitleChange = (title: string) => {
+    setAddCard((current) => ({
+      ...current,
+      title,
+      path: current.path && current.path !== defaultKanbanCardPath(current.title, activeWorkflow || "kanban")
+        ? current.path
+        : defaultKanbanCardPath(title, activeWorkflow || "kanban"),
+    }));
+  };
+
+  const handleCreateCard = async () => {
+    if (!activeWorkflow) return;
+    const title = addCard.title.trim();
+    const path = addCard.path.trim();
+    if (!title) {
+      setAddCard((current) => ({ ...current, error: "Card title is required." }));
+      return;
+    }
+    if (!path.endsWith(".md")) {
+      setAddCard((current) => ({ ...current, error: "Card path must end with .md." }));
+      return;
+    }
+
+    setAddCard((current) => ({ ...current, busy: true, error: null }));
+    try {
+      await api.writeFile(
+        path,
+        createKanbanCardMarkdown({
+          title,
+          workflow: activeWorkflow,
+          state: addCard.state,
+          body: addCard.body,
+        }),
+      );
+      setAddCard(emptyAddCardDialog);
+      await loadBoard(activeWorkflow);
+      onNavigate(path);
+    } catch (err) {
+      setAddCard((current) => ({
+        ...current,
+        busy: false,
+        error: err instanceof Error ? err.message : "Failed to create card.",
+      }));
+    }
+  };
+
+  const handleSearchExistingPages = async () => {
+    const query = addCard.query.trim();
+    if (!query) {
+      setAddCard((current) => ({ ...current, error: "Search query is required." }));
+      return;
+    }
+    setAddCard((current) => ({ ...current, busy: true, error: null }));
+    try {
+      const response = await api.search(query);
+      setAddCard((current) => ({
+        ...current,
+        busy: false,
+        results: (response.results || []).filter((result) => result.path.endsWith(".md")),
+      }));
+    } catch (err) {
+      setAddCard((current) => ({
+        ...current,
+        busy: false,
+        error: err instanceof Error ? err.message : "Failed to search pages.",
+      }));
+    }
+  };
+
+  const handleAssignExistingPage = async (path: string) => {
+    if (!activeWorkflow) return;
+    setAddCard((current) => ({ ...current, busy: true, error: null }));
+    try {
+      await api.assignWorkflow(path, activeWorkflow, addCard.state);
+      setAddCard(emptyAddCardDialog);
+      await loadBoard(activeWorkflow);
+    } catch (err) {
+      setAddCard((current) => ({
+        ...current,
+        busy: false,
+        error: err instanceof Error ? err.message : "Failed to add page to board.",
+      }));
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
@@ -439,11 +588,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
               : "No pages in this workflow yet."}
           </div>
         ) : (
-          <DndContext
-            collisionDetection={closestCorners}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
+          <>
             <div className="flex gap-4 p-4 min-w-max">
               {columns.map((col) => (
                 <KanbanColumn
@@ -453,6 +598,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
                   color={col.color}
                   count={col.pages.length}
                   items={col.pages.map((p) => p.path)}
+                  onAdd={handleOpenAddCard}
                 >
                   {col.pages.map((page) => (
                     <KanbanCard
@@ -474,9 +620,128 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
                 </div>
               ) : null}
             </DragOverlay>
-          </DndContext>
+          </>
         )}
       </div>
+
+      <Dialog open={addCard.open} onOpenChange={(open) => setAddCard((current) => ({ ...current, open }))}>
+        <DialogContent className="w-[calc(100vw-2rem)] overflow-hidden sm:max-w-lg">
+          <DialogHeader className="min-w-0">
+            <DialogTitle>Add card to {addCard.state}</DialogTitle>
+            <DialogDescription>
+              Create a new markdown page or attach an existing page by setting its workflow/state frontmatter.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-w-0 space-y-4 py-2">
+            <div className="flex min-w-0 gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={addCard.mode === "new" ? "default" : "outline"}
+                onClick={() => setAddCard((current) => ({ ...current, mode: "new", error: null }))}
+                disabled={addCard.busy}
+              >
+                New card
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={addCard.mode === "existing" ? "default" : "outline"}
+                onClick={() => setAddCard((current) => ({ ...current, mode: "existing", error: null }))}
+                disabled={addCard.busy}
+              >
+                Add existing page
+              </Button>
+            </div>
+
+            {addCard.mode === "new" ? (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="kanban-card-title">Title</Label>
+                  <Input
+                    id="kanban-card-title"
+                    value={addCard.title}
+                    onChange={(event) => handleNewCardTitleChange(event.target.value)}
+                    placeholder="e.g. Draft launch note"
+                    disabled={addCard.busy}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="kanban-card-path">Path</Label>
+                  <Input
+                    id="kanban-card-path"
+                    value={addCard.path}
+                    onChange={(event) => setAddCard((current) => ({ ...current, path: event.target.value }))}
+                    placeholder="tasks/draft-launch-note.md"
+                    disabled={addCard.busy}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="kanban-card-body">Body</Label>
+                  <Textarea
+                    id="kanban-card-body"
+                    value={addCard.body}
+                    onChange={(event) => setAddCard((current) => ({ ...current, body: event.target.value }))}
+                    placeholder="Optional notes..."
+                    disabled={addCard.busy}
+                    rows={4}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0 space-y-3">
+                <div className="flex min-w-0 gap-2">
+                  <Input
+                    className="min-w-0 flex-1"
+                    value={addCard.query}
+                    onChange={(event) => setAddCard((current) => ({ ...current, query: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !addCard.busy) void handleSearchExistingPages();
+                    }}
+                    placeholder="Search markdown pages"
+                    disabled={addCard.busy}
+                  />
+                  <Button type="button" variant="outline" className="shrink-0" onClick={() => void handleSearchExistingPages()} disabled={addCard.busy}>
+                    Search
+                  </Button>
+                </div>
+                <div className="max-h-56 w-full min-w-0 overflow-auto rounded-md border border-border divide-y divide-border/50">
+                  {addCard.results.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">No search results yet.</div>
+                  ) : (
+                    addCard.results.map((result) => (
+                      <div key={result.path} className="flex min-w-0 items-start gap-2 p-2">
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div className="truncate text-sm font-medium" title={result.path}>{result.path}</div>
+                          {result.snippet && <div className="line-clamp-2 break-words text-xs text-muted-foreground">{result.snippet}</div>}
+                        </div>
+                        <Button className="shrink-0" size="sm" onClick={() => void handleAssignExistingPage(result.path)} disabled={addCard.busy}>
+                          Add
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {addCard.error && <p className="text-sm text-destructive">{addCard.error}</p>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddCard(emptyAddCardDialog)} disabled={addCard.busy}>
+              Cancel
+            </Button>
+            {addCard.mode === "new" && (
+              <Button onClick={() => void handleCreateCard()} disabled={addCard.busy}>
+                {addCard.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                Create card
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
