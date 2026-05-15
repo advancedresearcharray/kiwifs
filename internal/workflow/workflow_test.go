@@ -34,6 +34,31 @@ func TestValidate_EmptyName(t *testing.T) {
 	}
 }
 
+func TestValidateNameRejectsPathLikeNames(t *testing.T) {
+	invalid := []string{"../outside", "nested/tasks", `nested\\tasks`, ".", "..", " tasks"}
+	for _, name := range invalid {
+		if err := ValidateName(name); err == nil {
+			t.Fatalf("expected invalid workflow name %q", name)
+		}
+	}
+}
+
+func TestValidateNameAllowsDisplayNames(t *testing.T) {
+	valid := []string{"content pipeline", "테스트", "오픈소스 계획"}
+	for _, name := range valid {
+		if err := ValidateName(name); err != nil {
+			t.Fatalf("expected valid workflow name %q: %v", name, err)
+		}
+	}
+}
+
+func TestGetRejectsPathTraversalName(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Get(dir, "../outside"); err == nil {
+		t.Fatal("expected error for path traversal workflow name")
+	}
+}
+
 func TestValidate_NoStates(t *testing.T) {
 	w := Workflow{Name: "x"}
 	if err := Validate(w); err == nil {
@@ -189,5 +214,31 @@ func TestSave_InvalidWorkflow(t *testing.T) {
 	w := Workflow{Name: ""} // no name
 	if err := Save(dir, w); err == nil {
 		t.Fatal("expected error for invalid workflow")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	dir := t.TempDir()
+	w := Workflow{
+		Name:        "review",
+		States:      []State{{Name: "draft"}, {Name: "published"}},
+		Transitions: []Transition{{From: "draft", To: "published"}},
+	}
+
+	if err := Save(dir, w); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := Delete(dir, "review"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := Get(dir, "review"); err == nil {
+		t.Fatal("expected deleted workflow to be missing")
+	}
+}
+
+func TestDelete_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	if err := Delete(dir, "missing"); err == nil {
+		t.Fatal("expected error for nonexistent workflow")
 	}
 }

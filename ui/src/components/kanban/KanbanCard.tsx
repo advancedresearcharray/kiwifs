@@ -4,6 +4,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import { Badge } from "@kw/components/ui/badge";
+import { createKanbanCardDragData } from "@kw/lib/kanbanDnd";
 import type { WorkflowPage } from "@kw/lib/api";
 
 type Props = {
@@ -19,7 +20,7 @@ export function KanbanCard({ page, onNavigate }: Props) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: page.path });
+  } = useSortable({ id: page.path, data: createKanbanCardDragData(page.path) });
 
   const style = {
     transform: CSS.Transform.toString(transform),
