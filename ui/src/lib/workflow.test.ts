@@ -6,6 +6,7 @@ import {
   normalizeWorkflowName,
   parseWorkflowStates,
   renameWorkflowState,
+  updateWorkflowStates,
 } from "./workflow";
 
 describe("workflow helpers", () => {
@@ -31,6 +32,28 @@ describe("workflow helpers", () => {
         { from: "doing", to: "todo" },
         { from: "doing", to: "done" },
         { from: "done", to: "doing" },
+      ],
+    });
+  });
+
+  it("creates a board workflow from editable column rows", () => {
+    expect(
+      updateWorkflowStates(
+        { name: "launch", states: [], transitions: [] },
+        [
+          { name: " idea ", color: "#111111" },
+          { name: "shipping", color: "#222222" },
+        ],
+      ),
+    ).toEqual({
+      name: "launch",
+      states: [
+        { name: "idea", color: "#111111" },
+        { name: "shipping", color: "#222222" },
+      ],
+      transitions: [
+        { from: "idea", to: "shipping" },
+        { from: "shipping", to: "idea" },
       ],
     });
   });

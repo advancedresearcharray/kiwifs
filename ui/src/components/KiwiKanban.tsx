@@ -13,7 +13,6 @@ import { api, type WorkflowColumn, type WorkflowDef, type WorkflowPage } from "@
 import {
   createDefaultWorkflow,
   normalizeWorkflowName,
-  parseWorkflowStates,
   updateWorkflowStates,
 } from "@kw/lib/workflow";
 import { Button } from "@kw/components/ui/button";
@@ -34,7 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@kw/components/ui/select";
-import { Textarea } from "@kw/components/ui/textarea";
 import { KanbanColumn } from "./kanban/KanbanColumn";
 import { KanbanCard } from "./kanban/KanbanCard";
 
@@ -46,10 +44,70 @@ type Props = {
 type Workflow = WorkflowDef;
 type EditStateRow = WorkflowDef["states"][number] & { id: string };
 
-const DEFAULT_WORKFLOW_STATES = "todo, doing, done";
+const DEFAULT_WORKFLOW_STATES = ["todo", "doing", "done"];
 
 function makeEditRows(workflow: WorkflowDef): EditStateRow[] {
   return workflow.states.map((state, index) => ({ ...state, id: `${state.name}-${index}` }));
+}
+
+function makeDefaultRows(): EditStateRow[] {
+  return makeEditRows(createDefaultWorkflow("", DEFAULT_WORKFLOW_STATES));
+}
+
+type ColumnRowsEditorProps = {
+  rows: EditStateRow[];
+  disabled: boolean;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+  onNameChange: (id: string, name: string) => void;
+  onColorChange: (id: string, color: string) => void;
+};
+
+function ColumnRowsEditor({
+  rows,
+  disabled,
+  onAdd,
+  onRemove,
+  onNameChange,
+  onColorChange,
+}: ColumnRowsEditorProps) {
+  return (
+    <div className="space-y-3">
+      {rows.map((row, index) => (
+        <div key={row.id} className="flex items-center gap-2">
+          <Input
+            type="color"
+            value={row.color}
+            onChange={(event) => onColorChange(row.id, event.target.value)}
+            disabled={disabled}
+            className="h-9 w-12 shrink-0 cursor-pointer p-1"
+            aria-label={`Column ${index + 1} color`}
+          />
+          <Input
+            value={row.name}
+            onChange={(event) => onNameChange(row.id, event.target.value)}
+            placeholder={`Column ${index + 1}`}
+            disabled={disabled}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => onRemove(row.id)}
+            disabled={disabled || rows.length <= 1}
+            aria-label={`Remove column ${row.name || index + 1}`}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+
+      <Button type="button" variant="outline" size="sm" onClick={onAdd} disabled={disabled}>
+        <Plus className="h-3.5 w-3.5" />
+        Add column
+      </Button>
+    </div>
+  );
 }
 
 export function KiwiKanban({ onClose, onNavigate }: Props) {
@@ -60,7 +118,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
   const [draggingPage, setDraggingPage] = useState<WorkflowPage | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState("");
-  const [newWorkflowStates, setNewWorkflowStates] = useState(DEFAULT_WORKFLOW_STATES);
+  const [createRows, setCreateRows] = useState<EditStateRow[]>(() => makeDefaultRows());
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -191,7 +249,6 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
 
   const handleCreateWorkflow = async () => {
     const name = normalizeWorkflowName(newWorkflowName);
-    const states = parseWorkflowStates(newWorkflowStates);
 
     if (!name) {
       setCreateError("Board name is required.");
@@ -201,18 +258,18 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
       setCreateError(`Workflow "${name}" already exists.`);
       return;
     }
-    if (states.length === 0) {
-      setCreateError("Add at least one state.");
-      return;
-    }
 
     setCreating(true);
     setCreateError(null);
     try {
-      await api.saveWorkflow(createDefaultWorkflow(name, states));
+      const workflow = updateWorkflowStates(
+        { name, states: [], transitions: [] },
+        createRows.map((row) => ({ name: row.name, color: row.color })),
+      );
+      await api.saveWorkflow(workflow);
       setCreateOpen(false);
       setNewWorkflowName("");
-      setNewWorkflowStates(DEFAULT_WORKFLOW_STATES);
+      setCreateRows(makeDefaultRows());
       await loadWorkflows(name);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create workflow.");
@@ -244,6 +301,13 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     setEditOpen(true);
   };
 
+  const handleOpenCreate = () => {
+    setNewWorkflowName("");
+    setCreateRows(makeDefaultRows());
+    setCreateError(null);
+    setCreateOpen(true);
+  };
+
   const handleSaveEdit = async () => {
     if (!activeWorkflowDef || !activeWorkflow) return;
 
@@ -265,6 +329,25 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     }
   };
 
+  const handleAddCreateRow = () => {
+    setCreateRows((rows) => [
+      ...rows,
+      { id: `new-${Date.now()}`, name: "", color: "#9B59B6" },
+    ]);
+  };
+
+  const handleRemoveCreateRow = (id: string) => {
+    setCreateRows((rows) => rows.filter((row) => row.id !== id));
+  };
+
+  const handleCreateRowName = (id: string, name: string) => {
+    setCreateRows((rows) => rows.map((row) => (row.id === id ? { ...row, name } : row)));
+  };
+
+  const handleCreateRowColor = (id: string, color: string) => {
+    setCreateRows((rows) => rows.map((row) => (row.id === id ? { ...row, color } : row)));
+  };
+
   const handleAddEditRow = () => {
     setEditRows((rows) => [
       ...rows,
@@ -278,6 +361,10 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
 
   const handleEditRowName = (id: string, name: string) => {
     setEditRows((rows) => rows.map((row) => (row.id === id ? { ...row, name } : row)));
+  };
+
+  const handleEditRowColor = (id: string, color: string) => {
+    setEditRows((rows) => rows.map((row) => (row.id === id ? { ...row, color } : row)));
   };
 
   return (
@@ -308,7 +395,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
           </Select>
         )}
 
-        <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
+        <Button variant="outline" size="sm" onClick={handleOpenCreate}>
           <Plus className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">New board</span>
         </Button>
@@ -415,16 +502,17 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="workflow-states">States</Label>
-              <Textarea
-                id="workflow-states"
-                value={newWorkflowStates}
-                onChange={(event) => setNewWorkflowStates(event.target.value)}
-                placeholder="todo, doing, done"
-                rows={3}
+              <Label>Columns</Label>
+              <ColumnRowsEditor
+                rows={createRows}
+                disabled={creating}
+                onAdd={handleAddCreateRow}
+                onRemove={handleRemoveCreateRow}
+                onNameChange={handleCreateRowName}
+                onColorChange={handleCreateRowColor}
               />
               <p className="text-xs text-muted-foreground">
-                Separate states with commas or new lines. Adjacent states get two-way transitions.
+                Adjacent columns get two-way transitions. Pages become cards when their frontmatter uses this board name and one of these column names.
               </p>
             </div>
 
@@ -453,35 +541,14 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
           </DialogHeader>
 
           <div className="space-y-3 py-2">
-            {editRows.map((row, index) => (
-              <div key={row.id} className="flex items-center gap-2">
-                <div
-                  className="h-4 w-4 rounded-full border border-border shrink-0"
-                  style={{ backgroundColor: row.color }}
-                  aria-hidden="true"
-                />
-                <Input
-                  value={row.name}
-                  onChange={(event) => handleEditRowName(row.id, event.target.value)}
-                  placeholder={`Column ${index + 1}`}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleRemoveEditRow(row.id)}
-                  disabled={savingEdit || editRows.length <= 1}
-                  aria-label={`Remove column ${row.name || index + 1}`}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
-
-            <Button type="button" variant="outline" size="sm" onClick={handleAddEditRow} disabled={savingEdit}>
-              <Plus className="h-3.5 w-3.5" />
-              Add column
-            </Button>
+            <ColumnRowsEditor
+              rows={editRows}
+              disabled={savingEdit}
+              onAdd={handleAddEditRow}
+              onRemove={handleRemoveEditRow}
+              onNameChange={handleEditRowName}
+              onColorChange={handleEditRowColor}
+            />
 
             <p className="text-xs text-muted-foreground">
               Renamed or removed columns may hide existing cards until those pages' frontmatter state values are updated.
