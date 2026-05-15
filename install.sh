@@ -1,97 +1,59 @@
-#!/bin/bash
-# KiwiFS installation script
-# Usage: curl -fsSL https://kiwifs.dev/install.sh | sh
-
+#!/bin/sh
 set -e
 
-# Detect OS and architecture
+REPO="kiwifs/kiwifs"
+BINARY="kiwifs"
+INSTALL_DIR="/usr/local/bin"
+
+# Detect OS
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m)"
-
 case "$OS" in
-  linux)
-    OS="linux"
-    ;;
-  darwin)
-    OS="darwin"
-    ;;
-  *)
-    echo "Error: Unsupported operating system: $OS"
-    exit 1
-    ;;
+  darwin) OS="darwin" ;;
+  linux)  OS="linux" ;;
+  *)      echo "Unsupported OS: $OS"; exit 1 ;;
 esac
 
+# Detect architecture
+ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64)
-    ARCH="amd64"
-    ;;
-  aarch64|arm64)
-    ARCH="arm64"
-    ;;
-  *)
-    echo "Error: Unsupported architecture: $ARCH"
-    exit 1
-    ;;
+  x86_64|amd64) ARCH="amd64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+  *)             echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-# Get latest version from GitHub releases
-LATEST_VERSION=$(curl -s https://api.github.com/repos/kiwifs/kiwifs/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+echo "Detected: ${OS}/${ARCH}"
 
-if [ -z "$LATEST_VERSION" ]; then
-  echo "Error: Could not determine latest version"
+# Get latest version
+LATEST=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+if [ -z "$LATEST" ]; then
+  echo "Failed to fetch latest version"
   exit 1
 fi
 
-echo "Installing KiwiFS $LATEST_VERSION for $OS/$ARCH..."
+echo "Installing kiwifs v${LATEST}..."
 
-# Download URL
-DOWNLOAD_URL="https://github.com/kiwifs/kiwifs/releases/download/${LATEST_VERSION}/kiwifs-${OS}-${ARCH}.tar.gz"
+ASSET="${BINARY}_${OS}_${ARCH}.tar.gz"
+URL="https://github.com/${REPO}/releases/download/v${LATEST}/${ASSET}"
 
-# Temporary directory
-TMP_DIR=$(mktemp -d)
-trap "rm -rf $TMP_DIR" EXIT
+TMPDIR=$(mktemp -d)
+trap "rm -rf $TMPDIR" EXIT
 
-# Download and extract
-echo "Downloading from $DOWNLOAD_URL..."
-curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/kiwifs.tar.gz"
+curl -fsSL "$URL" -o "${TMPDIR}/${ASSET}"
+tar -xzf "${TMPDIR}/${ASSET}" -C "$TMPDIR"
 
-echo "Extracting..."
-tar -xzf "$TMP_DIR/kiwifs.tar.gz" -C "$TMP_DIR"
-
-# Determine install location
-if [ -w "/usr/local/bin" ]; then
-  INSTALL_DIR="/usr/local/bin"
-elif [ -w "$HOME/.local/bin" ]; then
-  INSTALL_DIR="$HOME/.local/bin"
-  mkdir -p "$INSTALL_DIR"
+if [ -w "$INSTALL_DIR" ]; then
+  mv "${TMPDIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 else
-  INSTALL_DIR="$HOME/bin"
-  mkdir -p "$INSTALL_DIR"
+  echo "Need sudo to install to ${INSTALL_DIR}"
+  sudo mv "${TMPDIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 fi
 
-# Install binary
-echo "Installing to $INSTALL_DIR..."
-mv "$TMP_DIR/kiwifs-${OS}-${ARCH}" "$INSTALL_DIR/kiwifs"
-chmod +x "$INSTALL_DIR/kiwifs"
+chmod +x "${INSTALL_DIR}/${BINARY}"
 
-# Verify installation
-if ! command -v kiwifs &> /dev/null; then
-  echo ""
-  echo "⚠️  KiwiFS was installed to $INSTALL_DIR, but it's not in your PATH."
-  echo "Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
-  echo ""
-  echo "    export PATH=\"\$PATH:$INSTALL_DIR\""
-  echo ""
-else
-  echo ""
-  echo "✅ KiwiFS installed successfully!"
-  echo ""
-  kiwifs --version
-fi
-
+echo ""
+echo "Installed kiwifs v${LATEST} to ${INSTALL_DIR}/${BINARY}"
 echo ""
 echo "Get started:"
-echo "  kiwifs init ~/my-knowledge"
-echo "  kiwifs serve --root ~/my-knowledge --port 3333"
+echo "  kiwifs init ~/knowledge"
+echo "  kiwifs mcp --root ~/knowledge"
 echo ""
-echo "Documentation: https://github.com/kiwifs/kiwifs"

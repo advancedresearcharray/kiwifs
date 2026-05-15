@@ -1,18 +1,19 @@
-BINARY := kiwifs
-ROOT   := ./knowledge
-PORT   := 3333
+BINARY  := kiwifs
+ROOT    := ./knowledge
+PORT    := 3333
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 .PHONY: build run test clean tidy ui ui-install dev-ui
 
 # Full build: bundle the UI first, then compile the Go binary so
 # `//go:embed ui/dist` picks up the latest assets.
 build: ui
-	go build -o $(BINARY) .
+	go build -ldflags "-s -w -X main.version=$(VERSION)" -o $(BINARY) .
 
 # Build only the Go binary. Use this when the UI hasn't changed — the
 # previously-built ui/dist is still embedded.
 go-build:
-	go build -o $(BINARY) .
+	go build -ldflags "-s -w -X main.version=$(VERSION)" -o $(BINARY) .
 
 # Build just the UI. Runs `npm install` lazily on first use.
 ui:
