@@ -695,5 +695,193 @@ func TestElasticsearchSkipWithoutEnv(t *testing.T) {
 	}
 }
 
+func TestMarkdownImport(t *testing.T) {
+	docsDir := t.TempDir()
+
+	// Create a nested structure of markdown files.
+	os.MkdirAll(filepath.Join(docsDir, "guides"), 0755)
+
+	// Root level file with frontmatter.
+	rootNote := `---
+title: Getting Started
+category: basics
+---
+
+# Getting Started
+
+Welcome to the documentation!
+`
+	os.WriteFile(filepath.Join(docsDir, "readme.md"), []byte(rootNote), 0644)
+
+	// Nested file without frontmatter.
+	guideNote := `# Advanced Guide
+
+This is an advanced topic.
+
+- Point 1
+- Point 2
+`
+	os.WriteFile(filepath.Join(docsDir, "guides", "advanced.md"), []byte(guideNote), 0644)
+
+	// Create .git dir that should be skipped.
+	os.MkdirAll(filepath.Join(docsDir, ".git"), 0755)
+	os.WriteFile(filepath.Join(docsDir, ".git", "config"), []byte("[core]"), 0644)
+
+	src, err := NewMarkdown(docsDir, MarkdownOpts{})
+	if err != nil {
+		t.Fatalf("new markdown: %v", err)
+	}
+	defer src.Close()
+
+	pipe, store := testPipeline(t)
+	ctx := context.Background()
+	stats, err := Run(ctx, src, pipe, Options{Actor: "test"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if stats.Imported != 2 {
+		t.Fatalf("imported=%d, want 2", stats.Imported)
+	}
+
+	// Verify the root file preserves frontmatter and body.
+	content, err := store.Read(ctx, filepath.Base(docsDir)+"/readme.md")
+	if err != nil {
+		t.Fatalf("read readme: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "title: Getting Started") {
+		t.Fatalf("missing title in frontmatter: %s", s)
+	}
+	if !strings.Contains(s, "category: basics") {
+		t.Fatalf("missing category in frontmatter: %s", s)
+	}
+	if !strings.Contains(s, "# Getting Started") {
+		t.Fatalf("missing body heading: %s", s)
+	}
+	if !strings.Contains(s, "_source:") {
+		t.Fatalf("missing _source tracking: %s", s)
+	}
+	// Ensure _raw_content is NOT in the output frontmatter.
+	if strings.Contains(s, "_raw_content") {
+		t.Fatalf("_raw_content should not be in output: %s", s)
+	}
+
+	// Verify nested file.
+	content2, err := store.Read(ctx, filepath.Base(docsDir)+"/guides_advanced.md")
+	if err != nil {
+		t.Fatalf("read advanced: %v", err)
+	}
+	s2 := string(content2)
+	if !strings.Contains(s2, "# Advanced Guide") {
+		t.Fatalf("missing body in nested file: %s", s2)
+	}
+}
+
+func TestMarkdownImportPreservesBody(t *testing.T) {
+	// Test that the _raw_content handling correctly uses the body.
+	docsDir := t.TempDir()
+
+	note := `---
+title: Body Test
+---
+
+# Main Heading
+
+Paragraph one.
+
+Paragraph two.
+`
+	os.WriteFile(filepath.Join(docsDir, "note.md"), []byte(note), 0644)
+
+	src, _ := NewMarkdown(docsDir, MarkdownOpts{})
+	defer src.Close()
+
+	pipe, store := testPipeline(t)
+	ctx := context.Background()
+	stats, _ := Run(ctx, src, pipe, Options{Actor: "test"})
+	if stats.Imported != 1 {
+		t.Fatalf("imported=%d, want 1", stats.Imported)
+	}
+
+	content, _ := store.Read(ctx, filepath.Base(docsDir)+"/note.md")
+	s := string(content)
+
+	// The original body should be present, not the auto-generated boilerplate.
+	if !strings.Contains(s, "# Main Heading") {
+		t.Fatalf("body heading missing: %s", s)
+	}
+	if !strings.Contains(s, "Paragraph one.") {
+		t.Fatalf("body paragraph missing: %s", s)
+	}
+	// Should NOT have the auto-generated "Auto-imported from" text.
+	if strings.Contains(s, "Auto-imported from") {
+		t.Fatalf("unexpected auto-generated body: %s", s)
+	}
+}
+
+func TestMarkdownImportSingleFile(t *testing.T) {
+	// Test importing a single markdown file (not a directory).
+	tmpDir := t.TempDir()
+
+	note := `---
+title: Single Note
+tags: [test]
+---
+
+# Single Note
+
+This is a single file import test.
+`
+	mdPath := filepath.Join(tmpDir, "single.md")
+	os.WriteFile(mdPath, []byte(note), 0644)
+
+	src, err := NewMarkdown(mdPath, MarkdownOpts{})
+	if err != nil {
+		t.Fatalf("new markdown: %v", err)
+	}
+	defer src.Close()
+
+	// Name should be the filename without extension
+	if src.Name() != "single" {
+		t.Fatalf("name=%q, want 'single'", src.Name())
+	}
+
+	pipe, store := testPipeline(t)
+	ctx := context.Background()
+	stats, err := Run(ctx, src, pipe, Options{Actor: "test"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if stats.Imported != 1 {
+		t.Fatalf("imported=%d, want 1", stats.Imported)
+	}
+
+	content, err := store.Read(ctx, "single/single.md")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "title: Single Note") {
+		t.Fatalf("missing title: %s", s)
+	}
+	if !strings.Contains(s, "# Single Note") {
+		t.Fatalf("missing body: %s", s)
+	}
+}
+
+func TestMarkdownImportRejectsNonMarkdown(t *testing.T) {
+	tmpDir := t.TempDir()
+	txtPath := filepath.Join(tmpDir, "readme.txt")
+	os.WriteFile(txtPath, []byte("not markdown"), 0644)
+
+	_, err := NewMarkdown(txtPath, MarkdownOpts{})
+	if err == nil {
+		t.Fatal("expected error for non-markdown file")
+	}
+	if !strings.Contains(err.Error(), "not a markdown file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // Suppress lint for unused json import.
 var _ = json.Marshal

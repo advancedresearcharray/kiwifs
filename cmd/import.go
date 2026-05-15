@@ -14,7 +14,8 @@ import (
 var importCmd = &cobra.Command{
 	Use:   "import",
 	Short: "Import data from external sources into the knowledge base",
-	Example: `  kiwifs import --from csv --file students.csv
+	Example: `  kiwifs import --from markdown --path ./docs
+  kiwifs import --from csv --file students.csv
   kiwifs import --from json --file data.json
   kiwifs import --from jsonl --file data.jsonl
   kiwifs import --from yaml --file data.yaml
@@ -38,7 +39,7 @@ var importCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(importCmd)
 
-	importCmd.Flags().String("from", "", "source type: postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch")
+	importCmd.Flags().String("from", "", "source type: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch")
 	importCmd.MarkFlagRequired("from")
 
 	importCmd.Flags().StringP("root", "r", "./knowledge", "knowledge root directory")
@@ -62,7 +63,7 @@ func init() {
 	importCmd.Flags().String("sheet", "", "sheet name (excel, gsheets)")
 	importCmd.Flags().String("spreadsheet-id", "", "Google Spreadsheet ID (gsheets)")
 	importCmd.Flags().String("credentials", "", "credentials file path (gsheets)")
-	importCmd.Flags().String("path", "", "directory path (obsidian, confluence)")
+	importCmd.Flags().String("path", "", "directory path (markdown, obsidian, confluence)")
 	importCmd.Flags().String("region", "", "AWS region (dynamodb)")
 	importCmd.Flags().String("addr", "", "server address (redis)")
 	importCmd.Flags().String("password", "", "auth password (redis)")
@@ -269,6 +270,13 @@ func buildSource(cmd *cobra.Command, from string) (importer.Source, error) {
 		}
 		return importer.NewYAML(filePath)
 
+	case "markdown":
+		path, _ := cmd.Flags().GetString("path")
+		if path == "" {
+			return nil, fmt.Errorf("--path is required for markdown")
+		}
+		return importer.NewMarkdown(path, importer.MarkdownOpts{})
+
 	case "obsidian":
 		path, _ := cmd.Flags().GetString("path")
 		if path == "" {
@@ -316,6 +324,6 @@ func buildSource(cmd *cobra.Command, from string) (importer.Source, error) {
 		return importer.NewElasticsearch(esURL, index, nil)
 
 	default:
-		return nil, fmt.Errorf("unknown source type: %s (supported: postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch)", from)
+		return nil, fmt.Errorf("unknown source type: %s (supported: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch)", from)
 	}
 }

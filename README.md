@@ -325,9 +325,10 @@ These fields appear in DQL queries and meta API responses alongside real frontma
 
 ### Data import
 
-Bulk-import data from 18 sources. Each row becomes a markdown file with structured frontmatter:
+Bulk-import data from 19 sources. Each row becomes a markdown file with structured frontmatter:
 
 ```bash
+kiwifs import --from markdown --path ./docs --root ./knowledge
 kiwifs import --from postgres --dsn "postgres://..." --table users --root ./knowledge
 kiwifs import --from csv --path data.csv --root ./knowledge
 kiwifs import --from json --url https://api.example.com/data --root ./knowledge
@@ -338,7 +339,7 @@ kiwifs import --from json --url https://api.example.com/data --root ./knowledge
 | **Databases** | PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB, Redis, Elasticsearch |
 | **Files** | CSV, JSON, JSONL, YAML, Excel |
 | **SaaS** | Notion, Airtable, Google Sheets, Confluence |
-| **Knowledge** | Obsidian vaults, Firebase/Firestore |
+| **Knowledge** | Markdown, Obsidian vaults, Firebase/Firestore |
 
 Features: idempotent upserts (re-importing skips unchanged rows), `--dry-run`, `--columns` filtering, `--primary-key` control, `_source` / `_source_id` tracking in frontmatter.
 
@@ -445,7 +446,7 @@ Every feature is accessible via `kiwifs <command>`:
 | `kiwifs init` | Scaffold a workspace from a template (`knowledge`, `wiki`, `runbook`, `research`, or `blank`) |
 | `kiwifs mcp` | Start a Model Context Protocol server (for Claude, Cursor, etc.) |
 | `kiwifs query` | Run a DQL query against the local index |
-| `kiwifs import` | Bulk-import from 18 data sources (Postgres, CSV, Notion, etc.) |
+| `kiwifs import` | Bulk-import from 19 data sources (Markdown, Postgres, CSV, Notion, etc.) |
 | `kiwifs export` | Export knowledge base to JSONL or CSV |
 | `kiwifs aggregate` | Run SQL aggregates (count, avg, sum, min, max) over frontmatter |
 | `kiwifs analytics` | Content health dashboard (stale, orphans, broken links) |

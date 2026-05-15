@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"gopkg.in/yaml.v3"
 )
@@ -113,7 +114,13 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 				title = t
 			}
 
-			content := renderMarkdown(fm, title, rec.Table, rec.SourceID)
+			// Check for raw markdown content (used by Obsidian, Confluence, Markdown sources)
+			var content []byte
+			if rawContent, ok := fields["_raw_content"].(string); ok && rawContent != "" {
+				content = renderRawContent(rawContent, src.Name(), rec.SourceID)
+			} else {
+				content = renderMarkdown(fm, title, rec.Table, rec.SourceID)
+			}
 
 			if !opts.DryRun {
 				existing, rerr := pipe.Store.Read(ctx, path)
@@ -147,6 +154,36 @@ func renderMarkdown(fm map[string]any, title, table, id string) []byte {
 	buf.WriteString("---\n\n")
 	fmt.Fprintf(&buf, "# %s\n\n", title)
 	fmt.Fprintf(&buf, "> Auto-imported from %s (row %s)\n", table, id)
+	return buf.Bytes()
+}
+
+// renderRawContent handles sources that provide complete markdown content
+// (Obsidian, Confluence, Markdown). It merges source tracking fields into
+// the existing frontmatter and returns the complete content.
+func renderRawContent(rawContent, sourceName, sourceID string) []byte {
+	// Parse existing frontmatter from the raw content
+	fm, _ := markdown.Frontmatter([]byte(rawContent))
+	if fm == nil {
+		fm = make(map[string]any)
+	}
+
+	// Merge source tracking fields
+	fm["_source"] = sourceName
+	fm["_source_id"] = sourceID
+	fm["_imported_at"] = time.Now().UTC().Format(time.RFC3339)
+
+	// Get the body (everything after frontmatter)
+	body := markdown.BodyAfterFrontmatter([]byte(rawContent))
+
+	// Rebuild the markdown with merged frontmatter
+	var buf bytes.Buffer
+	buf.WriteString("---\n")
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	_ = enc.Encode(fm)
+	_ = enc.Close()
+	buf.WriteString("---\n\n")
+	buf.WriteString(body)
 	return buf.Bytes()
 }
 
