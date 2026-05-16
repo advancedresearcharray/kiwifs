@@ -170,12 +170,19 @@ func coalesce(actor string) string {
 	return actor
 }
 
+// extractStatus returns the page's workflow-relevant status field from
+// frontmatter. It checks "status" first (legacy field) and falls back to
+// "state" (used by the kanban/workflow system), so config-based
+// enforce_transitions applies to both naming conventions.
 func extractStatus(content []byte) string {
 	fm, err := markdown.Frontmatter(content)
 	if err != nil || fm == nil {
 		return ""
 	}
-	s, _ := fm["status"].(string)
+	if s, ok := fm["status"].(string); ok && s != "" {
+		return s
+	}
+	s, _ := fm["state"].(string)
 	return s
 }
 

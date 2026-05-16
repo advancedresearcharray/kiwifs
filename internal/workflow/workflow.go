@@ -27,8 +27,9 @@ type Workflow struct {
 // State is a named node in the state machine.
 type State struct {
 	Name     string `json:"name"`
-	Color    string `json:"color,omitempty"`    // hex color for UI
-	Terminal bool   `json:"terminal,omitempty"` // no outbound transitions allowed
+	Color    string `json:"color,omitempty"`      // hex color for UI
+	Terminal bool   `json:"terminal,omitempty"`   // no outbound transitions allowed
+	WIPLimit int    `json:"wip_limit,omitempty"`  // max cards allowed in this column (0 = unlimited)
 }
 
 // Transition is a directed edge between states.
@@ -107,37 +108,72 @@ func ValidateTransition(w Workflow, currentState, targetState string) error {
 	return fmt.Errorf("no transition from %q to %q in workflow %q", currentState, targetState, w.Name)
 }
 
+// LoadError describes a single broken workflow file encountered during Load.
+type LoadError struct {
+	File string
+	Err  error
+}
+
+func (e LoadError) Error() string {
+	return fmt.Sprintf("%s: %v", e.File, e.Err)
+}
+
+// LoadResult bundles successfully loaded workflows with any per-file errors
+// so callers can surface broken files instead of silently dropping them.
+type LoadResult struct {
+	Workflows []Workflow
+	Errors    []LoadError
+}
+
 // Load reads all workflow definitions from .kiwi/workflows/*.json.
+// Workflows are validated on load; invalid definitions are skipped.
 func Load(kiwiDir string) ([]Workflow, error) {
+	res := LoadWithErrors(kiwiDir)
+	// Preserve the existing API: return nil error unless the directory
+	// itself is unreadable (handled inside LoadWithErrors).
+	return res.Workflows, nil
+}
+
+// LoadWithErrors is like Load but also returns per-file errors for broken
+// or invalid workflow definitions.
+func LoadWithErrors(kiwiDir string) LoadResult {
 	dir := filepath.Join(kiwiDir, ".kiwi", "workflows")
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil, nil
+		return LoadResult{}
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read workflows dir: %w", err)
+		return LoadResult{Errors: []LoadError{{File: dir, Err: err}}}
 	}
 
-	var workflows []Workflow
+	var result LoadResult
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		fpath := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(fpath)
 		if err != nil {
+			result.Errors = append(result.Errors, LoadError{File: entry.Name(), Err: err})
 			continue
 		}
 		var w Workflow
 		if err := json.Unmarshal(data, &w); err != nil {
+			result.Errors = append(result.Errors, LoadError{File: entry.Name(), Err: fmt.Errorf("invalid JSON: %w", err)})
 			continue
 		}
 		if w.Name == "" {
 			w.Name = strings.TrimSuffix(entry.Name(), ".json")
 		}
-		workflows = append(workflows, w)
+		// Reject broken graphs (e.g. transitions to non-existent states).
+		if err := Validate(w); err != nil {
+			result.Errors = append(result.Errors, LoadError{File: entry.Name(), Err: fmt.Errorf("invalid workflow: %w", err)})
+			continue
+		}
+		result.Workflows = append(result.Workflows, w)
 	}
-	return workflows, nil
+	return result
 }
 
 // Get reads a single workflow definition by name.

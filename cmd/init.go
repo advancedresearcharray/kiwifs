@@ -87,6 +87,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	rulesPath := filepath.Join(kiwiDir, "rules.md")
+	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+		data, _ := fs.ReadFile(templates, "templates/rules.md")
+		if len(data) > 0 {
+			_ = os.WriteFile(rulesPath, data, 0644)
+		}
+	}
+
 	fmt.Printf("Initialized knowledge at %s (template: %s)\n", root, template)
 	fmt.Printf("Run: kiwifs serve --root %s\n", root)
 	return nil

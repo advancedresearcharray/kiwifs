@@ -424,14 +424,21 @@
 }
 
 /* ─── Scrollbar ─── */
-.kiwi-scroll::-webkit-scrollbar {
+.kiwi-scroll::-webkit-scrollbar,
+.kiwi-board-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-.kiwi-scroll::-webkit-scrollbar-thumb {
+.kiwi-scroll::-webkit-scrollbar-track,
+.kiwi-board-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kiwi-scroll::-webkit-scrollbar-thumb,
+.kiwi-board-scroll::-webkit-scrollbar-thumb {
   @apply bg-border/60 rounded-full;
 }
-.kiwi-scroll::-webkit-scrollbar-thumb:hover {
+.kiwi-scroll::-webkit-scrollbar-thumb:hover,
+.kiwi-board-scroll::-webkit-scrollbar-thumb:hover {
   @apply bg-border;
 }
 

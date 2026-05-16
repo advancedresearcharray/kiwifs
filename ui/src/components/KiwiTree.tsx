@@ -69,6 +69,18 @@ type ConfirmDialog = {
   onConfirm: () => void;
 };
 
+function isKiwiConfig(name: string): boolean {
+  return name === ".kiwi";
+}
+
+function sortChildren(children: TreeEntry[]): TreeEntry[] {
+  return [...children].sort((a, b) => {
+    const aKiwi = isKiwiConfig(a.name) ? 0 : 1;
+    const bKiwi = isKiwiConfig(b.name) ? 0 : 1;
+    return aKiwi - bKiwi;
+  });
+}
+
 export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved, enableKanbanDrag = false }: Props) {
   const [root, setRoot] = useState<TreeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +178,7 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
         ).catch(() => {});
       }}
     >
-      {(root.children || []).map((child) => (
+      {sortChildren(root.children || []).map((child) => (
         <Node
           key={child.path}
           entry={child}
@@ -328,6 +340,7 @@ function Node({
   const path = stripTrailingSlash(entry.path);
   const isOpen = expanded.has(path);
   const isActive = activePath === path;
+  const isKiwi = isKiwiConfig(entry.name);
   const nodeRef = useRef<HTMLButtonElement | HTMLAnchorElement | null>(null);
   const draggable = useDraggable({
     id: `tree-page:${path}`,
@@ -400,11 +413,11 @@ function Node({
                 className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
               >
                 {isOpen ? (
-                  <FolderOpen className="h-4 w-4 text-primary shrink-0" />
+                  <FolderOpen className={cn("h-4 w-4 shrink-0", isKiwi ? "text-emerald-500" : "text-primary")} />
                 ) : (
-                  <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <Folder className={cn("h-4 w-4 shrink-0", isKiwi ? "text-emerald-500/70" : "text-muted-foreground")} />
                 )}
-                <span className="truncate">{entry.name}</span>
+                <span className={cn("truncate", isKiwi && "text-emerald-600 dark:text-emerald-400 font-medium")}>{entry.name}</span>
               </button>
               {onCreateChild && (
                 <button
@@ -507,7 +520,7 @@ function Node({
         </ContextMenu>
         {isOpen && entry.children && (
           <div>
-            {entry.children.map((c) => (
+            {sortChildren(entry.children).map((c) => (
               <Node
                 key={c.path}
                 entry={c}

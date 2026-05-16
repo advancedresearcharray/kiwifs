@@ -5,6 +5,9 @@ export type KanbanCardDraft = {
   workflow: string;
   state: string;
   body?: string;
+  tags?: string[];
+  priority?: string;
+  due?: string;
 };
 
 const DEFAULT_STATE_COLORS = ["#9B59B6", "#3498DB", "#2ECC71", "#F39C12", "#E74C3C"];
@@ -69,11 +72,17 @@ export function updateWorkflowStates(
   states: WorkflowDef["states"],
 ): WorkflowDef {
   const seen = new Set<string>();
-  const normalizedStates = states.map((state, index) => ({
-    ...state,
-    name: normalizeStateName(state.name),
-    color: state.color || DEFAULT_STATE_COLORS[index % DEFAULT_STATE_COLORS.length]!,
-  }));
+  const normalizedStates = states.map((state, index) => {
+    const base: WorkflowDef["states"][number] = {
+      name: normalizeStateName(state.name),
+      color: state.color || DEFAULT_STATE_COLORS[index % DEFAULT_STATE_COLORS.length]!,
+    };
+    // Preserve WIP limit when set.
+    if (state.wip_limit && state.wip_limit > 0) {
+      base.wip_limit = state.wip_limit;
+    }
+    return base;
+  });
 
   for (const state of normalizedStates) {
     if (!state.name) throw new Error("State name is required.");
@@ -99,14 +108,23 @@ export function defaultKanbanCardPath(title: string, workflowName: string): stri
 export function createKanbanCardMarkdown(draft: KanbanCardDraft): string {
   const title = draft.title.trim() || "Untitled card";
   const body = draft.body?.trim() ? `\n\n${draft.body.trim()}\n` : "\n";
-  return [
+  const lines = [
     "---",
     `title: ${quoteYamlString(title)}`,
     `workflow: ${quoteYamlString(draft.workflow)}`,
     `state: ${quoteYamlString(draft.state)}`,
-    "---",
-    `# ${title}`,
-  ].join("\n") + body;
+  ];
+  if (draft.tags && draft.tags.length > 0) {
+    lines.push(`tags: [${draft.tags.map(quoteYamlString).join(", ")}]`);
+  }
+  if (draft.priority) {
+    lines.push(`priority: ${quoteYamlString(draft.priority)}`);
+  }
+  if (draft.due) {
+    lines.push(`due: ${quoteYamlString(draft.due)}`);
+  }
+  lines.push("---", `# ${title}`);
+  return lines.join("\n") + body;
 }
 
 function quoteYamlString(value: string): string {
@@ -130,10 +148,12 @@ function normalizeStateName(input: string): string {
 function createAdjacentTransitions(states: string[]): WorkflowDef["transitions"] {
   const transitions: WorkflowDef["transitions"] = [];
 
-  for (let index = 0; index < states.length - 1; index += 1) {
-    const from = states[index]!;
-    const to = states[index + 1]!;
-    transitions.push({ from, to }, { from: to, to: from });
+  for (let i = 0; i < states.length; i += 1) {
+    for (let j = 0; j < states.length; j += 1) {
+      if (i !== j) {
+        transitions.push({ from: states[i]!, to: states[j]! });
+      }
+    }
   }
 
   return transitions;
