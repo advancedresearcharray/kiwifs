@@ -20,6 +20,7 @@ import { Textarea } from "@kw/components/ui/textarea";
 import { dirOf, stem, titleize } from "@kw/lib/paths";
 import { KiwiBreadcrumb } from "./KiwiBreadcrumb";
 import { ExcalidrawMarkdownEditor, isExcalidrawMarkdown } from "./ExcalidrawMarkdownPreview";
+import { frontmatterToText, joinFrontmatter, splitFrontmatter } from "@kw/lib/frontmatter";
 import { formatDistanceToNow } from "date-fns";
 
 const wikiLinkPluginKey = new PluginKey("kiwi-wiki-links");
@@ -310,27 +311,26 @@ function EditorInner({
   const autoSaveTimer = useRef<number | null>(null);
   const savedFlashTimer = useRef<number | null>(null);
   const [fmOpen, setFmOpen] = useState(false);
-  const [fmText, setFmText] = useState<string>(() => {
-    try {
-      const parsed = matter(initialMd);
-      const raw = parsed.matter?.trim();
-      return raw || "";
-    } catch { return ""; }
-  });
+  const frontmatterSplit = useMemo(() => splitFrontmatter(initialMd), [initialMd]);
+  const [fmText, setFmText] = useState<string>(() => frontmatterToText(frontmatterSplit.frontmatter));
   const bodyOnly = useMemo(() => {
+    let body = frontmatterSplit.body;
     try {
       const parsed = matter(initialMd);
-      let body = parsed.content;
       if (typeof parsed.data?.title === "string") {
         const h1Match = body.match(/^\s*#\s+(.+)\n?/);
         if (h1Match && h1Match[1].trim() === parsed.data.title.trim()) {
           body = body.replace(/^\s*#\s+.+\n?/, "");
         }
       }
-      return body;
-    } catch { return initialMd; }
-  }, [initialMd]);
+    } catch {}
+    return body;
+  }, [frontmatterSplit.body, initialMd]);
   const [lastEdit, setLastEdit] = useState<{ author: string; date: string } | null>(null);
+
+  useEffect(() => {
+    setFmText(frontmatterToText(frontmatterSplit.frontmatter));
+  }, [frontmatterSplit.frontmatter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -397,9 +397,7 @@ function EditorInner({
     setError(null);
     try {
       let md = await editor.blocksToMarkdownLossy(editor.document);
-      if (fmText.trim()) {
-        md = "---\n" + fmText.trim() + "\n---\n\n" + md;
-      }
+      md = joinFrontmatter(fmText, md);
       const res = await api.writeFile(path, md, etagRef.current || undefined);
       etagRef.current = res.etag ? `"${res.etag}"` : null;
       setSaveStatus("saved");
