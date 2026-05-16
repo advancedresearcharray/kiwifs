@@ -6,7 +6,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { ArrowLeft, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api, type SearchResult, type WorkflowColumn, type WorkflowDef, type WorkflowPage } from "@kw/lib/api";
 import {
   createKanbanCardMarkdown,
@@ -45,7 +45,7 @@ type Props = {
 };
 
 type Workflow = WorkflowDef;
-type EditStateRow = WorkflowDef["states"][number] & { id: string };
+type EditStateRow = WorkflowDef["states"][number] & { id: string; wip_limit?: number };
 type AddCardMode = "new" | "existing";
 
 type AddCardDialogState = {
@@ -76,7 +76,11 @@ const emptyAddCardDialog: AddCardDialogState = {
 };
 
 function makeEditRows(workflow: WorkflowDef): EditStateRow[] {
-  return workflow.states.map((state, index) => ({ ...state, id: `${state.name}-${index}` }));
+  return workflow.states.map((state, index) => ({
+    ...state,
+    id: `${state.name}-${index}`,
+    wip_limit: state.wip_limit,
+  }));
 }
 
 function makeDefaultRows(): EditStateRow[] {
@@ -90,6 +94,7 @@ type ColumnRowsEditorProps = {
   onRemove: (id: string) => void;
   onNameChange: (id: string, name: string) => void;
   onColorChange: (id: string, color: string) => void;
+  onWipLimitChange?: (id: string, limit: number | undefined) => void;
 };
 
 function ColumnRowsEditor({
@@ -99,6 +104,7 @@ function ColumnRowsEditor({
   onRemove,
   onNameChange,
   onColorChange,
+  onWipLimitChange,
 }: ColumnRowsEditorProps) {
   return (
     <div className="space-y-3">
@@ -118,6 +124,22 @@ function ColumnRowsEditor({
             placeholder={`Column ${index + 1}`}
             disabled={disabled}
           />
+          {onWipLimitChange && (
+            <Input
+              type="number"
+              min={0}
+              value={row.wip_limit ?? ""}
+              onChange={(event) => {
+                const v = event.target.value ? parseInt(event.target.value, 10) : undefined;
+                onWipLimitChange(row.id, v && v > 0 ? v : undefined);
+              }}
+              placeholder="WIP"
+              disabled={disabled}
+              className="h-9 w-16 shrink-0 text-xs"
+              title="Work-in-progress limit (0 = unlimited)"
+              aria-label={`WIP limit for ${row.name || `column ${index + 1}`}`}
+            />
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -143,7 +165,10 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [activeWorkflow, setActiveWorkflow] = useState<string | null>(null);
   const [columns, setColumns] = useState<WorkflowColumn[]>([]);
+  const [unmatchedPages, setUnmatchedPages] = useState<WorkflowPage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [draggingPage, setDraggingPage] = useState<WorkflowPage | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState("");
@@ -163,10 +188,12 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
 
   const loadWorkflows = useCallback(async (preferredWorkflow?: string) => {
     setLoading(true);
+    setBoardError(null);
     try {
       const result = await api.listWorkflows();
       const wfs = result.workflows || [];
       setWorkflows(wfs);
+      setLoadErrors(result.errors ?? []);
 
       if (preferredWorkflow && wfs.some((w) => w.name === preferredWorkflow)) {
         setActiveWorkflow(preferredWorkflow);
@@ -178,10 +205,11 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
         setActiveWorkflow(null);
         setColumns([]);
       }
-    } catch {
+    } catch (err) {
       setWorkflows([]);
       setActiveWorkflow(null);
       setColumns([]);
+      setBoardError(err instanceof Error ? err.message : "Failed to load workflows.");
     } finally {
       setLoading(false);
     }
@@ -195,11 +223,15 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
   // Load board
   const loadBoard = useCallback(async (name: string) => {
     setLoading(true);
+    setBoardError(null);
     try {
       const result = await api.getWorkflowBoard(name);
       setColumns(result.columns || []);
-    } catch {
+      setUnmatchedPages(result.unmatchedPages ?? []);
+    } catch (err) {
       setColumns([]);
+      setUnmatchedPages([]);
+      setBoardError(err instanceof Error ? err.message : "Failed to load board.");
     } finally {
       setLoading(false);
     }
@@ -241,6 +273,20 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     }
   }, [columns]);
 
+  // Compute the ordinal midpoint between two neighbours for within-column
+  // reorder. Uses the ordinalStep constant (1000) as default spacing.
+  const computeOrdinal = useCallback(
+    (colPages: WorkflowPage[], targetIndex: number): number => {
+      const prev = targetIndex > 0 ? (colPages[targetIndex - 1]?.ordinal ?? (targetIndex - 1) * 1000) : 0;
+      const next =
+        targetIndex < colPages.length
+          ? (colPages[targetIndex]?.ordinal ?? (targetIndex) * 1000 + 1000)
+          : prev + 1000;
+      return Math.round((prev + next) / 2);
+    },
+    [],
+  );
+
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     setDraggingPage(null);
     const { active, over } = event;
@@ -253,7 +299,41 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     const sourceState = isKanbanCardDragData(dragData) ? findColumnForPage(pagePath) : null;
     const targetState = findTargetState(String(over.id));
 
-    if (!targetState || targetState === sourceState) return;
+    if (!targetState) return;
+
+    // Within-column reorder: same column, different position.
+    if (targetState === sourceState && isKanbanCardDragData(dragData)) {
+      const col = columns.find((c) => c.state === targetState);
+      if (!col) return;
+      const oldIndex = col.pages.findIndex((p) => p.path === pagePath);
+      const overPath = String(over.id);
+      let newIndex = col.pages.findIndex((p) => p.path === overPath);
+      if (newIndex === -1) newIndex = col.pages.length - 1;
+      if (oldIndex === newIndex) return;
+
+      // Optimistic reorder
+      const reordered = [...col.pages];
+      const [moved] = reordered.splice(oldIndex, 1);
+      if (!moved) return;
+      reordered.splice(newIndex, 0, moved);
+      setColumns((prev) =>
+        prev.map((c) => (c.state === targetState ? { ...c, pages: reordered } : c)),
+      );
+
+      // Persist the new position via ordinal.
+      const ordinal = computeOrdinal(
+        reordered.filter((p) => p.path !== pagePath),
+        newIndex,
+      );
+      try {
+        await api.reorderCard(pagePath, ordinal);
+      } catch {
+        await loadBoard(activeWorkflow);
+      }
+      return;
+    }
+
+    if (targetState === sourceState) return;
 
     if (isTreePageDragData(dragData)) {
       try {
@@ -265,7 +345,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
       return;
     }
 
-    // Optimistic update
+    // Optimistic update for cross-column move
     setColumns((prev) =>
       prev.map((col) => {
         if (col.state === sourceState) {
@@ -287,10 +367,9 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     try {
       await api.advanceWorkflow(pagePath, activeWorkflow, targetState);
     } catch {
-      // Revert on error
-      loadBoard(activeWorkflow);
+      await loadBoard(activeWorkflow);
     }
-  }, [activeWorkflow, findColumnForPage, findTargetState, loadBoard]);
+  }, [activeWorkflow, columns, findColumnForPage, findTargetState, loadBoard, computeOrdinal]);
 
   const dragHandlers = useMemo(() => ({
     onDragStart: handleDragStart,
@@ -316,7 +395,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     try {
       const workflow = updateWorkflowStates(
         { name, states: [], transitions: [] },
-        createRows.map((row) => ({ name: row.name, color: row.color })),
+        createRows.map((row) => ({ name: row.name, color: row.color, ...(row.wip_limit ? { wip_limit: row.wip_limit } : {}) })),
       );
       await api.saveWorkflow(workflow);
       setCreateOpen(false);
@@ -368,7 +447,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     try {
       const updatedWorkflow = updateWorkflowStates(
         activeWorkflowDef,
-        editRows.map((row) => ({ name: row.name, color: row.color })),
+        editRows.map((row) => ({ name: row.name, color: row.color, ...(row.wip_limit ? { wip_limit: row.wip_limit } : {}) })),
       );
       await api.saveWorkflow(updatedWorkflow);
       setEditOpen(false);
@@ -400,6 +479,10 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
     setCreateRows((rows) => rows.map((row) => (row.id === id ? { ...row, color } : row)));
   };
 
+  const handleCreateRowWipLimit = (id: string, wip_limit: number | undefined) => {
+    setCreateRows((rows) => rows.map((row) => (row.id === id ? { ...row, wip_limit } : row)));
+  };
+
   const handleAddEditRow = () => {
     setEditRows((rows) => [
       ...rows,
@@ -417,6 +500,10 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
 
   const handleEditRowColor = (id: string, color: string) => {
     setEditRows((rows) => rows.map((row) => (row.id === id ? { ...row, color } : row)));
+  };
+
+  const handleEditRowWipLimit = (id: string, wip_limit: number | undefined) => {
+    setEditRows((rows) => rows.map((row) => (row.id === id ? { ...row, wip_limit } : row)));
   };
 
   const handleOpenAddCard = (state: string) => {
@@ -575,11 +662,47 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
         )}
       </div>
 
+      {/* Broken workflow file warnings */}
+      {loadErrors.length > 0 && (
+        <div className="flex items-start gap-2 px-6 py-2 border-b border-border bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 text-xs">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>Some workflow files could not be loaded: {loadErrors.join("; ")}</span>
+        </div>
+      )}
+
+      {/* Cards with unrecognized states */}
+      {unmatchedPages.length > 0 && (
+        <div className="flex items-start gap-2 px-6 py-2 border-b border-border bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 text-xs">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>
+            {unmatchedPages.length} card{unmatchedPages.length > 1 ? "s have" : " has"} a state
+            that doesn't match any column ({unmatchedPages.map((p) => p.title || p.path).join(", ")}).
+            Edit their frontmatter or add the missing column.
+          </span>
+        </div>
+      )}
+
       {/* Board */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-y-hidden overflow-x-auto kiwi-board-scroll">
         {loading ? (
-          <div className="flex items-center justify-center h-64 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading...
+          <div className="flex px-6 pt-6 pb-4">
+            <div className="min-w-[2rem]" />
+            {[420, 240, 340].map((h, i) => (
+              <div key={i} className="mr-5 flex flex-col min-w-[18rem] max-w-[18rem]">
+                <div className="mb-3 h-7 w-24 animate-pulse rounded-md bg-muted" />
+                <div className="flex flex-col gap-2">
+                  {Array.from({ length: Math.ceil(h / 80) }).map((_, j) => (
+                    <div key={j} className="h-16 animate-pulse rounded-lg bg-muted/70" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : boardError ? (
+          /* Error state */
+          <div className="flex items-center justify-center h-64 text-destructive text-sm">
+            <AlertTriangle className="h-4 w-4 mr-2 shrink-0" />
+            {boardError}
           </div>
         ) : columns.length === 0 ? (
           <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
@@ -589,34 +712,38 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
           </div>
         ) : (
           <>
-            <div className="flex gap-4 p-4 min-w-max">
+            <div className="flex px-6 pt-6 pb-4">
+              <div className="min-w-[2rem]" />
               {columns.map((col) => (
-                <KanbanColumn
-                  key={col.state}
-                  id={col.state}
-                  state={col.state}
-                  color={col.color}
-                  count={col.pages.length}
-                  items={col.pages.map((p) => p.path)}
-                  onAdd={handleOpenAddCard}
-                >
-                  {col.pages.map((page) => (
-                    <KanbanCard
-                      key={page.path}
-                      page={page}
-                      onNavigate={onNavigate}
-                    />
-                  ))}
-                </KanbanColumn>
+                <div key={col.state} className="mr-5">
+                  <KanbanColumn
+                    id={col.state}
+                    state={col.state}
+                    color={col.color}
+                    count={col.pages.length}
+                    items={col.pages.map((p) => p.path)}
+                    wipLimit={col.wip_limit}
+                    onAdd={handleOpenAddCard}
+                  >
+                    {col.pages.map((page) => (
+                      <KanbanCard
+                        key={page.path}
+                        page={page}
+                        onNavigate={onNavigate}
+                      />
+                    ))}
+                  </KanbanColumn>
+                </div>
               ))}
+              <div className="min-w-[0.75rem]" />
             </div>
 
             <DragOverlay>
               {draggingPage ? (
-                <div className="w-72 border border-primary rounded-md bg-card p-2.5 shadow-lg opacity-90">
-                  <div className="font-medium text-sm truncate">
+                <div className="min-w-[18rem] max-w-[18rem] rounded-lg border border-border/40 bg-card px-3 py-2.5 shadow-xl shadow-black/10 dark:shadow-black/30 rotate-[2deg]">
+                  <span className="break-words text-[13px] leading-snug">
                     {draggingPage.title}
-                  </div>
+                  </span>
                 </div>
               ) : null}
             </DragOverlay>
@@ -775,6 +902,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
                 onRemove={handleRemoveCreateRow}
                 onNameChange={handleCreateRowName}
                 onColorChange={handleCreateRowColor}
+                onWipLimitChange={handleCreateRowWipLimit}
               />
               <p className="text-xs text-muted-foreground">
                 Adjacent columns get two-way transitions. Pages become cards when their frontmatter uses this board name and one of these column names.
@@ -813,6 +941,7 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
               onRemove={handleRemoveEditRow}
               onNameChange={handleEditRowName}
               onColorChange={handleEditRowColor}
+              onWipLimitChange={handleEditRowWipLimit}
             />
 
             <p className="text-xs text-muted-foreground">
@@ -841,6 +970,17 @@ export function KiwiKanban({ onClose, onNavigate }: Props) {
               Delete workflow JSON for "{activeWorkflow}". Existing markdown pages are not modified; cards that still reference this workflow will no longer appear until their frontmatter is changed.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Orphan warning when board has cards */}
+          {columns.some((c) => c.pages.length > 0) && (
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 text-xs p-3">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>
+                This board has {columns.reduce((n, c) => n + c.pages.length, 0)} card{columns.reduce((n, c) => n + c.pages.length, 0) > 1 ? "s" : ""}.
+                Their frontmatter will still reference "{activeWorkflow}" but the workflow definition will be gone. You'll need to manually update each page's frontmatter to remove the stale reference.
+              </span>
+            </div>
+          )}
 
           {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
 

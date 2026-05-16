@@ -235,11 +235,14 @@ func (m *Manager) CreateSpace(name, root string) (*SpaceMeta, error) {
 		return nil, fmt.Errorf("name is required")
 	}
 	if root == "" {
-		// Derive root from the first registered space's parent directory.
+		// Derive root from the first registered space. We place new spaces
+		// under {first.Root}/.spaces/{name} so they're writable (the kiwifs
+		// process owns first.Root) and invisible to the default space's file
+		// walks (dot-prefixed dirs are skipped).
 		m.mu.RLock()
 		if len(m.order) > 0 {
 			first := m.spaces[m.order[0]]
-			root = filepath.Join(filepath.Dir(first.Root), name)
+			root = filepath.Join(first.Root, ".spaces", name)
 		}
 		m.mu.RUnlock()
 		if root == "" {
@@ -263,6 +266,11 @@ func (m *Manager) CreateSpace(name, root string) (*SpaceMeta, error) {
 		if werr := os.WriteFile(cfgPath, []byte(minimal), 0644); werr != nil {
 			return nil, fmt.Errorf("write config: %w", werr)
 		}
+	}
+	rulesPath := filepath.Join(kiwiDir, "rules.md")
+	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+		defaultRules := "# Agent Rules\n\nRules in this file are included in `kiwi_context` for every connected agent.\n\n## Always\n\n- Search existing pages before creating new ones\n- After implementing a feature, update relevant documentation\n"
+		_ = os.WriteFile(rulesPath, []byte(defaultRules), 0644)
 	}
 
 	cfg := m.spaceCfg(root)

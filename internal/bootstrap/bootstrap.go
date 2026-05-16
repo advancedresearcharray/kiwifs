@@ -137,9 +137,11 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 
 	pipe.OnInvalidate = func() { linkResolver.MarkDirty() }
 
-	// Always wire dependency re-indexing (independent of webhooks)
+	// Always wire dependency re-indexing (independent of webhooks).
+	// Trigger on both "status" and "state" (kanban workflow field) so that
+	// kanban state transitions also fire callbacks.
 	pipe.OnTransition = func(path, field, from, to, actor string) {
-		if field == "status" && (to == "done" || to == "cancelled") {
+		if (field == "status" || field == "state") && (to == "done" || to == "cancelled") {
 			go func() {
 				if pipe.AsyncIdx != nil {
 					pipe.AsyncIdx.Flush()

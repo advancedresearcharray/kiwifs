@@ -35,3 +35,4 @@ knowledge/
 
 # Storybook
 ui/storybook-static/
+node_modules/

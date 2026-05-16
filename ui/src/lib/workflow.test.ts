@@ -21,7 +21,7 @@ describe("workflow helpers", () => {
     expect(parseWorkflowStates("todo, doing\ndone, doing, ")).toEqual(["todo", "doing", "done"]);
   });
 
-  it("creates adjacent two-way transitions for a default board workflow", () => {
+  it("creates all-to-all transitions for a default board workflow", () => {
     expect(createDefaultWorkflow("새로운 칸반", ["todo", "doing", "done"])).toEqual({
       name: "새로운 칸반",
       states: [
@@ -31,8 +31,10 @@ describe("workflow helpers", () => {
       ],
       transitions: [
         { from: "todo", to: "doing" },
+        { from: "todo", to: "done" },
         { from: "doing", to: "todo" },
         { from: "doing", to: "done" },
+        { from: "done", to: "todo" },
         { from: "done", to: "doing" },
       ],
     });
@@ -60,7 +62,7 @@ describe("workflow helpers", () => {
     });
   });
 
-  it("adds a state and rebuilds adjacent transitions", () => {
+  it("adds a state and rebuilds all-to-all transitions", () => {
     const workflow = createDefaultWorkflow("content", ["todo", "done"]);
 
     expect(addWorkflowState(workflow, "review")).toEqual({
@@ -72,8 +74,10 @@ describe("workflow helpers", () => {
       ],
       transitions: [
         { from: "todo", to: "done" },
+        { from: "todo", to: "review" },
         { from: "done", to: "todo" },
         { from: "done", to: "review" },
+        { from: "review", to: "todo" },
         { from: "review", to: "done" },
       ],
     });
@@ -91,14 +95,16 @@ describe("workflow helpers", () => {
       ],
       transitions: [
         { from: "todo", to: "review" },
+        { from: "todo", to: "done" },
         { from: "review", to: "todo" },
         { from: "review", to: "done" },
+        { from: "done", to: "todo" },
         { from: "done", to: "review" },
       ],
     });
   });
 
-  it("deletes a state and reconnects adjacent transitions", () => {
+  it("deletes a state and reconnects transitions", () => {
     const workflow = createDefaultWorkflow("content", ["todo", "review", "done"]);
 
     expect(deleteWorkflowState(workflow, "review")).toEqual({
@@ -125,6 +131,32 @@ describe("workflow helpers", () => {
     ).toBe(
       '---\ntitle: "Fix \\"billing\\" flow"\nworkflow: "앞으로할일"\nstate: "todo"\n---\n# Fix "billing" flow\n\nCheck the retry path.\n',
     );
+  });
+
+  it("builds markdown with tags, priority, and due date", () => {
+    expect(
+      createKanbanCardMarkdown({
+        title: "Upgrade deps",
+        workflow: "sprint",
+        state: "todo",
+        tags: ["chore", "deps"],
+        priority: "high",
+        due: "2025-06-01",
+      }),
+    ).toBe(
+      '---\ntitle: "Upgrade deps"\nworkflow: "sprint"\nstate: "todo"\ntags: ["chore", "deps"]\npriority: "high"\ndue: "2025-06-01"\n---\n# Upgrade deps\n',
+    );
+  });
+
+  it("omits optional fields when not provided", () => {
+    const md = createKanbanCardMarkdown({
+      title: "Simple card",
+      workflow: "board",
+      state: "doing",
+    });
+    expect(md).not.toContain("tags:");
+    expect(md).not.toContain("priority:");
+    expect(md).not.toContain("due:");
   });
 
   it("creates a safe default path for a new Kanban card", () => {

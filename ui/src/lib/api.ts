@@ -421,6 +421,26 @@ export const api = {
     return request(`${kiwiBase()}/meta?${qs}`);
   },
 
+  async getRules(): Promise<string> {
+    const res = await fetch(`${kiwiBase()}/rules`, {
+      headers: { "X-Actor": actor(), ..._extraHeaders },
+    });
+    if (!res.ok) {
+      if (res.status === 404) return "";
+      const text = await res.text().catch(() => "");
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    return res.text();
+  },
+
+  async putRules(content: string): Promise<void> {
+    await request<unknown>(`${kiwiBase()}/rules`, {
+      method: "PUT",
+      headers: { "Content-Type": "text/markdown" },
+      body: content,
+    });
+  },
+
   async getUIConfig(): Promise<{ themeLocked: boolean }> {
     return request(`${kiwiBase()}/ui-config`);
   },
@@ -524,7 +544,7 @@ export const api = {
 
   // --- Workflows / Kanban ---
 
-  async listWorkflows(): Promise<{ workflows: WorkflowDef[] }> {
+  async listWorkflows(): Promise<{ workflows: WorkflowDef[]; errors?: string[] }> {
     return request(`${kiwiBase()}/workflows`);
   },
 
@@ -542,7 +562,7 @@ export const api = {
     });
   },
 
-  async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[] }> {
+  async getWorkflowBoard(name: string): Promise<{ columns: WorkflowColumn[]; unmatchedPages?: WorkflowPage[] }> {
     const raw: { columns?: WorkflowColumn[]; workflow?: WorkflowDef; board?: Record<string, WorkflowPage[]> } =
       await request(`${kiwiBase()}/workflow/board/${encodeURIComponent(name)}`);
 
@@ -554,8 +574,10 @@ export const api = {
       state: s.name,
       color: s.color,
       pages: board[s.name] ?? [],
+      ...(s.wip_limit ? { wip_limit: s.wip_limit } : {}),
     }));
-    return { columns };
+    const unmatched = board["__unmatched__"] ?? [];
+    return { columns, unmatchedPages: unmatched.length > 0 ? unmatched : undefined };
   },
 
   async advanceWorkflow(path: string, workflow: string, targetState: string): Promise<void> {
@@ -566,11 +588,19 @@ export const api = {
     });
   },
 
-  async assignWorkflow(path: string, workflow: string, state: string): Promise<{ path: string; workflow: string; state: string; etag: string }> {
+  async assignWorkflow(path: string, workflow: string, state: string, ordinal?: number): Promise<{ path: string; workflow: string; state: string; etag: string }> {
     return request(`${kiwiBase()}/workflow/assign`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, workflow, state }),
+      body: JSON.stringify({ path, workflow, state, ...(ordinal != null ? { ordinal } : {}) }),
+    });
+  },
+
+  async reorderCard(path: string, ordinal: number): Promise<{ path: string; ordinal: number; etag: string }> {
+    return request(`${kiwiBase()}/workflow/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, ordinal }),
     });
   },
 
@@ -660,7 +690,7 @@ export type TimelineEvent = {
 
 export type WorkflowDef = {
   name: string;
-  states: { name: string; color: string }[];
+  states: { name: string; color: string; wip_limit?: number }[];
   transitions: { from: string; to: string }[];
 };
 
@@ -668,6 +698,7 @@ export type WorkflowColumn = {
   state: string;
   color: string;
   pages: WorkflowPage[];
+  wip_limit?: number;
 };
 
 export type WorkflowPage = {
@@ -676,6 +707,13 @@ export type WorkflowPage = {
   tags?: string[];
   author?: string;
   modified?: string;
+  priority?: string;
+  due?: string;
+  description?: string;
+  ordinal?: number;
+  blocked?: boolean;
+  block_reason?: string;
+  depends_on?: string[];
 };
 
 // --- Import types ---

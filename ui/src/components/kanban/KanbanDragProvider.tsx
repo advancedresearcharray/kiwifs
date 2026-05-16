@@ -1,7 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   DndContext,
+  PointerSensor,
   closestCorners,
+  useSensor,
+  useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -24,9 +27,14 @@ export function KanbanDragProvider({ children }: { children: ReactNode }) {
 
   const contextValue = useMemo(() => register, [register]);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
   return (
     <KanbanDragHandlersContext.Provider value={contextValue}>
       <DndContext
+        sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={(event) => handlersRef.current?.onDragStart?.(event)}
         onDragEnd={(event) => handlersRef.current?.onDragEnd?.(event)}

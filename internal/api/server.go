@@ -515,6 +515,7 @@ func (s *Server) setupRoutes() {
 	api.DELETE("/workflows/:name", h.DeleteWorkflow)
 	api.POST("/workflow/assign", h.AssignWorkflow)
 	api.POST("/workflow/advance", h.AdvanceWorkflow)
+	api.POST("/workflow/reorder", h.ReorderCard)
 	api.GET("/workflow/board/:workflow", h.WorkflowBoard)
 
 	draftGrp := api.Group("/drafts")
