@@ -292,6 +292,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 		log.Printf("space %q mounted at /api/kiwi/%s → %s (from config.toml)", sc.Name, sc.Name, sc.Root)
 	}
+
+	// Restore dynamically created spaces that were persisted to
+	// .kiwi/spaces.json by previous CreateSpace calls.
+	if n := spaceMgr.LoadDynamic(); n > 0 {
+		log.Printf("restored %d space(s) from spaces.json", n)
+	}
+
 	defer spaceMgr.Close()
 	mgrHandler := spaceMgr.Handler()
 

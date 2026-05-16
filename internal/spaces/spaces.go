@@ -1,7 +1,9 @@
 package spaces
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -34,6 +36,88 @@ type Manager struct {
 	order   []string
 	baseCfg *config.Config
 	mu      sync.RWMutex
+}
+
+// persistedEntry is a single space record written to .kiwi/spaces.json.
+type persistedEntry struct {
+	Name string `json:"name"`
+	Root string `json:"root"`
+}
+
+// persistPath returns the path to the spaces.json file inside the first
+// registered space's .kiwi directory (typically /data/.kiwi/spaces.json).
+func (m *Manager) persistPath() string {
+	if len(m.order) == 0 {
+		return ""
+	}
+	first := m.spaces[m.order[0]]
+	if first == nil {
+		return ""
+	}
+	return filepath.Join(first.Root, ".kiwi", "spaces.json")
+}
+
+// saveDynamic writes the current set of dynamically created spaces to disk.
+// The default space is excluded — it's always registered by serve.go.
+// Must be called with m.mu held (at least RLock).
+func (m *Manager) saveDynamic() {
+	path := m.persistPath()
+	if path == "" {
+		return
+	}
+	var entries []persistedEntry
+	for _, name := range m.order {
+		sp, ok := m.spaces[name]
+		if !ok || !sp.ownStack {
+			continue
+		}
+		entries = append(entries, persistedEntry{Name: name, Root: sp.Root})
+	}
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		log.Printf("spaces: failed to marshal spaces.json: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("spaces: failed to write %s: %v", path, err)
+	}
+}
+
+// LoadDynamic reads persisted space entries from .kiwi/spaces.json and
+// registers each one via AddSpace. Should be called after the default
+// space is registered so persistPath() works. Returns the number of
+// spaces loaded.
+func (m *Manager) LoadDynamic() int {
+	path := m.persistPath()
+	if path == "" {
+		return 0
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("spaces: failed to read %s: %v", path, err)
+		}
+		return 0
+	}
+	var entries []persistedEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		log.Printf("spaces: failed to parse %s: %v", path, err)
+		return 0
+	}
+	loaded := 0
+	for _, e := range entries {
+		if _, exists := m.GetSpace(e.Name); exists {
+			continue
+		}
+		cfg := m.spaceCfg(e.Root)
+		if err := m.AddSpace(e.Name, e.Root, cfg); err != nil {
+			log.Printf("spaces: failed to restore %q: %v", e.Name, err)
+			continue
+		}
+		log.Printf("space %q restored from spaces.json → %s", e.Name, e.Root)
+		loaded++
+	}
+	return loaded
 }
 
 // Space represents a single knowledge space with its own backend.
@@ -181,6 +265,7 @@ func (m *Manager) RemoveSpace(name string) error {
 		}
 	}
 	m.order = newOrder
+	m.saveDynamic()
 	m.mu.Unlock()
 
 	if sp.Stack != nil && sp.ownStack {
@@ -277,6 +362,9 @@ func (m *Manager) CreateSpace(name, root string) (*SpaceMeta, error) {
 	if err := m.AddSpace(name, root, cfg); err != nil {
 		return nil, err
 	}
+	m.mu.RLock()
+	m.saveDynamic()
+	m.mu.RUnlock()
 	return m.SpaceInfo(name)
 }
 
@@ -392,6 +480,9 @@ func (m *Manager) Handler() http.Handler {
 //  1. X-Kiwi-Space header — set by a reverse proxy (e.g. Caddy extracting
 //     the subdomain from team-abc.kiwifs.com). No path rewrite needed
 //     because the request already carries normal /api/kiwi/... paths.
+//     If the header is set but the space is not found, return nil
+//     immediately — falling through to the default would silently serve
+//     the wrong space's content.
 //  2. URL path prefix — /api/kiwi/{space}/... where {space} is a registered
 //     name. The space segment is stripped so the downstream api.Server sees
 //     standard /api/kiwi/... routes.
@@ -399,9 +490,11 @@ func (m *Manager) Handler() http.Handler {
 func (m *Manager) resolveSpace(r *http.Request) *Space {
 	// 1. Header-based dispatch (subdomain routing via reverse proxy).
 	if hdr := r.Header.Get("X-Kiwi-Space"); hdr != "" {
-		if space, ok := m.GetSpace(hdr); ok {
-			return space
+		space, ok := m.GetSpace(hdr)
+		if !ok {
+			return nil
 		}
+		return space
 	}
 
 	// 2. Path-based dispatch: /api/kiwi/{space}/...
