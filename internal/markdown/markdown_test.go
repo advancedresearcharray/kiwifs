@@ -123,10 +123,16 @@ func TestParse_NormalFrontmatterStillWorks(t *testing.T) {
 
 func TestSlugify(t *testing.T) {
 	cases := map[string]string{
-		"Hello World":         "hello-world",
-		"  A/B  c ":           "ab-c",
-		"---dash":             "dash",
-		"Already-OK_thing":    "already-ok-thing",
+		"Hello World":           "hello-world",
+		"  A/B  c ":             "--ab--c-",
+		"---dash":               "---dash",
+		"Already-OK_thing":      "already-ok_thing",
+		"목적":                    "목적",
+		"적용 조건":                 "적용-조건",
+		"루트 package.json 일부":    "루트-packagejson-일부",
+		"서브패키지 package.json 일부": "서브패키지-packagejson-일부",
+		"루트 eslint.config.mjs":  "루트-eslintconfigmjs",
+		"일반 서브패키지 eslint.config.mjs": "일반-서브패키지-eslintconfigmjs",
 	}
 	for in, want := range cases {
 		if got := Slugify(in); got != want {
