@@ -140,7 +140,7 @@ func TestResolveSpaceHeaderTakesPrecedence(t *testing.T) {
 	}
 }
 
-func TestResolveSpaceHeaderUnknownFallsToPath(t *testing.T) {
+func TestResolveSpaceHeaderUnknownReturnsNil(t *testing.T) {
 	m := NewManager(nil)
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
@@ -153,8 +153,8 @@ func TestResolveSpaceHeaderUnknownFallsToPath(t *testing.T) {
 		URL:    &url.URL{Path: "/api/kiwi/beta/tree"},
 	}
 	sp := m.resolveSpace(r)
-	if sp == nil || sp.Name != "beta" {
-		t.Fatalf("unknown header should fall through to path, got %v", sp)
+	if sp != nil {
+		t.Fatalf("unknown X-Kiwi-Space header should return nil, got %q", sp.Name)
 	}
 }
 
