@@ -725,36 +725,66 @@ func setFrontmatterFields(content []byte, fields map[string]string) ([]byte, err
 	// fields were handled so we can append the rest.
 	lines := strings.Split(string(fmRaw), "\n")
 	handled := make(map[string]bool, len(fields))
+	skip := make(map[int]bool) // lines to remove (orphan block-scalar continuations)
 
 	for i, line := range lines {
+		if skip[i] {
+			continue
+		}
+		// Only match top-level keys (not indented, which belong to block scalars).
+		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			continue
+		}
 		trimmed := strings.TrimSpace(line)
 		for key, value := range fields {
 			prefix := key + ":"
 			if strings.HasPrefix(trimmed, prefix) {
 				rest := trimmed[len(prefix):]
-				// Make sure it's actually "key:" or "key: value", not
-				// "key_extra: value".
 				if rest == "" || rest[0] == ' ' || rest[0] == '\t' {
 					lines[i] = key + ": " + yamlScalar(value)
 					handled[key] = true
+					// If the old value was a block scalar (| or >), mark
+					// continuation lines for removal so they don't corrupt
+					// the new single-line value.
+					oldVal := strings.TrimSpace(rest)
+					if oldVal == "|" || oldVal == ">" || oldVal == "|+" || oldVal == "|-" || oldVal == ">+" || oldVal == ">-" {
+						for j := i + 1; j < len(lines); j++ {
+							if len(lines[j]) == 0 {
+								skip[j] = true
+								continue
+							}
+							if lines[j][0] == ' ' || lines[j][0] == '\t' {
+								skip[j] = true
+							} else {
+								break
+							}
+						}
+					}
 					break
 				}
 			}
 		}
 	}
 
+	// Build output, skipping orphan continuation lines.
+	var result []string
+	for i, line := range lines {
+		if !skip[i] {
+			result = append(result, line)
+		}
+	}
+
 	// Append any fields that weren't already present.
 	for key, value := range fields {
 		if !handled[key] {
-			lines = append(lines, key+": "+yamlScalar(value))
+			result = append(result, key+": "+yamlScalar(value))
 		}
 	}
 
 	var buf bytes.Buffer
 	buf.WriteString("---\n")
-	buf.WriteString(strings.Join(lines, "\n"))
-	// Ensure trailing newline before closing fence.
-	if len(lines) > 0 && lines[len(lines)-1] != "" {
+	buf.WriteString(strings.Join(result, "\n"))
+	if len(result) > 0 && result[len(result)-1] != "" {
 		buf.WriteByte('\n')
 	}
 	buf.WriteString("---\n")
@@ -774,12 +804,23 @@ func yamlScalar(s string) string {
 			break
 		}
 	}
-	if safe && s == strings.TrimSpace(s) && s != "" && s != "true" && s != "false" && s != "null" && s != "yes" && s != "no" {
+	if safe && s == strings.TrimSpace(s) && s != "" && !isYAMLKeyword(s) {
 		return s
 	}
 	// Fall back to double-quoted form.
 	b, _ := yaml.Marshal(s)
 	return strings.TrimSpace(string(b))
+}
+
+// isYAMLKeyword returns true if the string is a YAML 1.1 boolean, null, or
+// other reserved keyword that would be misinterpreted as a non-string type
+// when written unquoted.
+func isYAMLKeyword(s string) bool {
+	switch strings.ToLower(s) {
+	case "true", "false", "yes", "no", "on", "off", "y", "n", "null", "~":
+		return true
+	}
+	return false
 }
 
 // extractTags returns tags from the "tags" or "labels" frontmatter key.
