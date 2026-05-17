@@ -24,81 +24,18 @@ type Props = {
   onNavigate: (path: string) => void;
 };
 
-function getDragOpacity(isDragging: boolean): number {
-  if (isDragging) {
-    return 0.35;
-  }
-  return 1;
-}
-
-function getPriorityCardStyle(priority: ReturnType<typeof parsePriority>): ReturnType<typeof priorityStyle> | null {
-  if (!priority) {
-    return null;
-  }
-  if (priority === "none") {
-    return null;
-  }
-  return priorityStyle(priority);
-}
-
-function getDueDate(due: string | undefined): Date | null {
-  if (!due) {
-    return null;
-  }
-  return new Date(due);
-}
-
-function getValidDueDate(dueDate: Date | null): Date | null {
-  if (!dueDate) {
-    return null;
-  }
-  if (isNaN(dueDate.getTime())) {
-    return null;
-  }
-  return dueDate;
-}
-
-function shouldShowDueYear(validDue: Date | null): boolean {
-  if (!validDue) {
-    return false;
-  }
-  return !isSameYear(validDue, new Date());
-}
-
-function isDueDateOverdue(validDue: Date | null): boolean {
-  if (!validDue) {
-    return false;
-  }
-  return isBefore(validDue, startOfDay(new Date()));
-}
+const BASE_CARD_CLASS =
+  "group flex flex-col overflow-hidden rounded-lg border bg-card px-3 py-2.5 text-sm cursor-grab active:cursor-grabbing hover:border-border/70 hover:bg-accent/30 transition-colors duration-150";
 
 function getCardClassName(isBlocked: boolean): string {
-  const classes = [
-    "group flex flex-col overflow-hidden rounded-lg border bg-card px-3 py-2.5 text-sm cursor-grab active:cursor-grabbing hover:border-border/70 hover:bg-accent/30 transition-colors duration-150",
-  ];
-  if (isBlocked) {
-    classes.push("border-destructive/50 bg-destructive/[0.03]");
-    return classes.join(" ");
-  }
-  classes.push("border-border/40");
-  return classes.join(" ");
+  if (isBlocked) return `${BASE_CARD_CLASS} border-destructive/50 bg-destructive/[0.03]`;
+  return `${BASE_CARD_CLASS} border-border/40`;
 }
 
-function getDueDateClassName(isOverdue: boolean): string {
-  const classes = ["flex items-center gap-1"];
-  if (isOverdue) {
-    classes.push("text-destructive");
-    return classes.join(" ");
-  }
-  classes.push("text-muted-foreground/70");
-  return classes.join(" ");
-}
-
-function getDueDateFormat(showYear: boolean): string {
-  if (showYear) {
-    return "do MMM yyyy";
-  }
-  return "do MMM";
+function parseDueDate(due: string | undefined): Date | null {
+  if (!due) return null;
+  const d = new Date(due);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 function PriorityIcon({ priority, dotColor }: { priority: ReturnType<typeof parsePriority>; dotColor: string }) {
@@ -130,7 +67,7 @@ export function KanbanCard({ page, onNavigate }: Props) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: getDragOpacity(isDragging),
+    opacity: isDragging ? 0.35 : 1,
   };
 
   const wasDraggedRef = useRef(false);
@@ -139,13 +76,12 @@ export function KanbanCard({ page, onNavigate }: Props) {
   }, [isDragging]);
 
   const priority = parsePriority(page.priority);
-  const pStyle = getPriorityCardStyle(priority);
+  const pStyle = priority && priority !== "none" ? priorityStyle(priority) : null;
   const tags = page.tags?.slice(0, 4) ?? [];
 
-  const dueDate = getDueDate(page.due);
-  const validDue = getValidDueDate(dueDate);
-  const showYear = shouldShowDueYear(validDue);
-  const isOverdue = isDueDateOverdue(validDue);
+  const validDue = parseDueDate(page.due);
+  const showYear = validDue ? !isSameYear(validDue, new Date()) : false;
+  const isOverdue = validDue ? isBefore(validDue, startOfDay(new Date())) : false;
 
   const isBlocked = !!page.blocked;
   const hasDescription = !!page.description;
@@ -239,12 +175,12 @@ export function KanbanCard({ page, onNavigate }: Props) {
 
               {validDue && (
                 <div
-                  className={getDueDateClassName(isOverdue)}
+                  className={`flex items-center gap-1 ${isOverdue ? "text-destructive" : "text-muted-foreground/70"}`}
                   title={validDue.toLocaleDateString()}
                 >
                   <CalendarClock className="h-3.5 w-3.5" />
                   <span className="text-[11px]">
-                    {format(validDue, getDueDateFormat(showYear))}
+                    {format(validDue, showYear ? "do MMM yyyy" : "do MMM")}
                   </span>
                 </div>
               )}
