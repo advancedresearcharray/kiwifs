@@ -93,6 +93,17 @@ export type QueryResponse = {
   groups?: { key: string; count: number }[];
 };
 
+export type BackupStatus = {
+  last_push_at?: string;
+  success: boolean;
+  error?: string;
+};
+
+export type BackupStatusResponse = {
+  enabled: boolean;
+  status?: BackupStatus;
+};
+
 export type SpaceMeta = {
   name: string;
   root: string;
@@ -222,6 +233,10 @@ export const api = {
 
   async health(): Promise<{ status: string }> {
     return request("/health");
+  },
+
+  async backupStatus(): Promise<BackupStatusResponse> {
+    return request(`${kiwiBase()}/sync/status`);
   },
 
   async tree(path = "/"): Promise<TreeEntry> {
