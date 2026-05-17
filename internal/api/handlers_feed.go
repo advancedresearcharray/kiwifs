@@ -6,13 +6,15 @@ import (
 	"time"
 
 	"github.com/gorilla/feeds"
+	"github.com/kiwifs/kiwifs/internal/rbac"
 	"github.com/labstack/echo/v4"
 )
 
 // FeedAtom generates an Atom feed of recent changes.
-// GET /api/kiwi/feed.xml
+// GET /api/kiwi/feed.xml?filter=published
 func (h *Handlers) FeedAtom(c echo.Context) error {
-	feed, err := h.buildFeed(c.Request().Context())
+	filter := c.QueryParam("filter")
+	feed, err := h.buildFeed(c.Request().Context(), filter)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -26,9 +28,10 @@ func (h *Handlers) FeedAtom(c echo.Context) error {
 }
 
 // FeedJSON generates a JSON feed of recent changes.
-// GET /api/kiwi/feed.json
+// GET /api/kiwi/feed.json?filter=published
 func (h *Handlers) FeedJSON(c echo.Context) error {
-	feed, err := h.buildFeed(c.Request().Context())
+	filter := c.QueryParam("filter")
+	feed, err := h.buildFeed(c.Request().Context(), filter)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -43,7 +46,8 @@ func (h *Handlers) FeedJSON(c echo.Context) error {
 }
 
 // buildFeed creates a feeds.Feed from recent timeline events.
-func (h *Handlers) buildFeed(ctx context.Context) (*feeds.Feed, error) {
+// When filter is "published", only events for files with published: true are included.
+func (h *Handlers) buildFeed(ctx context.Context, filter string) (*feeds.Feed, error) {
 	// Fetch recent timeline events (last 50)
 	events, err := h.fetchTimelineEvents(ctx, 50, "", "", "")
 	if err != nil {
@@ -60,6 +64,17 @@ func (h *Handlers) buildFeed(ctx context.Context) (*feeds.Feed, error) {
 
 	// Convert timeline events to feed items
 	for _, event := range events {
+		// When filter=published, skip events for non-published files.
+		if filter == "published" && event.Type != "delete" {
+			content, err := h.store.Read(ctx, event.Path)
+			if err != nil {
+				continue
+			}
+			if !rbac.PagePublished(content) {
+				continue
+			}
+		}
+
 		timestamp, err := time.Parse(time.RFC3339, event.Timestamp)
 		if err != nil {
 			timestamp = now

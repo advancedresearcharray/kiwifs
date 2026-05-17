@@ -624,6 +624,28 @@ export const api = {
     });
   },
 
+  // --- Publish lifecycle ---
+
+  async publish(path: string): Promise<PublishResponse> {
+    return request(`${kiwiBase()}/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+  },
+
+  async unpublish(path: string): Promise<PublishResponse> {
+    return request(`${kiwiBase()}/unpublish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+  },
+
+  async publishStatus(path: string): Promise<PublishStatusResponse> {
+    return request(`${kiwiBase()}/publish/status?path=${encodeURIComponent(path)}`);
+  },
+
   // --- Import pipeline ---
 
   async importBrowse(params: ImportBrowseRequest): Promise<ImportBrowseResponse> {
@@ -798,4 +820,21 @@ export type ImportConnection = {
   last_run?: string;
   last_stats?: { imported: number; skipped: number; errors?: string[] };
   created_at: string;
+};
+
+// --- Publish types ---
+
+export type PublishResponse = {
+  path: string;
+  published: boolean;
+  published_at?: string;
+  public_url?: string;
+};
+
+export type PublishStatusResponse = {
+  path: string;
+  published: boolean;
+  published_at?: string;
+  public_url?: string;
+  view_count: number;
 };

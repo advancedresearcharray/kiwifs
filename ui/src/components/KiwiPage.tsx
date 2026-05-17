@@ -12,7 +12,7 @@ import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
 import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Edit, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
-import { titleize } from "@kw/lib/paths";
+import { dirOf, titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
 import { KiwiBreadcrumb } from "./KiwiBreadcrumb";
 import { KiwiToC } from "./KiwiToC";
@@ -20,6 +20,7 @@ import { KiwiBacklinks } from "./KiwiBacklinks";
 import { KiwiComments } from "./KiwiComments";
 import { KiwiQuery } from "./KiwiQuery";
 import { PageActions } from "./PageActions";
+import { PublishButton } from "./PublishButton";
 import { ShikiCode } from "./ShikiCode";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { KiwiChart } from "./KiwiChart";
@@ -544,9 +545,10 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                     <HistoryIcon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">History</span>
                   </Button>
                 )}
-                <Button variant="default" size="sm" onClick={onEdit}>
+                <Button variant="outline" size="sm" onClick={onEdit}>
                   <Edit className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
                 </Button>
+                <PublishButton path={path} />
                 <PageActions
                   path={path}
                   onDeleted={onDeleted}
@@ -785,7 +787,13 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                     img: ({ src, alt, node: _node, width, height, ...rest }) => {
                       let resolvedSrc = src as string;
                       if (resolvedSrc && !resolvedSrc.startsWith("http") && !resolvedSrc.startsWith("/raw/") && !resolvedSrc.startsWith("/api/")) {
-                        resolvedSrc = resolvedSrc.startsWith("/") ? `/raw${resolvedSrc}` : `/raw/${resolvedSrc}`;
+                        if (resolvedSrc.startsWith("./") || (!resolvedSrc.startsWith("/") && !resolvedSrc.startsWith("data:"))) {
+                          const pageDir = dirOf(path);
+                          const rel = resolvedSrc.startsWith("./") ? resolvedSrc.slice(2) : resolvedSrc;
+                          resolvedSrc = pageDir ? `/raw/${pageDir}/${rel}` : `/raw/${rel}`;
+                        } else {
+                          resolvedSrc = resolvedSrc.startsWith("/") ? `/raw${resolvedSrc}` : `/raw/${resolvedSrc}`;
+                        }
                       }
                       const kind = classifyMedia(resolvedSrc);
                       switch (kind) {

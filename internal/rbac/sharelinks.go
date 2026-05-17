@@ -23,6 +23,39 @@ const (
 	VisibilityPassword = "password"
 )
 
+// PagePublished returns true when the file's frontmatter contains
+// `published: true`. Returns false when absent, unparseable, or set to any
+// other value.
+func PagePublished(content []byte) bool {
+	fm, _, err := markdown.SplitFrontmatter(content)
+	if err != nil || len(fm) == 0 {
+		return false
+	}
+	var meta struct {
+		Published bool `yaml:"published"`
+	}
+	if err := yaml.Unmarshal(fm, &meta); err != nil {
+		return false
+	}
+	return meta.Published
+}
+
+// PagePublishedAt extracts the `published_at` timestamp from frontmatter.
+// Returns nil when absent or unparseable.
+func PagePublishedAt(content []byte) *time.Time {
+	fm, _, err := markdown.SplitFrontmatter(content)
+	if err != nil || len(fm) == 0 {
+		return nil
+	}
+	var meta struct {
+		PublishedAt *time.Time `yaml:"published_at"`
+	}
+	if err := yaml.Unmarshal(fm, &meta); err != nil {
+		return nil
+	}
+	return meta.PublishedAt
+}
+
 // PageVisibility extracts the visibility field from YAML frontmatter.
 // Returns VisibilityInternal when the field is absent or unparseable.
 func PageVisibility(content []byte) string {

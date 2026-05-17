@@ -350,6 +350,11 @@ func (s *Server) setupRoutes() {
 		log.Printf("api: init connection store: %v (import connections disabled)", err)
 	}
 
+	publishMetrics, pmErr := rbac.NewPublishMetricsStore(s.pipe.Store.AbsPath(""))
+	if pmErr != nil {
+		log.Printf("api: init publish metrics: %v (view counts disabled)", pmErr)
+	}
+
 	h := &Handlers{
 		store:            s.pipe.Store,
 		versioner:        s.pipe.Versioner,
@@ -376,6 +381,7 @@ func (s *Server) setupRoutes() {
 		auditLogger:         s.auditLogger,
 		cfg:                 s.cfg,
 		connStore:            connStore,
+		publishMetrics:       publishMetrics,
 		schemaReload:         s.schemaReload,
 		backupStatusFn:       s.backupStatusFn,
 	}
@@ -489,6 +495,11 @@ func (s *Server) setupRoutes() {
 	api.GET("/share", h.ListShareLinks)
 	api.DELETE("/share/:id", h.RevokeShareLink)
 
+	// Publish lifecycle endpoints
+	api.POST("/publish", h.Publish)
+	api.POST("/unpublish", h.Unpublish)
+	api.GET("/publish/status", h.PublishStatus)
+
 	// B.1: Space info & visibility endpoints
 	api.GET("/space/info", h.SpaceInfo)
 	api.PUT("/space/visibility", h.UpdateVisibility)
@@ -533,6 +544,8 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/api/kiwi/public/:token", h.PublicPage)
 	s.echo.GET("/api/kiwi/public/file", h.PublicFile)
 	s.echo.GET("/api/kiwi/public/tree", h.PublicTree)
+
+	s.echo.GET("/p/*", h.PublishedPage)
 
 	s.echo.GET("/raw/*", h.ServeRawFile)
 

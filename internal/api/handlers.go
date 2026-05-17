@@ -58,9 +58,10 @@ type Handlers struct {
 	claimStore   *claims.Store
 	draftMgr     *draft.Manager
 
-	auditLogger *AuditLogger // B.3: audit log support
-	cfg         *config.Config // B.1: for space info/visibility
-	connStore   *importer.ConnectionStore
+	auditLogger    *AuditLogger // B.3: audit log support
+	cfg            *config.Config // B.1: for space info/visibility
+	connStore      *importer.ConnectionStore
+	publishMetrics *rbac.PublishMetricsStore
 
 	schemaReload func()
 
