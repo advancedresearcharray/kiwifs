@@ -380,16 +380,6 @@ function resolveInitialActiveWorkflow(
   return null;
 }
 
-function getColumnsForActiveWorkflow(
-  activeWorkflow: string | null,
-  columns: WorkflowColumn[],
-): WorkflowColumn[] {
-  if (!activeWorkflow) {
-    return [];
-  }
-  return columns;
-}
-
 export function createKanbanStore() {
   return createStore<KanbanStore>((set, get) => ({
     workflows: [],
@@ -428,7 +418,7 @@ export function createKanbanStore() {
           workflows,
           activeWorkflow,
           loadErrors: result.errors ?? [],
-          columns: getColumnsForActiveWorkflow(activeWorkflow, get().columns),
+          columns: activeWorkflow ? get().columns : [],
         });
       } catch (err) {
         set({
