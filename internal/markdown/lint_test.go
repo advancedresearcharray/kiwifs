@@ -56,6 +56,21 @@ func TestLintMarkdown(t *testing.T) {
 			[]string{"heading-duplicate-slug"},
 		},
 		{
+			"korean headings do not collapse to empty slug",
+			"---\ntitle: 테스트\n---\n# 테스트\n\n## 목적\n\ntext\n\n## 적용 조건\n\ntext\n\n## 입력\n\ntext\n\n## 산출물\n\ntext\n",
+			nil,
+		},
+		{
+			"korean plus ascii headings keep korean slug parts",
+			"---\ntitle: Test\n---\n# Title\n\n## 루트 package.json 일부\n\ntext\n\n## 서브패키지 package.json 일부\n\ntext\n\n## 루트 eslint.config.mjs\n\ntext\n\n## 일반 서브패키지 eslint.config.mjs\n\ntext\n",
+			nil,
+		},
+		{
+			"duplicate korean heading still warns",
+			"---\ntitle: 테스트\n---\n# 테스트\n\n## 목적\n\ntext\n\n## 목적\n\ntext\n",
+			[]string{"heading-duplicate-slug"},
+		},
+		{
 			"fence unclosed",
 			"---\ntitle: Test\n---\n```go\nfunc main() {}\n",
 			[]string{"fence-unclosed"},

@@ -17,12 +17,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	extast "github.com/yuin/goldmark/extension/ast"
 	meta "github.com/yuin/goldmark-meta"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 )
@@ -199,28 +200,22 @@ func Headings(content []byte) []Heading {
 	return p.Headings
 }
 
-// Slugify turns a heading into a URL-safe anchor (GitHub-style): lowercase,
-// ASCII letters + digits + hyphens; whitespace to hyphens; everything else
-// dropped.
+// Slugify turns a heading into the same base anchor format used by the UI's
+// rehype-slug/github-slugger pipeline: lowercase, keep Unicode letters/numbers
+// plus hyphen/underscore, drop punctuation, and turn spaces into hyphens.
 func Slugify(s string) string {
 	s = strings.ToLower(s)
 	var b strings.Builder
 	b.Grow(len(s))
-	prevHyphen := false
 	for _, r := range s {
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case unicode.IsLetter(r), unicode.IsNumber(r), r == '-' || r == '_':
 			b.WriteRune(r)
-			prevHyphen = false
-		case r == ' ' || r == '-' || r == '_' || r == '\t':
-			if !prevHyphen && b.Len() > 0 {
-				b.WriteByte('-')
-				prevHyphen = true
-			}
+		case r == ' ':
+			b.WriteByte('-')
 		}
 	}
-	out := b.String()
-	return strings.TrimRight(out, "-")
+	return b.String()
 }
 
 // DebugString is a compact human-readable dump used in tests / CLI output.
