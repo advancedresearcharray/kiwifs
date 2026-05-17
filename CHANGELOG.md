@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.17.2](https://github.com/kiwifs/kiwifs/compare/v0.17.1...v0.17.2) (2026-05-17)
+
+
+### Features
+
+* **ui:** add rich markdown widgets — chart, tabs, columns, color, progress, playground ([#85](https://github.com/kiwifs/kiwifs/issues/85)) ([9b9ac02](https://github.com/kiwifs/kiwifs/commit/9b9ac02df925f2a5daed2d9b4d26f73a45b7a04d))
+* workflow API, kanban UI overhaul, and multi-space fix ([961887a](https://github.com/kiwifs/kiwifs/commit/961887a64648f22542dcacc53bb3dc1a4c147354))
+* workflow API, kanban UI overhaul, and multi-space fix ([0f00b51](https://github.com/kiwifs/kiwifs/commit/0f00b51686f9a2df49a5e0c155293514c7cca69c))
+
+
+### Bug Fixes
+
+* **markdown:** preserve unicode heading slugs ([19dcd45](https://github.com/kiwifs/kiwifs/commit/19dcd45ae86facd2a02799b3114984a44f2d1110))
+* **markdown:** preserve unicode heading slugs ([0d740a5](https://github.com/kiwifs/kiwifs/commit/0d740a5f4440365bb0ee6e2b09db199e8281ae9e))
+* persist dynamically created spaces across restarts ([4d33354](https://github.com/kiwifs/kiwifs/commit/4d33354601251c943e6fb0ec8153abb48526e765))
+* persist dynamically created spaces across restarts ([d9d741e](https://github.com/kiwifs/kiwifs/commit/d9d741e4eae02010bc4807060da7399b703d581e))
+* **ui:** preserve frontmatter in WYSIWYG editor ([8c28cce](https://github.com/kiwifs/kiwifs/commit/8c28cce890da9c20cb06ebf42f0d0d53170d3950))
+* **ui:** preserve frontmatter in WYSIWYG editor ([0400d78](https://github.com/kiwifs/kiwifs/commit/0400d786a513694850491c128e965f6c42dd8b6e))
+* YAML frontmatter editor data corruption bugs ([572748b](https://github.com/kiwifs/kiwifs/commit/572748b6232d2ead8ecdab16082e7717131731db))
+
 ## [0.17.1](https://github.com/kiwifs/kiwifs/compare/v0.17.0...v0.17.1) (2026-05-15)
 
 
