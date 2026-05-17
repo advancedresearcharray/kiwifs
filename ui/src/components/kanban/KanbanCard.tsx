@@ -24,6 +24,99 @@ type Props = {
   onNavigate: (path: string) => void;
 };
 
+function getDragOpacity(isDragging: boolean): number {
+  if (isDragging) {
+    return 0.35;
+  }
+  return 1;
+}
+
+function getPriorityCardStyle(priority: ReturnType<typeof parsePriority>): ReturnType<typeof priorityStyle> | null {
+  if (!priority) {
+    return null;
+  }
+  if (priority === "none") {
+    return null;
+  }
+  return priorityStyle(priority);
+}
+
+function getDueDate(due: string | undefined): Date | null {
+  if (!due) {
+    return null;
+  }
+  return new Date(due);
+}
+
+function getValidDueDate(dueDate: Date | null): Date | null {
+  if (!dueDate) {
+    return null;
+  }
+  if (isNaN(dueDate.getTime())) {
+    return null;
+  }
+  return dueDate;
+}
+
+function shouldShowDueYear(validDue: Date | null): boolean {
+  if (!validDue) {
+    return false;
+  }
+  return !isSameYear(validDue, new Date());
+}
+
+function isDueDateOverdue(validDue: Date | null): boolean {
+  if (!validDue) {
+    return false;
+  }
+  return isBefore(validDue, startOfDay(new Date()));
+}
+
+function getCardClassName(isBlocked: boolean): string {
+  const classes = [
+    "group flex flex-col overflow-hidden rounded-lg border bg-card px-3 py-2.5 text-sm cursor-grab active:cursor-grabbing hover:border-border/70 hover:bg-accent/30 transition-colors duration-150",
+  ];
+  if (isBlocked) {
+    classes.push("border-destructive/50 bg-destructive/[0.03]");
+    return classes.join(" ");
+  }
+  classes.push("border-border/40");
+  return classes.join(" ");
+}
+
+function getDueDateClassName(isOverdue: boolean): string {
+  const classes = ["flex items-center gap-1"];
+  if (isOverdue) {
+    classes.push("text-destructive");
+    return classes.join(" ");
+  }
+  classes.push("text-muted-foreground/70");
+  return classes.join(" ");
+}
+
+function getDueDateFormat(showYear: boolean): string {
+  if (showYear) {
+    return "do MMM yyyy";
+  }
+  return "do MMM";
+}
+
+function PriorityIcon({ priority, dotColor }: { priority: ReturnType<typeof parsePriority>; dotColor: string }) {
+  if (priority === "critical") {
+    return <AlertTriangle className="h-3.5 w-3.5" />;
+  }
+  return (
+    <svg
+      fill={dotColor}
+      className="h-2 w-2"
+      viewBox="0 0 6 6"
+      aria-hidden="true"
+    >
+      <circle cx={3} cy={3} r={3} />
+    </svg>
+  );
+}
+
 export function KanbanCard({ page, onNavigate }: Props) {
   const {
     attributes,
@@ -37,7 +130,7 @@ export function KanbanCard({ page, onNavigate }: Props) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.35 : 1,
+    opacity: getDragOpacity(isDragging),
   };
 
   const wasDraggedRef = useRef(false);
@@ -46,13 +139,13 @@ export function KanbanCard({ page, onNavigate }: Props) {
   }, [isDragging]);
 
   const priority = parsePriority(page.priority);
-  const pStyle = priority && priority !== "none" ? priorityStyle(priority) : null;
+  const pStyle = getPriorityCardStyle(priority);
   const tags = page.tags?.slice(0, 4) ?? [];
 
-  const dueDate = page.due ? new Date(page.due) : null;
-  const validDue = dueDate && !isNaN(dueDate.getTime()) ? dueDate : null;
-  const showYear = validDue ? !isSameYear(validDue, new Date()) : false;
-  const isOverdue = validDue ? isBefore(validDue, startOfDay(new Date())) : false;
+  const dueDate = getDueDate(page.due);
+  const validDue = getValidDueDate(dueDate);
+  const showYear = shouldShowDueYear(validDue);
+  const isOverdue = isDueDateOverdue(validDue);
 
   const isBlocked = !!page.blocked;
   const hasDescription = !!page.description;
@@ -66,11 +159,7 @@ export function KanbanCard({ page, onNavigate }: Props) {
       style={style}
       {...attributes}
       {...listeners}
-      className={`group flex flex-col overflow-hidden rounded-lg border bg-card px-3 py-2.5 text-sm cursor-grab active:cursor-grabbing hover:border-border/70 hover:bg-accent/30 transition-colors duration-150 ${
-        isBlocked
-          ? "border-destructive/50 bg-destructive/[0.03]"
-          : "border-border/40"
-      }`}
+      className={getCardClassName(isBlocked)}
     >
       {isBlocked && (
         <div className="flex items-center gap-1 mb-1 text-destructive text-[11px] font-medium">
@@ -127,18 +216,7 @@ export function KanbanCard({ page, onNavigate }: Props) {
                   style={{ color: pStyle.dotColor }}
                   title={`Priority: ${pStyle.label}`}
                 >
-                  {priority === "critical" ? (
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                  ) : (
-                    <svg
-                      fill={pStyle.dotColor}
-                      className="h-2 w-2"
-                      viewBox="0 0 6 6"
-                      aria-hidden="true"
-                    >
-                      <circle cx={3} cy={3} r={3} />
-                    </svg>
-                  )}
+                  <PriorityIcon priority={priority} dotColor={pStyle.dotColor} />
                   <span className="text-[11px]">{pStyle.label}</span>
                 </div>
               )}
@@ -161,16 +239,12 @@ export function KanbanCard({ page, onNavigate }: Props) {
 
               {validDue && (
                 <div
-                  className={`flex items-center gap-1 ${
-                    isOverdue
-                      ? "text-destructive"
-                      : "text-muted-foreground/70"
-                  }`}
+                  className={getDueDateClassName(isOverdue)}
                   title={validDue.toLocaleDateString()}
                 >
                   <CalendarClock className="h-3.5 w-3.5" />
                   <span className="text-[11px]">
-                    {format(validDue, showYear ? "do MMM yyyy" : "do MMM")}
+                    {format(validDue, getDueDateFormat(showYear))}
                   </span>
                 </div>
               )}

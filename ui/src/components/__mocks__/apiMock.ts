@@ -9,6 +9,7 @@ import {
   mockGraphNodes,
   mockGraphEdges,
 } from "./data";
+import type { WorkflowColumn, WorkflowDef, WorkflowPage } from "@kw/lib/api";
 
 export type MockOverrides = {
   fileContent?: string | null;
@@ -18,6 +19,9 @@ export type MockOverrides = {
   comments?: typeof mockComments;
   backlinks?: typeof mockBacklinks;
   searchResults?: typeof mockSearchResults;
+  workflows?: WorkflowDef[];
+  workflowBoards?: Record<string, { columns: WorkflowColumn[]; unmatchedPages?: WorkflowPage[] }>;
+  workflowErrors?: string[];
   delay?: number;
 };
 
@@ -167,6 +171,43 @@ function createMockFetch(overrides: MockOverrides = {}) {
           nodes: mockGraphNodes,
           edges: mockGraphEdges,
         });
+      }
+
+      if (url.includes("/workflow/board/") && method === "GET") {
+        const name = decodeURIComponent(url.split("/workflow/board/")[1]?.split(/[?#]/)[0] ?? "");
+        const board = overrides.workflowBoards?.[name] ?? { columns: [] };
+        return jsonResponse(board);
+      }
+
+      if (url.includes("/workflows") && method === "GET") {
+        return jsonResponse({
+          workflows: overrides.workflows ?? [],
+          errors: overrides.workflowErrors,
+        });
+      }
+
+      if (url.includes("/workflows/") && method === "PUT") {
+        const workflow = init?.body ? JSON.parse(String(init.body)) as WorkflowDef : null;
+        return jsonResponse({ status: "ok", workflow });
+      }
+
+      if (url.includes("/workflows/") && method === "DELETE") {
+        const name = decodeURIComponent(url.split("/workflows/")[1]?.split(/[?#]/)[0] ?? "");
+        return jsonResponse({ status: "ok", name });
+      }
+
+      if (url.includes("/workflow/advance") && method === "POST") {
+        return jsonResponse({ status: "ok" });
+      }
+
+      if (url.includes("/workflow/assign") && method === "POST") {
+        const body = init?.body ? JSON.parse(String(init.body)) as { path: string; workflow: string; state: string } : null;
+        return jsonResponse({ ...body, etag: "mock-etag-2" });
+      }
+
+      if (url.includes("/workflow/reorder") && method === "POST") {
+        const body = init?.body ? JSON.parse(String(init.body)) as { path: string; ordinal: number } : null;
+        return jsonResponse({ ...body, etag: "mock-etag-2" });
       }
 
       if (url.includes("/meta")) {

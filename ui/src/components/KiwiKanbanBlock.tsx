@@ -52,151 +52,16 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface KanbanCard {
-  id: string;
-  title: string;
-  tags?: string[];
-  description?: string;
-  priority?: string;
-  assignee?: string;
-}
-
-interface KanbanColumn {
-  name: string;
-  color?: string;
-  cards: KanbanCard[];
-}
-
-interface ExportConfig {
-  format?: "markdown" | "json";
-  copyLabel?: string;
-}
-
-interface KanbanConfig {
-  title?: string;
-  columns: KanbanColumn[];
-  export?: ExportConfig;
-}
-
-// ── Parser ───────────────────────────────────────────────────────────────────
-
-function parseKanbanConfig(source: string): KanbanConfig {
-  const trimmed = source.trim();
-
-  // Try JSON
-  if (trimmed.startsWith("{")) {
-    return JSON.parse(trimmed) as KanbanConfig;
-  }
-
-  // YAML-like parser
-  let title: string | undefined;
-  let exportConfig: ExportConfig = {};
-  const columns: KanbanColumn[] = [];
-
-  const lines = trimmed.split("\n");
-  let section: "root" | "columns" | "column" | "cards" | "card" | "export" = "root";
-  let currentColumn: KanbanColumn = { name: "", cards: [] };
-  let currentCard: Partial<KanbanCard> = {};
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const l = line.trim();
-    if (!l || l.startsWith("#")) continue;
-
-    const indent = line.length - line.trimStart().length;
-
-    if (l.startsWith("title:") && indent === 0) {
-      title = l.slice(6).trim().replace(/^["']|["']$/g, "");
-      section = "root";
-    } else if (l === "export:" && indent === 0) {
-      section = "export";
-    } else if (section === "export") {
-      const kvMatch = l.match(/^([A-Za-z]+):\s*(.*)$/);
-      if (kvMatch) {
-        const [, k, v] = kvMatch;
-        (exportConfig as any)[k] = v.trim().replace(/^["']|["']$/g, "");
-      }
-      if (indent === 0 && l !== "export:") section = "root";
-    } else if (l === "columns:" && indent === 0) {
-      section = "columns";
-    } else if (section === "columns" && l.startsWith("- name:")) {
-      // Flush previous column
-      if (currentColumn.name) {
-        if (currentCard.id) {
-          currentColumn.cards.push(finalizeCard(currentCard));
-          currentCard = {};
-        }
-        columns.push(currentColumn);
-      }
-      currentColumn = { name: l.slice("- name:".length).trim().replace(/^["']|["']$/g, ""), cards: [] };
-      section = "column";
-    } else if (section === "column" && l.startsWith("color:")) {
-      currentColumn.color = l.slice(6).trim().replace(/^["']|["']$/g, "");
-    } else if ((section === "column" || section === "cards") && l === "cards:") {
-      section = "cards";
-    } else if (section === "cards" && l.startsWith("- id:")) {
-      // Flush previous card
-      if (currentCard.id) {
-        currentColumn.cards.push(finalizeCard(currentCard));
-      }
-      currentCard = { id: l.slice("- id:".length).trim().replace(/^["']|["']$/g, "") };
-      section = "card";
-    } else if (section === "card" || section === "cards") {
-      const kvMatch = l.match(/^([A-Za-z]+):\s*(.*)$/);
-      if (kvMatch) {
-        const [, k, v] = kvMatch;
-        const val = v.trim().replace(/^["']|["']$/g, "");
-        if (k === "title") currentCard.title = val;
-        else if (k === "description") currentCard.description = val;
-        else if (k === "priority") currentCard.priority = val;
-        else if (k === "assignee") currentCard.assignee = val;
-        else if (k === "tags") {
-          if (val.startsWith("[") && val.endsWith("]")) {
-            currentCard.tags = val.slice(1, -1).split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""));
-          }
-        }
-      }
-      // Detect next column
-      if (l.startsWith("- name:")) {
-        if (currentCard.id) {
-          currentColumn.cards.push(finalizeCard(currentCard));
-          currentCard = {};
-        }
-        columns.push(currentColumn);
-        currentColumn = { name: l.slice("- name:".length).trim().replace(/^["']|["']$/g, ""), cards: [] };
-        section = "column";
-      }
-    }
-  }
-
-  // Flush final
-  if (currentCard.id) {
-    currentColumn.cards.push(finalizeCard(currentCard));
-  }
-  if (currentColumn.name) {
-    columns.push(currentColumn);
-  }
-
-  return { title, columns, export: exportConfig };
-}
-
-function finalizeCard(raw: Partial<KanbanCard>): KanbanCard {
-  return {
-    id: raw.id || `card-${Math.random().toString(36).slice(2, 8)}`,
-    title: raw.title || "Untitled",
-    tags: raw.tags,
-    description: raw.description,
-    priority: raw.priority,
-    assignee: raw.assignee,
-  };
-}
+import {
+  buildKanbanBlockExportText,
+  parseKanbanBlockConfig,
+  type KanbanBlockCard,
+  type KanbanBlockColumn,
+} from "@kw/lib/kanbanBlock";
 
 // ── Sortable Card Component ──────────────────────────────────────────────────
 
-function SortableCard({ card }: { card: KanbanCard }) {
+function SortableCard({ card }: { card: KanbanBlockCard }) {
   const {
     attributes,
     listeners,
@@ -259,7 +124,7 @@ function SortableCard({ card }: { card: KanbanCard }) {
 
 // ── Card Overlay (shown while dragging) ──────────────────────────────────────
 
-function CardOverlay({ card }: { card: KanbanCard }) {
+function CardOverlay({ card }: { card: KanbanBlockCard }) {
   return (
     <div className="rounded-md border border-border bg-card p-3 shadow-xl rotate-2 ring-2 ring-primary/30">
       <p className="text-sm font-medium text-foreground">{card.title}</p>
@@ -281,7 +146,7 @@ function CardOverlay({ card }: { card: KanbanCard }) {
 
 // ── Column Component ─────────────────────────────────────────────────────────
 
-function Column({ column, cards }: { column: KanbanColumn; cards: KanbanCard[] }) {
+function Column({ column, cards }: { column: KanbanBlockColumn; cards: KanbanBlockCard[] }) {
   const cardIds = cards.map((c) => c.id);
 
   return (
@@ -318,9 +183,9 @@ function Column({ column, cards }: { column: KanbanColumn; cards: KanbanCard[] }
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export function KiwiKanbanBlock({ source }: { source: string }) {
-  const initialConfig = useMemo(() => parseKanbanConfig(source), [source]);
-  const [columns, setColumns] = useState<KanbanColumn[]>(initialConfig.columns);
-  const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
+  const initialConfig = useMemo(() => parseKanbanBlockConfig(source), [source]);
+  const [columns, setColumns] = useState<KanbanBlockColumn[]>(initialConfig.columns);
+  const [activeCard, setActiveCard] = useState<KanbanBlockCard | null>(null);
   const [copied, setCopied] = useState(false);
 
   const sensors = useSensors(
@@ -409,26 +274,7 @@ export function KiwiKanbanBlock({ source }: { source: string }) {
 
   const handleCopyExport = useCallback(async () => {
     const format = initialConfig.export?.format || "markdown";
-    let text: string;
-
-    if (format === "json") {
-      text = JSON.stringify(columns.map((col) => ({
-        column: col.name,
-        cards: col.cards.map((c) => ({ id: c.id, title: c.title, tags: c.tags })),
-      })), null, 2);
-    } else {
-      // Markdown format
-      const parts: string[] = [];
-      for (const col of columns) {
-        parts.push(`## ${col.name}`);
-        for (const card of col.cards) {
-          const tagStr = card.tags?.length ? ` [${card.tags.join(", ")}]` : "";
-          parts.push(`- **${card.title}**${tagStr}`);
-        }
-        parts.push("");
-      }
-      text = parts.join("\n");
-    }
+    const text = buildKanbanBlockExportText(columns, format);
 
     try {
       await navigator.clipboard.writeText(text);

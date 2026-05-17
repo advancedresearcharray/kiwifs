@@ -3,6 +3,7 @@ import { action } from "@storybook/addon-actions";
 import { KanbanColumn } from "./KanbanColumn";
 import { KanbanCard } from "./KanbanCard";
 import { KanbanDragProvider } from "./KanbanDragProvider";
+import { KanbanStoreProvider } from "./kanbanStore";
 import type { WorkflowPage } from "@kw/lib/api";
 
 const mockPages: WorkflowPage[] = [
@@ -33,11 +34,13 @@ const meta: Meta<typeof KanbanColumn> = {
   parameters: { layout: "padded" },
   decorators: [
     (Story) => (
-      <KanbanDragProvider>
-        <div className="p-4 bg-background text-foreground">
-          <Story />
-        </div>
-      </KanbanDragProvider>
+      <KanbanStoreProvider>
+        <KanbanDragProvider>
+          <div className="p-4 bg-background text-foreground">
+            <Story />
+          </div>
+        </KanbanDragProvider>
+      </KanbanStoreProvider>
     ),
   ],
 };
@@ -53,7 +56,6 @@ export const WithCards: Story = {
       color="#3b82f6"
       count={3}
       items={mockPages.map((p) => p.path)}
-      onAdd={action("add")}
     >
       {mockPages.map((page) => (
         <KanbanCard key={page.path} page={page} onNavigate={action("navigate")} />
@@ -70,7 +72,6 @@ export const EmptyColumn: Story = {
       color="#22c55e"
       count={0}
       items={[]}
-      onAdd={action("add")}
     >
       {null}
     </KanbanColumn>
@@ -86,7 +87,6 @@ export const WithWipLimit: Story = {
       count={3}
       items={mockPages.map((p) => p.path)}
       wipLimit={3}
-      onAdd={action("add")}
     >
       {mockPages.map((page) => (
         <KanbanCard key={page.path} page={page} onNavigate={action("navigate")} />
@@ -104,7 +104,6 @@ export const OverWipLimit: Story = {
       count={3}
       items={mockPages.map((p) => p.path)}
       wipLimit={2}
-      onAdd={action("add")}
     >
       {mockPages.map((page) => (
         <KanbanCard key={page.path} page={page} onNavigate={action("navigate")} />
