@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"golang.org/x/time/rate"
 	"github.com/kiwifs/kiwifs/internal/claims"
 	"github.com/kiwifs/kiwifs/internal/comments"
 	"github.com/kiwifs/kiwifs/internal/config"
@@ -34,6 +33,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/webui"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"golang.org/x/time/rate"
 )
 
 type ServerOption func(*Server)
@@ -64,6 +64,9 @@ func WithBackupStatus(fn func() any) ServerOption {
 
 func (s *Server) SetBackupStatus(fn func() any) {
 	s.backupStatusFn = fn
+	if s.handlers != nil {
+		s.handlers.backupStatusFn = fn
+	}
 }
 
 type Server struct {
@@ -76,12 +79,13 @@ type Server struct {
 	emitter      tracing.Emitter
 	echo         *echo.Echo
 
-	webhookStore  *webhooks.Store
-	claimStore    *claims.Store
-	draftMgr      *draft.Manager
-	schemaReload  func()
-	auditLogger   *AuditLogger
+	webhookStore   *webhooks.Store
+	claimStore     *claims.Store
+	draftMgr       *draft.Manager
+	schemaReload   func()
+	auditLogger    *AuditLogger
 	backupStatusFn func() any
+	handlers       *Handlers
 
 	janitorSched  *janitor.Scheduler
 	janitorCancel context.CancelFunc
@@ -356,20 +360,20 @@ func (s *Server) setupRoutes() {
 	}
 
 	h := &Handlers{
-		store:            s.pipe.Store,
-		versioner:        s.pipe.Versioner,
-		searcher:         s.pipe.Searcher,
-		linker:           s.pipe.Linker,
-		hub:              s.pipe.Hub,
-		pipe:             s.pipe,
-		vectors:          s.vectors,
-		dv:               dvExec,
-		viewReg:          viewReg,
-		comments:         s.comments,
-		shares:           s.shares,
-		assets:           s.cfg.Assets,
-		ui:               s.cfg.UI,
-		root:             s.pipe.Store.AbsPath(""),
+		store:                s.pipe.Store,
+		versioner:            s.pipe.Versioner,
+		searcher:             s.pipe.Searcher,
+		linker:               s.pipe.Linker,
+		hub:                  s.pipe.Hub,
+		pipe:                 s.pipe,
+		vectors:              s.vectors,
+		dv:                   dvExec,
+		viewReg:              viewReg,
+		comments:             s.comments,
+		shares:               s.shares,
+		assets:               s.cfg.Assets,
+		ui:                   s.cfg.UI,
+		root:                 s.pipe.Store.AbsPath(""),
 		janitorSched:         s.janitorSched,
 		janitorStaleDays:     s.cfg.Janitor.StaleDays,
 		memoryEpisodesPrefix: s.cfg.Memory.EpisodesPathPrefix,
@@ -378,13 +382,14 @@ func (s *Server) setupRoutes() {
 		webhookStore:         s.webhookStore,
 		claimStore:           s.claimStore,
 		draftMgr:             s.draftMgr,
-		auditLogger:         s.auditLogger,
-		cfg:                 s.cfg,
+		auditLogger:          s.auditLogger,
+		cfg:                  s.cfg,
 		connStore:            connStore,
 		publishMetrics:       publishMetrics,
 		schemaReload:         s.schemaReload,
 		backupStatusFn:       s.backupStatusFn,
 	}
+	s.handlers = h
 	prev := s.pipe.OnInvalidate
 	s.pipe.OnInvalidate = func() {
 		if prev != nil {
@@ -474,6 +479,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/feed.xml", h.FeedAtom)
 	api.GET("/feed.json", h.FeedJSON)
 	api.GET("/backup/status", h.BackupStatus)
+	api.GET("/sync/status", h.BackupStatus)
 	api.GET("/peek", h.Peek)
 	api.GET("/section", h.SectionRead)
 	api.GET("/graph/walk", h.GraphWalk)
