@@ -2,8 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Database, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { api, type ImportConnection } from "../lib/api";
+import { sourceTypeLabel } from "../lib/importSourceLabels";
 import { KiwiImportWizard } from "./KiwiImportWizard";
 import { SourceIcon } from "./SourceIcon";
+
+/** Prefer title case / brand labels when the saved name repeats the raw `from` slug. */
+function connectionDisplayName(conn: ImportConnection): string {
+  const fromKey = conn.from.trim().toLowerCase();
+  const raw = (conn.name ?? "").trim();
+  if (!raw) return sourceTypeLabel(conn.from);
+  const lower = raw.toLowerCase();
+  if (lower === fromKey) return sourceTypeLabel(conn.from);
+  if (lower.startsWith(`${fromKey} `)) {
+    return `${sourceTypeLabel(conn.from)}${raw.slice(fromKey.length)}`;
+  }
+  return raw;
+}
 
 /**
  * KiwiData — the data sources management view.
@@ -85,7 +99,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
 
         <div className="flex items-center gap-3 mb-2">
           <SourceIcon source={selectedConn.from} size={28} />
-          <h1 className="text-xl font-semibold">{selectedConn.name}</h1>
+          <h1 className="text-xl font-semibold">{connectionDisplayName(selectedConn)}</h1>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
           {selectedConn.prefix && <>Prefix: <code className="bg-muted px-1 rounded">{selectedConn.prefix}/</code> &middot; </>}
@@ -114,7 +128,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
 
         {/* Connection details */}
         <div className="border border-border rounded-lg p-4 text-sm space-y-2">
-          <div><strong>Type:</strong> {selectedConn.from}</div>
+          <div><strong>Type:</strong> {sourceTypeLabel(selectedConn.from)}</div>
           {selectedConn.project && <div><strong>Project:</strong> {selectedConn.project}</div>}
           {selectedConn.collection && <div><strong>Collection:</strong> {selectedConn.collection}</div>}
           {selectedConn.table && <div><strong>Table:</strong> {selectedConn.table}</div>}
@@ -163,11 +177,20 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center gap-3">
                   <SourceIcon source={conn.from} size={22} />
                   <div>
-                    <div className="font-medium">{conn.name}</div>
+                    <div className="font-medium">{connectionDisplayName(conn)}</div>
                     <div className="text-xs text-muted-foreground">
-                      {conn.prefix && <><code>{conn.prefix}/</code> &middot; </>}
-                      {conn.last_stats && <>{conn.last_stats.imported} docs &middot; </>}
-                      {conn.last_run ? `imported ${timeAgo(conn.last_run)}` : "never imported"}
+                      <span>{sourceTypeLabel(conn.from)}</span>
+                      {conn.prefix && (
+                        <>
+                          {" "}&middot; <code>{conn.prefix}/</code>
+                        </>
+                      )}
+                      {conn.last_stats && (
+                        <>
+                          {" "}&middot; {conn.last_stats.imported} docs
+                        </>
+                      )}
+                      {" "}&middot; {conn.last_run ? `imported ${timeAgo(conn.last_run)}` : "never imported"}
                     </div>
                   </div>
                 </div>

@@ -123,6 +123,76 @@ func (s *AirbyteCloudSource) Stream(ctx context.Context) (<-chan Record, <-chan 
 	return records, errs
 }
 
+// CreateSource creates a new source in Airbyte Cloud and returns its ID.
+func (c *AirbyteCloudClient) CreateSource(ctx context.Context, workspaceID, name, definitionID string, config map[string]any) (string, error) {
+	body := map[string]any{
+		"workspaceId":        workspaceID,
+		"name":              name,
+		"sourceDefinitionId": definitionID,
+		"configuration":     config,
+	}
+	resp, err := c.post(ctx, "/sources", body)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		SourceID string `json:"sourceId"`
+	}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return "", fmt.Errorf("parse create source response: %w", err)
+	}
+	return result.SourceID, nil
+}
+
+// CheckSourceConnection validates source credentials via Airbyte Cloud API.
+func (c *AirbyteCloudClient) CheckSourceConnection(ctx context.Context, sourceID string) (map[string]any, error) {
+	resp, err := c.post(ctx, "/sources/check_connection", map[string]any{
+		"sourceId": sourceID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// DiscoverSourceSchema discovers available streams from a source in Airbyte Cloud.
+func (c *AirbyteCloudClient) DiscoverSourceSchema(ctx context.Context, sourceID string) ([]map[string]any, error) {
+	resp, err := c.post(ctx, "/sources/discover_schema", map[string]any{
+		"sourceId": sourceID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Catalog struct {
+			Streams []map[string]any `json:"streams"`
+		} `json:"catalog"`
+	}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return result.Catalog.Streams, nil
+}
+
+// GetSourceDefinitions returns all available source definitions from Airbyte Cloud.
+func (c *AirbyteCloudClient) GetSourceDefinitions(ctx context.Context) ([]map[string]any, error) {
+	resp, err := c.get(ctx, "/source_definitions")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return result.Data, nil
+}
+
 // TriggerSync triggers a sync job for an existing Airbyte Cloud connection.
 func (c *AirbyteCloudClient) TriggerSync(ctx context.Context, connectionID string) (*AirbyteCloudJob, error) {
 	body := map[string]any{

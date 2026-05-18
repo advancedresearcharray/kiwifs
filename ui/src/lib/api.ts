@@ -663,6 +663,38 @@ export const api = {
 
   // --- Import pipeline ---
 
+  /** Upload a file and run import (or preview). For CSV, JSON, YAML, Excel, SQLite. */
+  async importUpload(opts: {
+    file: File;
+    from: string;
+    mode: "preview" | "import";
+    prefix?: string;
+    id_column?: string;
+    table?: string;
+    query?: string;
+  }): Promise<ImportPreviewResponse | ImportRunResponse> {
+    const form = new FormData();
+    form.append("file", opts.file);
+    form.append("from", opts.from);
+    form.append("mode", opts.mode);
+    if (opts.prefix) form.append("prefix", opts.prefix);
+    if (opts.id_column) form.append("id_column", opts.id_column);
+    if (opts.table) form.append("table", opts.table);
+    if (opts.query) form.append("query", opts.query);
+    const res = await fetch(`${kiwiBase()}/import/upload`, {
+      method: "POST",
+      headers: { "X-Actor": actor(), ..._extraHeaders },
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = text;
+      try { msg = JSON.parse(text).message ?? text; } catch { /* text is fine */ }
+      throw new Error(`${res.status}: ${msg}`);
+    }
+    return res.json();
+  },
+
   async importBrowse(params: ImportBrowseRequest): Promise<ImportBrowseResponse> {
     return request(`${kiwiBase()}/import/browse`, {
       method: "POST",
@@ -711,7 +743,7 @@ export const api = {
     });
   },
 
-  async importSources(): Promise<Record<string, string[]>> {
+  async importSources(): Promise<{ builtin: string[]; airbyte: string[] | null; docker_available: boolean; cloud_key_present: boolean }> {
     return request(`${kiwiBase()}/import/sources`);
   },
 
@@ -736,6 +768,34 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ from, config }),
+    });
+  },
+
+  async importAirbyteCloudCheck(from: string, config: Record<string, unknown>): Promise<{ status: string; message?: string; source_id?: string }> {
+    return request(`${kiwiBase()}/import/airbyte-cloud/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, config }),
+    });
+  },
+
+  async importAirbyteCloudDiscover(sourceId: string): Promise<{ streams: AirbyteStream[] }> {
+    return request(`${kiwiBase()}/import/airbyte-cloud/discover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_id: sourceId }),
+    });
+  },
+
+  async importAirbyteCloudConnections(): Promise<{ connections: unknown[] }> {
+    return request(`${kiwiBase()}/import/airbyte-cloud/connections`);
+  },
+
+  async importAirbyteCloudSync(connectionId: string): Promise<{ jobId: number; status: string }> {
+    return request(`${kiwiBase()}/import/airbyte-cloud/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ connection_id: connectionId }),
     });
   },
 };

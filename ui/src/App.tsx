@@ -237,8 +237,10 @@ const handleSpaceSwitch = useCallback(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const isCloudMode = typeof window !== "undefined" && (window as any).__kiwi_cloud_mode__;
   const fromPopState = useRef(false);
   useEffect(() => {
+    if (isCloudMode) return;
     if (!activePath) {
       if (window.location.pathname !== "/") {
         window.history.pushState(null, "", "/");
@@ -256,9 +258,10 @@ const handleSpaceSwitch = useCallback(() => {
         window.history.pushState(null, "", target);
       }
     }
-  }, [activePath, spaceKey]);
+  }, [activePath, spaceKey, isCloudMode]);
 
   useEffect(() => {
+    if (isCloudMode) return;
     const onPopState = () => {
       const pathname = window.location.pathname;
       if (pathname.startsWith("/page/")) {
@@ -283,7 +286,7 @@ const handleSpaceSwitch = useCallback(() => {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [isCloudMode]);
 
   function revealActivePageInTree() {
     if (!activePath) return;

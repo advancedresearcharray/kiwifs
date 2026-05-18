@@ -1,15 +1,7 @@
 /**
- * SourceIcon — brand-colored inline SVG icons for data source types.
- *
- * Uses the `simple-icons` npm package (same approach as apps/web's file-icon.tsx)
- * to render crisp, scalable brand logos as inline <svg> elements — no CDN calls,
- * no image loading, instant render, works offline.
- *
- * Covers all 19 source types supported by the kiwifs backend:
- *   API-supported (11): markdown, postgres, mysql, firestore, sqlite, mongodb,
- *                       csv, json, jsonl, notion, airtable
- *   CLI-only (8):       yaml, excel, gsheets, obsidian, confluence, dynamodb,
- *                       redis, elasticsearch
+ * SourceIcon — brand-colored inline SVG icons for import source types.
+ * Uses `simple-icons` for brand logos; hand-drawn SVG for sources without entries.
+ * Unknown types use a letter-circle fallback.
  */
 
 import {
@@ -24,11 +16,7 @@ import {
   siSqlite,
   siJson,
   siYaml,
-  siGooglesheets,
   siObsidian,
-  siConfluence,
-  siRedis,
-  siElasticsearch,
 } from "simple-icons";
 
 interface SourceIconInfo {
@@ -39,19 +27,8 @@ interface SourceIconInfo {
 
 interface SourceIconDef {
   icon: SourceIconInfo;
-  /** Override the simple-icons default hex color (without #) */
   colorOverride?: string;
 }
-
-// DynamoDB and Excel have no simple-icons entry. We provide hand-drawn SVG
-// paths so they fit the same inline-SVG pattern as the rest.
-
-/** AWS DynamoDB — simplified table icon */
-const DYNAMODB_ICON: SourceIconInfo = {
-  path: "M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L19.35 7.5 12 10.82 4.65 7.5 12 4.18zM3.5 8.35l8 4v8.3l-8-4v-8.3zm17 0v8.3l-8 4v-8.3l8-4z",
-  hex: "4053D6",
-  title: "Amazon DynamoDB",
-};
 
 /** Microsoft Excel — spreadsheet grid icon */
 const EXCEL_ICON: SourceIconInfo = {
@@ -61,50 +38,43 @@ const EXCEL_ICON: SourceIconInfo = {
 };
 
 const SOURCE_ICON_MAP: Record<string, SourceIconDef> = {
-  // ── API-supported (11) ────────────────────────────────────────────
-  markdown:      { icon: siMarkdown,        colorOverride: "5B8DEE" },
-  firestore:     { icon: siFirebase },
-  postgres:      { icon: siPostgresql },
-  mysql:         { icon: siMysql },
-  mongodb:       { icon: siMongodb },
-  notion:        { icon: siNotion,          colorOverride: "787774" },
-  airtable:      { icon: siAirtable },
-  csv:           { icon: siLibreofficecalc },
-  sqlite:        { icon: siSqlite },
-  json:          { icon: siJson,            colorOverride: "5B8DEE" },
-  jsonl:         { icon: siJson,            colorOverride: "5B8DEE" },
+  // Builtin file sources
+  markdown:        { icon: siMarkdown,        colorOverride: "5B8DEE" },
+  obsidian:        { icon: siObsidian },
+  csv:             { icon: siLibreofficecalc },
+  json:            { icon: siJson,            colorOverride: "5B8DEE" },
+  jsonl:           { icon: siJson,            colorOverride: "5B8DEE" },
+  yaml:            { icon: siYaml },
+  excel:           { icon: EXCEL_ICON },
+  sqlite:          { icon: siSqlite },
 
-  // ── CLI-only (8) ─────────────────────────────────────────────────
-  yaml:          { icon: siYaml },
-  excel:         { icon: EXCEL_ICON },
-  gsheets:       { icon: siGooglesheets },
-  obsidian:      { icon: siObsidian },
-  confluence:    { icon: siConfluence },
-  dynamodb:      { icon: DYNAMODB_ICON },
-  redis:         { icon: siRedis },
-  elasticsearch: { icon: siElasticsearch },
+  // Native network
+  postgres:        { icon: siPostgresql },
+  mysql:           { icon: siMysql },
+  mongodb:         { icon: siMongodb },
+
+  // Airbyte-powered
+  firestore:       { icon: siFirebase },
+  "firebase-rtdb": { icon: siFirebase,        colorOverride: "FFA000" },
+  notion:          { icon: siNotion,          colorOverride: "787774" },
+  airtable:        { icon: siAirtable },
 };
 
 /**
  * Renders a brand-colored inline SVG icon for a data source type.
- *
- * Falls back to a neutral gray circle with the first letter when the
- * source type has no registered icon.
+ * Falls back to a neutral gray circle with the first letter for unknown types.
  */
 export function SourceIcon({
   source,
   size = 24,
   className,
 }: {
-  /** Source type key, e.g. "postgres", "firestore" */
   source: string;
-  /** Icon size in pixels */
   size?: number;
   className?: string;
 }) {
   const def = SOURCE_ICON_MAP[source];
 
-  // Unknown source type — first-letter fallback
   if (!def) {
     return (
       <svg

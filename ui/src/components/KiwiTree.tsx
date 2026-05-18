@@ -81,9 +81,36 @@ function sortChildren(children: TreeEntry[]): TreeEntry[] {
   });
 }
 
+function treeErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("502") || lower.includes("bad gateway")) {
+    return "Cannot reach the workspace server. It may be restarting — please wait a moment.";
+  }
+  if (lower.includes("404") || lower.includes("not found")) {
+    return "This workspace could not be found. It may have been removed or the URL is incorrect.";
+  }
+  if (lower.includes("401") || lower.includes("unauthorized")) {
+    return "Your session has expired. Please refresh the page to sign in again.";
+  }
+  if (lower.includes("403") || lower.includes("forbidden")) {
+    return "You don't have access to this workspace.";
+  }
+  if (lower.includes("503") || lower.includes("unavailable")) {
+    return "The workspace server is temporarily unavailable. Please try again shortly.";
+  }
+  if (lower.includes("network") || lower.includes("fetch") || lower.includes("econnrefused") || lower.includes("failed to fetch")) {
+    return "Unable to connect. Please check your internet connection.";
+  }
+  if (lower.includes("timeout")) {
+    return "The request timed out. The server may be under heavy load.";
+  }
+  return "Something went wrong loading the file tree. Please try again.";
+}
+
 export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved, enableKanbanDrag = false }: Props) {
   const [root, setRoot] = useState<TreeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const dragPath = useRef<string | null>(null);
@@ -129,14 +156,22 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
         setError(null);
       })
       .catch((e) => setError(String(e)));
-  }, [refreshKey]);
+  }, [refreshKey, retryCount]);
 
   useTreeRevealExpansion(revealRequest, setExpanded);
 
   if (error) {
+    const friendlyMsg = treeErrorMessage(error);
     return (
-      <div className="p-3 text-sm text-destructive font-mono">
-        Tree error: {error}
+      <div className="p-4 text-center space-y-2">
+        <p className="text-sm text-muted-foreground">{friendlyMsg}</p>
+        <button
+          type="button"
+          onClick={() => { setError(null); setRetryCount((c) => c + 1); }}
+          className="text-xs text-primary hover:underline"
+        >
+          Try again
+        </button>
       </div>
     );
   }

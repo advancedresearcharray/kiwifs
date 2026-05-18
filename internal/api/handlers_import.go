@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kiwifs/kiwifs/internal/importer"
@@ -129,7 +131,11 @@ func coalesce(ss ...string) string {
 func buildAPISource(req importRequest) (importer.Source, error) {
 	// If explicit via=airbyte or airbyte_config provided, use Airbyte directly
 	if req.Via == "airbyte" || req.AirbyteConfig != nil {
-		return buildAirbyteSource(req)
+		if importer.DockerAvailable() {
+			return buildAirbyteSource(req)
+		}
+		// No Docker — try Airbyte Cloud if config is present
+		return buildAirbyteCloudSource(req)
 	}
 
 	// For builtin sources, always use native implementation
@@ -137,13 +143,49 @@ func buildAPISource(req importRequest) (importer.Source, error) {
 		return buildBuiltinSource(req)
 	}
 
-	// For network sources: try Airbyte if Docker is available and we have config
-	if req.Via != "builtin" && req.AirbyteConfig != nil && importer.DockerAvailable() {
-		return buildAirbyteSource(req)
+	// For network sources: prefer Airbyte Docker, then Cloud, then legacy
+	if req.Via != "builtin" {
+		if importer.DockerAvailable() {
+			cfg := req.AirbyteConfig
+			if cfg == nil {
+				cfg = legacyToAirbyteConfig(req)
+			}
+			if cfg != nil {
+				return buildAirbyteSource(req)
+			}
+		}
+		// No Docker but have Cloud key?
+		src, err := buildAirbyteCloudSource(req)
+		if err == nil {
+			return src, nil
+		}
 	}
 
 	// Fallback to legacy built-in connectors
 	return buildBuiltinSource(req)
+}
+
+func buildAirbyteCloudSource(req importRequest) (importer.Source, error) {
+	apiKey := os.Getenv("AIRBYTE_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("neither Docker nor Airbyte Cloud API key available")
+	}
+	config := req.AirbyteConfig
+	if config == nil {
+		config = legacyToAirbyteConfig(req)
+	}
+	if config == nil {
+		return nil, fmt.Errorf("airbyte_config is required")
+	}
+	workspaceID := os.Getenv("AIRBYTE_WORKSPACE_ID")
+	return importer.NewAirbyteCloudSource(importer.AirbyteCloudSourceOpts{
+		APIKey:      apiKey,
+		SourceType:  req.From,
+		Config:      config,
+		Streams:     req.Streams,
+		WorkspaceID: workspaceID,
+		SourceName:  req.From,
+	})
 }
 
 func buildAirbyteSource(req importRequest) (importer.Source, error) {
@@ -689,8 +731,19 @@ type airbyteRequest struct {
 
 // ImportSources lists all available import sources with their backend type.
 func (h *Handlers) ImportSources(c echo.Context) error {
-	sources := importer.ListAvailableSources(importer.DockerAvailable())
-	return c.JSON(http.StatusOK, sources)
+	dockerOK := importer.DockerAvailable()
+	cloudKey := h.cfg.Import.AirbyteAPIKey
+	if cloudKey == "" {
+		cloudKey = os.Getenv("AIRBYTE_API_KEY")
+	}
+	airbyteAvailable := dockerOK || cloudKey != ""
+	sources := importer.ListAvailableSources(airbyteAvailable)
+	return c.JSON(http.StatusOK, map[string]any{
+		"builtin":           sources["builtin"],
+		"airbyte":           sources["airbyte"],
+		"docker_available":  dockerOK,
+		"cloud_key_present": cloudKey != "",
+	})
 }
 
 // ImportAirbyteSpec returns the connector specification for an Airbyte source.
@@ -708,20 +761,39 @@ func (h *Handlers) ImportAirbyteSpec(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("no Airbyte connector for %q", req.From))
 	}
 
-	src, err := importer.NewAirbyteSource(importer.AirbyteSourceOpts{
-		Image:  image,
-		Config: map[string]any{},
-	})
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	// Prefer Docker if available
+	if importer.DockerAvailable() {
+		src, err := importer.NewAirbyteSource(importer.AirbyteSourceOpts{
+			Image:  image,
+			Config: map[string]any{},
+		})
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		ctx := c.Request().Context()
+		spec, err := src.Spec(ctx)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, spec)
 	}
 
-	ctx := c.Request().Context()
-	spec, err := src.Spec(ctx)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	// No Docker — check for Airbyte Cloud API key
+	apiKey := h.cfg.Import.AirbyteAPIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("AIRBYTE_API_KEY")
 	}
-	return c.JSON(http.StatusOK, spec)
+	if apiKey != "" {
+		return c.JSON(http.StatusOK, map[string]any{
+			"mode": "cloud",
+			"message": "Connector spec not available without Docker. " +
+				"Airbyte Cloud key is configured — use the connection wizard to configure and sync.",
+		})
+	}
+
+	return echo.NewHTTPError(http.StatusServiceUnavailable,
+		"Docker is not available and no Airbyte Cloud API key is configured. "+
+			"Either start Docker or set AIRBYTE_API_KEY in your config/environment.")
 }
 
 // ImportAirbyteCheck validates connection config against an Airbyte connector.
@@ -740,6 +812,10 @@ func (h *Handlers) ImportAirbyteCheck(c echo.Context) error {
 	}
 	if image == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("no Airbyte connector for %q", req.From))
+	}
+
+	if !importer.DockerAvailable() {
+		return h.airbyteUnavailableError(c)
 	}
 
 	src, err := importer.NewAirbyteSource(importer.AirbyteSourceOpts{
@@ -776,6 +852,10 @@ func (h *Handlers) ImportAirbyteDiscover(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("no Airbyte connector for %q", req.From))
 	}
 
+	if !importer.DockerAvailable() {
+		return h.airbyteUnavailableError(c)
+	}
+
 	src, err := importer.NewAirbyteSource(importer.AirbyteSourceOpts{
 		Image:  image,
 		Config: req.Config,
@@ -790,4 +870,337 @@ func (h *Handlers) ImportAirbyteDiscover(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(http.StatusOK, catalog)
+}
+
+// airbyteUnavailableError returns a structured error when Docker is missing.
+// If an Airbyte Cloud key is configured, hints at that path instead.
+func (h *Handlers) airbyteUnavailableError(c echo.Context) error {
+	apiKey := h.cfg.Import.AirbyteAPIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("AIRBYTE_API_KEY")
+	}
+	if apiKey != "" {
+		return echo.NewHTTPError(http.StatusServiceUnavailable,
+			"Docker is not available. Airbyte Cloud API key is configured — "+
+				"use via=airbyte-cloud or configure your connection through the Cloud dashboard.")
+	}
+	return echo.NewHTTPError(http.StatusServiceUnavailable,
+		"Docker is not available and no Airbyte Cloud API key is configured. "+
+			"Either start Docker or set AIRBYTE_API_KEY in your config/environment.")
+}
+
+// --- Airbyte Cloud handlers ---
+
+// getAirbyteCloudClient returns a configured Airbyte Cloud client or an error.
+func (h *Handlers) getAirbyteCloudClient() (*importer.AirbyteCloudClient, error) {
+	apiKey := h.cfg.Import.AirbyteAPIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("AIRBYTE_API_KEY")
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("no Airbyte Cloud API key configured (set airbyte_api_key in config or AIRBYTE_API_KEY env)")
+	}
+	return importer.NewAirbyteCloudClient(apiKey), nil
+}
+
+func (h *Handlers) getAirbyteWorkspaceID() string {
+	ws := h.cfg.Import.AirbyteWorkspaceID
+	if ws == "" {
+		ws = os.Getenv("AIRBYTE_WORKSPACE_ID")
+	}
+	return ws
+}
+
+// ImportAirbyteCloudCheck creates a temporary source in Airbyte Cloud and validates the connection.
+func (h *Handlers) ImportAirbyteCloudCheck(c echo.Context) error {
+	client, err := h.getAirbyteCloudClient()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+	}
+
+	var req struct {
+		From   string         `json:"from"`
+		Config map[string]any `json:"config"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.Config == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "config is required")
+	}
+
+	wsID := h.getAirbyteWorkspaceID()
+	if wsID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "airbyte_workspace_id not configured")
+	}
+
+	defID := importer.LookupAirbyteDefinitionID(req.From)
+	if defID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("no Airbyte Cloud definition for %q", req.From))
+	}
+
+	ctx := c.Request().Context()
+
+	sourceID, err := client.CreateSource(ctx, wsID, "kiwifs-check-"+req.From, defID, req.Config)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadGateway, fmt.Sprintf("Airbyte Cloud create source: %v", err))
+	}
+
+	result, err := client.CheckSourceConnection(ctx, sourceID)
+	if err != nil {
+		return c.JSON(http.StatusOK, map[string]any{
+			"status":    "failed",
+			"message":   err.Error(),
+			"source_id": sourceID,
+		})
+	}
+	result["source_id"] = sourceID
+	return c.JSON(http.StatusOK, result)
+}
+
+// ImportAirbyteCloudDiscover uses Airbyte Cloud API to discover streams from a source.
+func (h *Handlers) ImportAirbyteCloudDiscover(c echo.Context) error {
+	client, err := h.getAirbyteCloudClient()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+	}
+
+	var req struct {
+		SourceID string `json:"source_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.SourceID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "source_id is required")
+	}
+
+	ctx := c.Request().Context()
+	streams, err := client.DiscoverSourceSchema(ctx, req.SourceID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadGateway, fmt.Sprintf("Airbyte Cloud discover: %v", err))
+	}
+	return c.JSON(http.StatusOK, map[string]any{"streams": streams})
+}
+
+// ImportAirbyteCloudConnections lists existing Airbyte Cloud connections.
+func (h *Handlers) ImportAirbyteCloudConnections(c echo.Context) error {
+	client, err := h.getAirbyteCloudClient()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+	}
+
+	wsID := h.getAirbyteWorkspaceID()
+	var wsIDs []string
+	if wsID != "" {
+		wsIDs = []string{wsID}
+	}
+
+	ctx := c.Request().Context()
+	conns, err := client.ListConnections(ctx, wsIDs)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadGateway, fmt.Sprintf("Airbyte Cloud: %v", err))
+	}
+	return c.JSON(http.StatusOK, map[string]any{"connections": conns})
+}
+
+// ImportAirbyteCloudSync triggers a sync for an existing Airbyte Cloud connection.
+func (h *Handlers) ImportAirbyteCloudSync(c echo.Context) error {
+	client, err := h.getAirbyteCloudClient()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+	}
+
+	var req struct {
+		ConnectionID string `json:"connection_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.ConnectionID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "connection_id is required")
+	}
+
+	ctx := c.Request().Context()
+	job, err := client.TriggerSync(ctx, req.ConnectionID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadGateway, fmt.Sprintf("Airbyte Cloud sync: %v", err))
+	}
+	return c.JSON(http.StatusOK, job)
+}
+
+// --- File upload import endpoint ---
+
+const maxImportUploadSize = 256 << 20 // 256 MB
+
+// ImportUpload accepts a multipart file upload, writes it to a temp file, then
+// runs the import pipeline against it. This lets browser users drag-and-drop a
+// file (CSV, JSON, JSONL, YAML, Excel, SQLite) instead of typing server paths.
+func (h *Handlers) ImportUpload(c echo.Context) error {
+	from := c.FormValue("from")
+	if from == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "from is required")
+	}
+	supported := map[string]bool{"csv": true, "json": true, "jsonl": true, "yaml": true, "excel": true, "sqlite": true}
+	if !supported[from] {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("file upload not supported for %q — use the path-based import", from))
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "file field is required")
+	}
+	if file.Size > maxImportUploadSize {
+		return echo.NewHTTPError(http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("file exceeds %d MB limit", maxImportUploadSize>>20))
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to open upload")
+	}
+	defer src.Close()
+
+	// Write to temp file so the importer can read it
+	ext := filepath.Ext(file.Filename)
+	if ext == "" {
+		switch from {
+		case "csv":
+			ext = ".csv"
+		case "json":
+			ext = ".json"
+		case "jsonl":
+			ext = ".jsonl"
+		case "yaml":
+			ext = ".yaml"
+		case "excel":
+			ext = ".xlsx"
+		case "sqlite":
+			ext = ".db"
+		}
+	}
+	tmp, err := os.CreateTemp("", "kiwifs-import-*"+ext)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create temp file")
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := io.Copy(tmp, src); err != nil {
+		tmp.Close()
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to write temp file")
+	}
+	tmp.Close()
+
+	// Parse optional form fields
+	prefix := c.FormValue("prefix")
+	idColumn := c.FormValue("id_column")
+	table := c.FormValue("table") // for sqlite
+	query := c.FormValue("query") // for sqlite
+
+	// Determine what to call the data if no prefix given
+	if prefix == "" {
+		prefix = strings.TrimSuffix(filepath.Base(file.Filename), ext)
+	}
+
+	// Run the preview (dry_run) or actual import
+	mode := c.FormValue("mode") // "preview" or "import" (default: import)
+
+	var ir importRequest
+	ir.From = from
+	ir.Prefix = prefix
+	ir.IDColumn = idColumn
+	ir.Table = table
+	ir.Query = query
+
+	switch from {
+	case "csv", "json", "jsonl", "yaml", "excel":
+		ir.File = tmpPath
+	case "sqlite":
+		ir.DB = tmpPath
+		if ir.Table == "" && ir.Query == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "table or query is required for sqlite")
+		}
+	}
+
+	if mode == "preview" {
+		ir.Limit = 5
+		apiSrc, err := buildAPISource(ir)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		defer apiSrc.Close()
+
+		ctx := c.Request().Context()
+		records, errs := apiSrc.Stream(ctx)
+
+		var previews []previewRecord
+		count := 0
+		for rec := range records {
+			if count >= 5 {
+				break
+			}
+			fm := make(map[string]any, len(rec.Fields)+2)
+			for k, v := range rec.Fields {
+				fm[k] = v
+			}
+			fm["_source"] = apiSrc.Name()
+			fm["_source_id"] = rec.SourceID
+
+			title := rec.PrimaryKey
+			if t, ok := rec.Fields["title"].(string); ok && t != "" {
+				title = t
+			} else if t, ok := rec.Fields["name"].(string); ok && t != "" {
+				title = t
+			}
+
+			path := fmt.Sprintf("%s/%s.md", prefix, importer.SanitizePath(rec.PrimaryKey))
+			body := fmt.Sprintf("# %s\n\n> Auto-imported from %s (row %s)", title, rec.Table, rec.SourceID)
+
+			previews = append(previews, previewRecord{
+				Path:        path,
+				Frontmatter: fm,
+				BodyPreview: body,
+			})
+			count++
+		}
+		for err := range errs {
+			if err != nil && len(previews) == 0 {
+				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			}
+		}
+		return c.JSON(http.StatusOK, previewResponse{Records: previews})
+	}
+
+	// Run actual import
+	apiSrc, err := buildAPISource(ir)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	defer apiSrc.Close()
+
+	actor := sanitizeActor(c.Request().Header.Get("X-Actor"))
+	if actor == "anonymous" {
+		actor = "api-import"
+	}
+
+	opts := importer.Options{
+		Prefix:   ir.Prefix,
+		IDColumn: ir.IDColumn,
+		Actor:    actor,
+		Limit:    ir.Limit,
+	}
+
+	ctx := c.Request().Context()
+	stats, err := importer.Run(ctx, apiSrc, h.pipe, opts)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("import failed: %v", err))
+	}
+
+	return c.JSON(http.StatusOK, importResponse{
+		Imported: stats.Imported,
+		Skipped:  stats.Skipped,
+		Errors:   stats.Errors,
+	})
 }
