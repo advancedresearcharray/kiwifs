@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import ForceGraph2D, { type ForceGraphMethods as ForceGraph2DMethods } from "react-force-graph-2d";
 import ForceGraph3D, { type ForceGraphMethods as ForceGraph3DMethods } from "react-force-graph-3d";
+import * as THREE from "three";
 import { api, type GraphResponse, type TreeEntry } from "@kw/lib/api";
 import { buildResolver } from "@kw/lib/wikiLinks";
 import { titleize } from "@kw/lib/paths";
@@ -499,17 +500,65 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
 
   const nodeCanvasObject = useCallback(
     (node: GNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const radius = Math.max(2, node.radius);
+      const nx = node.x ?? 0;
+      const ny = node.y ?? 0;
+      const r = Math.max(2, node.radius);
+      const color = nodeColor(node);
+      const isDark = document.documentElement.classList.contains("dark");
+
+      const isActive = activePath === node.id;
+      const isHovered = hovered?.id === node.id;
+      const isNeighbor = hovered ? adj.get(hovered.id)?.has(node.id) : false;
+      const onPath = pathSet?.has(node.id) ?? false;
+      const highlighted = isActive || isHovered || isNeighbor || onPath || Boolean(qLower && nodeMatchesQuery(node));
+
+      const hex = color.replace("#", "");
+      const cr = parseInt(hex.slice(0, 2), 16) || 100;
+      const cg = parseInt(hex.slice(2, 4), 16) || 100;
+      const cb = parseInt(hex.slice(4, 6), 16) || 100;
+
+      // Layer 1: Outer ambient glow
+      if (!built?.performance.largeGraph || highlighted) {
+        const glowRadius = highlighted ? r * 4 : r * 2.2;
+        const glowAlpha = highlighted ? 0.35 : 0.12;
+        const glow = ctx.createRadialGradient(nx, ny, r * 0.3, nx, ny, glowRadius);
+        glow.addColorStop(0, `rgba(${cr},${cg},${cb},${glowAlpha})`);
+        glow.addColorStop(0.5, `rgba(${cr},${cg},${cb},${glowAlpha * 0.4})`);
+        glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+        ctx.beginPath();
+        ctx.arc(nx, ny, glowRadius, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
+      }
+
+      // Layer 2: Core disc with soft gradient edge
+      const coreAlpha = highlighted ? 1 : 0.85;
+      const core = ctx.createRadialGradient(nx, ny, 0, nx, ny, r);
+      core.addColorStop(0, `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 60)},${Math.min(255, cb + 60)},${coreAlpha})`);
+      core.addColorStop(0.6, `rgba(${cr},${cg},${cb},${coreAlpha})`);
+      core.addColorStop(1, `rgba(${cr},${cg},${cb},${coreAlpha * 0.6})`);
       ctx.beginPath();
-      ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI, false);
-      ctx.fillStyle = nodeColor(node);
+      ctx.arc(nx, ny, r, 0, Math.PI * 2);
+      ctx.fillStyle = core;
       ctx.fill();
 
+      // Layer 3: Bright center highlight
+      if (highlighted) {
+        const bright = ctx.createRadialGradient(nx, ny, 0, nx, ny, r * 0.5);
+        bright.addColorStop(0, `rgba(255,255,255,${isDark ? 0.7 : 0.5})`);
+        bright.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.beginPath();
+        ctx.arc(nx, ny, r * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = bright;
+        ctx.fill();
+      }
+
+      // Labels
       const shouldShowLabel =
         !built?.performance.largeGraph ||
-        activePath === node.id ||
-        hovered?.id === node.id ||
-        pathSet?.has(node.id) ||
+        isActive ||
+        isHovered ||
+        onPath ||
         Boolean(qLower && nodeMatchesQuery(node));
       if (!shouldShowLabel) return;
 
@@ -517,12 +566,72 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       ctx.font = `${fontSize}px Sans-Serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = document.documentElement.classList.contains("dark")
-        ? "rgba(255,255,255,0.88)"
-        : "rgba(20,20,20,0.82)";
-      ctx.fillText(node.label, node.x ?? 0, (node.y ?? 0) + radius + fontSize);
+      ctx.fillStyle = isDark ? "rgba(255,255,255,0.88)" : "rgba(20,20,20,0.82)";
+      ctx.fillText(node.label, nx, ny + r + fontSize);
     },
-    [activePath, built?.performance.largeGraph, hovered?.id, nodeColor, nodeMatchesQuery, pathSet, qLower],
+    [activePath, adj, built?.performance.largeGraph, hovered, nodeColor, nodeMatchesQuery, pathSet, qLower],
+  );
+
+  const glowTexture = useMemo(() => {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.2, "rgba(255,255,255,0.8)");
+    gradient.addColorStop(0.5, "rgba(255,255,255,0.2)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    return new THREE.CanvasTexture(canvas);
+  }, []);
+
+  const nodeThreeObject = useCallback(
+    (node: GNode) => {
+      const r = Math.max(2, node.radius);
+      const color = nodeColor(node);
+      const isHoveredNode = hovered?.id === node.id;
+      const highlighted =
+        activePath === node.id ||
+        isHoveredNode ||
+        (hovered ? adj.get(hovered.id)?.has(node.id) : false) ||
+        (pathSet?.has(node.id) ?? false) ||
+        Boolean(qLower && nodeMatchesQuery(node));
+
+      const group = new THREE.Group();
+
+      // Core sphere with emissive glow
+      const geometry = new THREE.SphereGeometry(r, 20, 20);
+      const material = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(color),
+        emissive: new THREE.Color(color),
+        emissiveIntensity: highlighted ? 0.8 : 0.3,
+        transparent: true,
+        opacity: highlighted ? 1 : 0.88,
+        shininess: 60,
+      });
+      const sphere = new THREE.Mesh(geometry, material);
+      group.add(sphere);
+
+      // Outer glow sprite
+      const spriteMaterial = new THREE.SpriteMaterial({
+        map: glowTexture,
+        color: new THREE.Color(color),
+        transparent: true,
+        opacity: highlighted ? 0.6 : 0.2,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      const glowScale = highlighted ? r * 6 : r * 3.5;
+      sprite.scale.set(glowScale, glowScale, 1);
+      group.add(sprite);
+
+      return group;
+    },
+    [activePath, adj, glowTexture, hovered, nodeColor, nodeMatchesQuery, pathSet, qLower],
   );
 
   return (
@@ -732,13 +841,12 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
               nodeVal="radius"
               nodeLabel="label"
               nodeVisibility={nodeVisible}
-              nodeColor={nodeColor}
-              nodeOpacity={0.92}
-              nodeResolution={20}
+              nodeThreeObject={nodeThreeObject}
+              nodeThreeObjectExtend={false}
               linkVisibility={linkVisible}
               linkColor={linkColor3D}
               linkWidth={linkWidth3D}
-              linkOpacity={0.28}
+              linkOpacity={0.35}
               linkResolution={4}
               linkDirectionalParticles={(link) => linkWidth(link) > 1 ? 2 : 0}
               linkDirectionalParticleWidth={(link) => linkWidth(link) > 2 ? 3 : 1.5}
