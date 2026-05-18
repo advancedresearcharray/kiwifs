@@ -710,6 +710,34 @@ export const api = {
       body: JSON.stringify(creds ?? {}),
     });
   },
+
+  async importSources(): Promise<Record<string, string[]>> {
+    return request(`${kiwiBase()}/import/sources`);
+  },
+
+  async importAirbyteSpec(from: string): Promise<AirbyteSpecResponse> {
+    return request(`${kiwiBase()}/import/airbyte/spec`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from }),
+    });
+  },
+
+  async importAirbyteCheck(from: string, config: Record<string, unknown>): Promise<AirbyteCheckResponse> {
+    return request(`${kiwiBase()}/import/airbyte/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, config }),
+    });
+  },
+
+  async importAirbyteDiscover(from: string, config: Record<string, unknown>): Promise<AirbyteDiscoverResponse> {
+    return request(`${kiwiBase()}/import/airbyte/discover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, config }),
+    });
+  },
 };
 
 // --- Timeline types ---
@@ -835,6 +863,46 @@ export type ImportConnection = {
   last_run?: string;
   last_stats?: { imported: number; skipped: number; errors?: string[] };
   created_at: string;
+};
+
+export type AirbyteSpecProperty = {
+  type?: string;
+  title?: string;
+  description?: string;
+  default?: unknown;
+  enum?: string[];
+  const?: unknown;
+  airbyte_secret?: boolean;
+  order?: number;
+  oneOf?: AirbyteSpecProperty[];
+  properties?: Record<string, AirbyteSpecProperty>;
+  required?: string[];
+};
+
+export type AirbyteSpecResponse = {
+  connectionSpecification: {
+    title?: string;
+    description?: string;
+    type: string;
+    properties: Record<string, AirbyteSpecProperty>;
+    required?: string[];
+  };
+};
+
+export type AirbyteCheckResponse = {
+  status: "SUCCEEDED" | "FAILED";
+  message?: string;
+};
+
+export type AirbyteStream = {
+  name: string;
+  json_schema?: Record<string, unknown>;
+  supported_sync_modes?: string[];
+  namespace?: string;
+};
+
+export type AirbyteDiscoverResponse = {
+  streams: AirbyteStream[];
 };
 
 // --- Publish types ---
