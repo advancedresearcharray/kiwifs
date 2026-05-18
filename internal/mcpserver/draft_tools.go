@@ -48,14 +48,14 @@ func handleDraftWrite(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		draftID, _ := args["draft_id"].(string)
-		path, _ := args["path"].(string)
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		content, _ := args["content"].(string)
 		actor, _ := args["actor"].(string)
 		if draftID == "" {
 			return mcp.NewToolResultError("draft_id is required"), nil
-		}
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
 		}
 		if content == "" {
 			return mcp.NewToolResultError("content is required"), nil
@@ -75,12 +75,12 @@ func handleDraftRead(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		draftID, _ := args["draft_id"].(string)
-		path, _ := args["path"].(string)
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		if draftID == "" {
 			return mcp.NewToolResultError("draft_id is required"), nil
-		}
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
 		}
 		content, etag, err := b.DraftRead(ctx, draftID, path)
 		if err != nil {

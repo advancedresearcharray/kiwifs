@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -100,7 +99,6 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 		mcp.Required(),
 		mcp.Description("Relative path like pages/auth.md"),
 		mcp.MaxLength(500),
-		mcp.Pattern(`^[^.][a-zA-Z0-9/_\-. ]+$`),
 	}
 
 	s.AddTools(
@@ -143,7 +141,7 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_tree",
 				mcp.WithDescription("List files and folders in the knowledge base. Use this to understand what knowledge exists before reading or writing. Returns an indented tree with file sizes."),
-				mcp.WithString("path", mcp.Description("Subtree root, defaults to root"), mcp.MaxLength(500), mcp.Pattern(`^[^.][a-zA-Z0-9/_\-. ]*$`)),
+				mcp.WithString("path", mcp.Description("Subtree root, defaults to root"), mcp.MaxLength(500)),
 				mcp.WithNumber("depth", mcp.Description("Tree depth (default 3)")),
 				mcp.WithBoolean("include_permalinks", mcp.Description("When true, include permalink URLs next to each file. Default false.")),
 				mcp.WithReadOnlyHintAnnotation(true),
@@ -468,8 +466,8 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleTimeline(b),
 		},
 		server.ServerTool{
-		Tool: mcp.NewTool("kiwi_context",
-			mcp.WithDescription("Get the knowledge base's schema, agent playbook, current index, and rules in one call. Call this first when connecting to understand structure, conventions, and user-defined rules."),
+			Tool: mcp.NewTool("kiwi_context",
+				mcp.WithDescription("Get the knowledge base's schema, agent playbook, current index, and rules in one call. Call this first when connecting to understand structure, conventions, and user-defined rules."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
@@ -863,9 +861,11 @@ func registerResources(s *server.MCPServer, b Backend, opts Options) {
 		),
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			path := strings.TrimPrefix(req.Params.URI, "kiwi://file/")
-			if decoded, err := url.PathUnescape(path); err == nil {
-				path = decoded
+			resolved, err := resolveMCPPath(path, mcpPathReadOnly)
+			if err != nil {
+				return nil, err
 			}
+			path = resolved.Path
 			content, _, err := b.ReadFile(ctx, path)
 			if err != nil {
 				if isNotFound(err) {
@@ -890,8 +890,12 @@ func registerResources(s *server.MCPServer, b Backend, opts Options) {
 		),
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			path := strings.TrimPrefix(req.Params.URI, "kiwi://tree/")
-			if decoded, err := url.PathUnescape(path); err == nil {
-				path = decoded
+			if strings.TrimSpace(path) != "" {
+				resolved, err := resolveMCPPath(path, mcpPathReadOnly)
+				if err != nil {
+					return nil, err
+				}
+				path = resolved.Path
 			}
 			text, err := treeText(ctx, b, path, 3, "")
 			if err != nil {
@@ -926,9 +930,9 @@ func loadSchema(opts Options, b Backend, ctx context.Context) string {
 func handleRead(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		content, etag, err := b.ReadFile(ctx, path)
 		if err != nil {
@@ -959,13 +963,13 @@ func handleRead(b Backend) server.ToolHandlerFunc {
 func handleWrite(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		content, _ := args["content"].(string)
 		actor, _ := args["actor"].(string)
 		provenance, _ := args["provenance"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
-		}
 		if content == "" {
 			return mcp.NewToolResultError("content is required"), nil
 		}
@@ -992,7 +996,10 @@ func handleSearch(b Backend) server.ToolHandlerFunc {
 			limit = 50
 		}
 		offset := intArg(args, "offset", 0)
-		prefix, _ := args["path_prefix"].(string)
+		prefix, err := optionalReadOnlyPathArg(args, "path_prefix")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		results, err := b.Search(ctx, query, limit+1, offset, prefix)
 		if err != nil {
@@ -1028,7 +1035,10 @@ func handleSearch(b Backend) server.ToolHandlerFunc {
 func handleTree(b Backend, opts Options) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
+		path, err := optionalReadOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		if path == "" {
 			path = "/"
 		}
@@ -1186,9 +1196,9 @@ func handleQueryMeta(b Backend) server.ToolHandlerFunc {
 func handleViewRefresh(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		changed, err := b.ViewRefresh(ctx, path)
 		if err != nil {
@@ -1242,7 +1252,10 @@ func handleAggregate(b Backend) server.ToolHandlerFunc {
 		}
 		calc, _ := args["calculate"].(string)
 		where, _ := args["where"].(string)
-		pathPrefix, _ := args["path_prefix"].(string)
+		pathPrefix, err := optionalReadOnlyPathArg(args, "path_prefix")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		results, err := b.Aggregate(ctx, groupBy, calc, where, pathPrefix)
 		if err != nil {
@@ -1315,7 +1328,10 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 func handleAnalytics(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		scope, _ := args["scope"].(string)
+		scope, err := optionalReadOnlyPathArg(args, "scope")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		staleThreshold := intArg(args, "stale_threshold", 30)
 
 		raw, err := b.Analytics(ctx, scope, staleThreshold)
@@ -1425,9 +1441,9 @@ func handleContext(b Backend) server.ToolHandlerFunc {
 func handleHealthCheck(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		raw, err := b.HealthCheckPage(ctx, path)
@@ -1503,13 +1519,13 @@ func handleChanges(b Backend) server.ToolHandlerFunc {
 func handleAppend(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		content, _ := args["content"].(string)
 		separator, _ := args["separator"].(string)
 		actor, _ := args["actor"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
-		}
 		if content == "" {
 			return mcp.NewToolResultError("content is required"), nil
 		}
@@ -1569,9 +1585,9 @@ func handleSearchSemantic(b Backend) server.ToolHandlerFunc {
 func handleBacklinks(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		links, err := b.Backlinks(ctx, path)
 		if err != nil {
@@ -1592,11 +1608,11 @@ func handleBacklinks(b Backend) server.ToolHandlerFunc {
 func handleDelete(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		actor, _ := args["actor"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
+		actor, _ := args["actor"].(string)
 		if actor == "" {
 			actor = "mcp-agent"
 		}
@@ -1613,12 +1629,15 @@ func handleDelete(b Backend) server.ToolHandlerFunc {
 func handleRename(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		from, _ := args["from"].(string)
-		to, _ := args["to"].(string)
-		actor, _ := args["actor"].(string)
-		if from == "" || to == "" {
-			return mcp.NewToolResultError("from and to are required"), nil
+		from, err := mutationPathArg(args, "from")
+		if err != nil {
+			return mcp.NewToolResultError("from: " + err.Error()), nil
 		}
+		to, err := mutationPathArg(args, "to")
+		if err != nil {
+			return mcp.NewToolResultError("to: " + err.Error()), nil
+		}
+		actor, _ := args["actor"].(string)
 		if actor == "" {
 			actor = "mcp-agent"
 		}
@@ -1663,7 +1682,12 @@ func handleBulkWrite(b Backend) server.ToolHandlerFunc {
 						p, _ := m["path"].(string)
 						c, _ := m["content"].(string)
 						if p != "" {
-							files = append(files, BulkFile{Path: p, Content: c})
+							argsForPath := map[string]any{"path": p}
+							resolvedPath, err := mutationPathArg(argsForPath, "path")
+							if err != nil {
+								return mcp.NewToolResultError(err.Error()), nil
+							}
+							files = append(files, BulkFile{Path: resolvedPath, Content: c})
 						}
 					}
 				}
@@ -1672,7 +1696,12 @@ func handleBulkWrite(b Backend) server.ToolHandlerFunc {
 					p, _ := m["path"].(string)
 					c, _ := m["content"].(string)
 					if p != "" {
-						files = append(files, BulkFile{Path: p, Content: c})
+						argsForPath := map[string]any{"path": p}
+						resolvedPath, err := mutationPathArg(argsForPath, "path")
+						if err != nil {
+							return mcp.NewToolResultError(err.Error()), nil
+						}
+						files = append(files, BulkFile{Path: resolvedPath, Content: c})
 					}
 				}
 			}
@@ -1965,7 +1994,10 @@ func handleExport(b Backend, _ Options) server.ToolHandlerFunc {
 			}
 		}
 
-		pathPrefix, _ := args["path"].(string)
+		pathPrefix, err := optionalReadOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		includeContent, _ := args["include_content"].(bool)
 		includeEmb, _ := args["include_embeddings"].(bool)
 		limit := intArg(args, "limit", 0)
@@ -2034,9 +2066,9 @@ func extractFrontmatterFromContent(content string) map[string]any {
 func handleSuggestions(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		limit := intArg(args, "limit", 10)
 		results, err := b.Suggestions(ctx, path, limit)
@@ -2061,9 +2093,9 @@ func handleSuggestions(b Backend) server.ToolHandlerFunc {
 func handleEmbeddings(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		result, err := b.Embeddings(ctx, path)
 		if err != nil {
@@ -2164,10 +2196,13 @@ func handleGraphCommunities(b Backend) server.ToolHandlerFunc {
 func handleGraphPath(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		from, _ := args["from"].(string)
-		to, _ := args["to"].(string)
-		if from == "" || to == "" {
-			return mcp.NewToolResultError("from and to are required"), nil
+		from, err := readOnlyPathArg(args, "from")
+		if err != nil {
+			return mcp.NewToolResultError("from: " + err.Error()), nil
+		}
+		to, err := readOnlyPathArg(args, "to")
+		if err != nil {
+			return mcp.NewToolResultError("to: " + err.Error()), nil
 		}
 		result, err := b.GraphPath(ctx, from, to)
 		if err != nil {
@@ -2190,9 +2225,9 @@ func handleGraphPath(b Backend) server.ToolHandlerFunc {
 
 func handlePeek(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		path, _ := req.GetArguments()["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(req.GetArguments(), "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		result, err := b.Peek(ctx, path)
 		if err != nil {
@@ -2206,9 +2241,9 @@ func handlePeek(b Backend) server.ToolHandlerFunc {
 func handleSection(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		heading, _ := args["heading"].(string)
 		index := -1
@@ -2229,9 +2264,9 @@ func handleSection(b Backend) server.ToolHandlerFunc {
 
 func handleGraphWalk(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		path, _ := req.GetArguments()["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(req.GetArguments(), "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		includeSiblings := true
 		if v, ok := req.GetArguments()["include_siblings"].(bool); ok {
@@ -2257,7 +2292,10 @@ func handleVelocity(b Backend) server.ToolHandlerFunc {
 			period = "30d"
 		}
 		limit := intArg(args, "limit", 20)
-		pathPrefix, _ := args["path_prefix"].(string)
+		pathPrefix, err := optionalReadOnlyPathArg(args, "path_prefix")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		result, err := b.Velocity(ctx, period, limit, pathPrefix)
 		if err != nil {
@@ -2303,7 +2341,10 @@ func handleTimeline(b Backend) server.ToolHandlerFunc {
 		offset := intArg(args, "offset", 0)
 		actor, _ := args["actor"].(string)
 		eventType, _ := args["type"].(string)
-		pathPrefix, _ := args["path_prefix"].(string)
+		pathPrefix, err := optionalReadOnlyPathArg(args, "path_prefix")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		result, err := b.Timeline(ctx, limit, offset, actor, eventType, pathPrefix)
 		if err != nil {
@@ -2392,7 +2433,10 @@ func handleEligible(b Backend) server.ToolHandlerFunc {
 		if l, ok := args["limit"].(float64); ok && l > 0 {
 			limit = int(l)
 		}
-		pathPrefix, _ := args["path_prefix"].(string)
+		pathPrefix, err := optionalReadOnlyPathArg(args, "path_prefix")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		result, err := b.Eligible(ctx, limit, pathPrefix)
 		if err != nil {
@@ -2418,9 +2462,9 @@ func handleEligible(b Backend) server.ToolHandlerFunc {
 func handleClaim(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		actor, _ := args["actor"].(string)
@@ -2456,9 +2500,9 @@ func handleClaim(b Backend) server.ToolHandlerFunc {
 func handleRelease(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		actor, _ := args["actor"].(string)
@@ -2560,7 +2604,10 @@ func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) ht
 func handleLint(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		content, _ := args["content"].(string)
 
 		var data []byte
@@ -2768,9 +2815,9 @@ func handleCanvasList(b Backend) server.ToolHandlerFunc {
 func handleCanvasRead(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		content, err := b.CanvasRead(ctx, path)
@@ -2787,13 +2834,12 @@ func handleCanvasRead(b Backend) server.ToolHandlerFunc {
 func handleCanvasWrite(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		content, _ := args["content"].(string)
 		actor, _ := args["actor"].(string)
-
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
-		}
 		if content == "" {
 			return mcp.NewToolResultError("content is required"), nil
 		}
@@ -2814,9 +2860,9 @@ func handleCanvasWrite(b Backend) server.ToolHandlerFunc {
 func handleVersions(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
+		path, err := readOnlyPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		versions, err := b.Versions(ctx, path)
@@ -2945,13 +2991,12 @@ func handleWorkflowSave(b Backend) server.ToolHandlerFunc {
 func handleWorkflowAdvance(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		path, _ := args["path"].(string)
+		path, err := mutationPathArg(args, "path")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		targetState, _ := args["target_state"].(string)
 		actor, _ := args["actor"].(string)
-
-		if path == "" {
-			return mcp.NewToolResultError("path is required"), nil
-		}
 		if targetState == "" {
 			return mcp.NewToolResultError("target_state is required"), nil
 		}
