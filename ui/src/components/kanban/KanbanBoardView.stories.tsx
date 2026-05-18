@@ -16,12 +16,14 @@ const sampleWorkflows: WorkflowDef[] = [
       { name: "Review", color: "#8b5cf6" },
       { name: "Done", color: "#22c55e" },
     ],
-    transitions: {
-      "To Do": ["In Progress"],
-      "In Progress": ["To Do", "Review"],
-      Review: ["In Progress", "Done"],
-      Done: ["Review"],
-    },
+    transitions: [
+      { from: "To Do", to: "In Progress" },
+      { from: "In Progress", to: "To Do" },
+      { from: "In Progress", to: "Review" },
+      { from: "Review", to: "In Progress" },
+      { from: "Review", to: "Done" },
+      { from: "Done", to: "Review" },
+    ],
   },
 ];
 

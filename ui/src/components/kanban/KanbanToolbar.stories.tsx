@@ -14,7 +14,12 @@ const sampleWorkflows: WorkflowDef[] = [
       { name: "Review", color: "#f59e0b" },
       { name: "Published", color: "#22c55e" },
     ],
-    transitions: { Draft: ["Review"], Review: ["Draft", "Published"], Published: ["Review"] },
+    transitions: [
+      { from: "Draft", to: "Review" },
+      { from: "Review", to: "Draft" },
+      { from: "Review", to: "Published" },
+      { from: "Published", to: "Review" },
+    ],
   },
   {
     name: "bug tracker",
@@ -23,7 +28,12 @@ const sampleWorkflows: WorkflowDef[] = [
       { name: "In Progress", color: "#f59e0b" },
       { name: "Closed", color: "#6b7280" },
     ],
-    transitions: { Open: ["In Progress"], "In Progress": ["Open", "Closed"], Closed: ["In Progress"] },
+    transitions: [
+      { from: "Open", to: "In Progress" },
+      { from: "In Progress", to: "Open" },
+      { from: "In Progress", to: "Closed" },
+      { from: "Closed", to: "In Progress" },
+    ],
   },
 ];
 

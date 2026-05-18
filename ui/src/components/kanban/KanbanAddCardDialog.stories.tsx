@@ -14,7 +14,12 @@ const sampleWorkflows: WorkflowDef[] = [
       { name: "Review", color: "#f59e0b" },
       { name: "Published", color: "#22c55e" },
     ],
-    transitions: { Draft: ["Review"], Review: ["Draft", "Published"], Published: ["Review"] },
+    transitions: [
+      { from: "Draft", to: "Review" },
+      { from: "Review", to: "Draft" },
+      { from: "Review", to: "Published" },
+      { from: "Published", to: "Review" },
+    ],
   },
 ];
 
