@@ -485,6 +485,18 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     [hovered, pathSet],
   );
 
+  const linkColor3D = useCallback(
+    (link: GLink) => {
+      const source = link.source as GNode;
+      const target = link.target as GNode;
+      if (pathSet?.has(source.id) && pathSet.has(target.id)) return "#f59e0b";
+      return document.documentElement.classList.contains("dark") ? "#d1d5db" : "#64748b";
+    },
+    [pathSet],
+  );
+
+  const linkWidth3D = useCallback((link: GLink) => Math.max(0.6, linkWidth(link)), [linkWidth]);
+
   const nodeCanvasObject = useCallback(
     (node: GNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const radius = Math.max(2, node.radius);
@@ -724,11 +736,13 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
               nodeOpacity={0.92}
               nodeResolution={20}
               linkVisibility={linkVisible}
-              linkColor={linkColor}
-              linkWidth={linkWidth}
+              linkColor={linkColor3D}
+              linkWidth={linkWidth3D}
+              linkOpacity={0.28}
+              linkResolution={4}
               linkDirectionalParticles={(link) => linkWidth(link) > 1 ? 2 : 0}
               linkDirectionalParticleWidth={(link) => linkWidth(link) > 2 ? 3 : 1.5}
-              linkDirectionalParticleColor={linkColor}
+              linkDirectionalParticleColor={linkColor3D}
               onNodeHover={(node) => handleNodeHover(node as GNode | null)}
               onNodeClick={(node) => handleNodeClick(node as GNode)}
               showPointerCursor={(obj) => Boolean(obj && "label" in obj)}
