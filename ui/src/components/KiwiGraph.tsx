@@ -1,9 +1,9 @@
-// Knowledge graph — PixiJS (WebGL) + d3-force, inspired by Obsidian's graph.
+// Knowledge graph — react-force-graph 3D + d3-force, inspired by Obsidian's graph.
 // Nodes = markdown pages, edges = [[wiki-link]] references.
 // Features: community coloring, PageRank sizing, hover glow, search highlight,
 // directory/tag filtering, shortest-path finder, zoom-adaptive labels.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Loader2,
@@ -12,16 +12,8 @@ import {
   Search as SearchIcon,
   Tag,
 } from "lucide-react";
-import {
-  forceSimulation,
-  forceLink,
-  forceManyBody,
-  forceCenter,
-  forceCollide,
-  type Simulation,
-  type SimulationNodeDatum,
-  type SimulationLinkDatum,
-} from "d3-force";
+import ForceGraph2D, { type ForceGraphMethods as ForceGraph2DMethods } from "react-force-graph-2d";
+import ForceGraph3D, { type ForceGraphMethods as ForceGraph3DMethods } from "react-force-graph-3d";
 import { api, type GraphResponse, type TreeEntry } from "@kw/lib/api";
 import { buildResolver } from "@kw/lib/wikiLinks";
 import { titleize } from "@kw/lib/paths";
@@ -56,9 +48,18 @@ type Props = {
   onClose: () => void;
 };
 
+type GraphMode = "2d" | "3d";
+
+type GraphApi = {
+  d3Force: (forceName: string) =>
+    | { strength?: (value: number) => unknown; distanceMax?: (value: number) => unknown; distance?: (value: number) => unknown }
+    | undefined;
+  zoomToFit: (durationMs?: number, padding?: number, nodeFilter?: (node: GNode) => boolean) => unknown;
+};
+
 // ── Internal node/link types for the simulation ──────────────────────────────
 
-interface GNode extends SimulationNodeDatum {
+interface GNode {
   id: string;
   label: string;
   dir: string;
@@ -67,9 +68,18 @@ interface GNode extends SimulationNodeDatum {
   pagerank: number;
   radius: number;
   color: string;
+  x?: number;
+  y?: number;
+  z?: number;
+  vx?: number;
+  vy?: number;
+  vz?: number;
+  fx?: number;
+  fy?: number;
+  fz?: number;
 }
 
-interface GLink extends SimulationLinkDatum<GNode> {
+interface GLink {
   source: string | GNode;
   target: string | GNode;
 }
@@ -77,17 +87,6 @@ interface GLink extends SimulationLinkDatum<GNode> {
 function topDir(path: string): string {
   const i = path.indexOf("/");
   return i < 0 ? "(root)" : path.slice(0, i);
-}
-
-// ── Hex color helpers ────────────────────────────────────────────────────────
-
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace("#", "");
-  return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
-  ];
 }
 
 // ── Build graph data from API response ───────────────────────────────────────
@@ -236,29 +235,14 @@ function bfsPath(
   return [];
 }
 
-type RenderState = {
-  dirFilter: string;
-  tagFilter: string;
-  query: string;
-  hovered: GNode | null;
-  activePath?: string | null;
-  foundPath: string[] | null;
-  pathFindActive: boolean;
-};
-
 // ═════════════════════════════════════════════════════════════════════════════
 // Main component
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const simRef = useRef<Simulation<GNode, GLink> | null>(null);
-  const rafRef = useRef<number>(0);
-  const dataRef = useRef<BuiltGraph | null>(null);
-  const adjRef = useRef<Map<string, Set<string>>>(new Map());
-  const needsRedrawRef = useRef(true);
-  const simActiveRef = useRef(true);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const graph2DRef = useRef<ForceGraph2DMethods<GNode, GLink> | undefined>(undefined);
+  const graph3DRef = useRef<ForceGraph3DMethods<GNode, GLink> | undefined>(undefined);
 
   const [resp, setResp] = useState<GraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -266,6 +250,8 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
   const [tagFilter, setTagFilter] = useState("");
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<GNode | null>(null);
+  const [graphSize, setGraphSize] = useState({ width: 0, height: 0 });
+  const [graphMode, setGraphMode] = useState<GraphMode>("2d");
 
   const [sizeByPageRank, setSizeByPageRank] = useState(true);
   const [colorByCommunity, setColorByCommunity] = useState(true);
@@ -274,40 +260,6 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
   const [pathSource, setPathSource] = useState<string | null>(null);
   const [pathTarget, setPathTarget] = useState<string | null>(null);
   const [foundPath, setFoundPath] = useState<string[] | null>(null);
-
-  // Transform & viewport state (stored in refs for perf — no re-renders)
-  const transformRef = useRef({ x: 0, y: 0, scale: 1 });
-  const draggingRef = useRef<{
-    node: GNode | null;
-    pan: boolean;
-    startX: number;
-    startY: number;
-    startTx: number;
-    startTy: number;
-  } | null>(null);
-  const mouseRef = useRef({ x: 0, y: 0 });
-  const renderStateRef = useRef<RenderState>({
-    dirFilter: "",
-    tagFilter: "",
-    query: "",
-    hovered: null,
-    activePath,
-    foundPath: null,
-    pathFindActive: false,
-  });
-
-  useEffect(() => {
-    renderStateRef.current = {
-      dirFilter,
-      tagFilter,
-      query,
-      hovered,
-      activePath,
-      foundPath,
-      pathFindActive,
-    };
-    needsRedrawRef.current = true;
-  }, [dirFilter, tagFilter, query, hovered, activePath, foundPath, pathFindActive]);
 
   // Fetch graph data
   useEffect(() => {
@@ -326,7 +278,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     };
   }, [tree]);
 
-  // Read theme once
+  // Read theme once and refresh when the root class changes.
   const themeRef = useRef<KiwiGraphTheme>(readKiwiGraphTheme());
   useEffect(() => {
     const obs = new MutationObserver(() => {
@@ -339,485 +291,107 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     return () => obs.disconnect();
   }, []);
 
-  // ── Core: build graph + simulation + canvas render loop ──────────────────
-
   useEffect(() => {
-    if (!resp || !containerRef.current) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
 
-    const data = buildGraphData(resp, tree, themeRef.current, sizeByPageRank, colorByCommunity);
-    dataRef.current = data;
-
-    if (data.nodes.length === 0) return;
-
-    // Build adjacency for path-finding
-    const adj = new Map<string, Set<string>>();
-    for (const n of data.nodes) adj.set(n.id, new Set());
-    for (const l of data.links) {
-      const s = typeof l.source === "string" ? l.source : l.source.id;
-      const t = typeof l.target === "string" ? l.target : l.target.id;
-      adj.get(s)?.add(t);
-      adj.get(t)?.add(s);
-    }
-    adjRef.current = adj;
-
-    // Canvas setup
-    const container = containerRef.current;
-    let canvas = canvasRef.current;
-    if (!canvas) {
-      canvas = document.createElement("canvas");
-      canvas.style.cssText =
-        "position:absolute;inset:0;width:100%;height:100%;display:block;";
-      container.appendChild(canvas);
-      canvasRef.current = canvas;
-    }
-    const ctx = canvas.getContext("2d")!;
-
-    function resize() {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = container.getBoundingClientRect();
-      canvas!.width = rect.width * dpr;
-      canvas!.height = rect.height * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(container);
-
-    // Center transform
-    const rect = container.getBoundingClientRect();
-    transformRef.current = { x: rect.width / 2, y: rect.height / 2, scale: 1 };
-
-    // d3-force simulation
-    const perf = data.performance.d3;
-    const sim = forceSimulation<GNode>(data.nodes)
-      .force(
-        "link",
-        forceLink<GNode, GLink>(data.links)
-          .id((d) => d.id)
-          .distance(perf.linkDistance)
-          .strength(perf.linkStrength),
-      )
-      .force("charge", forceManyBody().strength(perf.chargeStrength).distanceMax(perf.chargeDistanceMax))
-      .force("center", forceCenter(0, 0))
-      .force(
-        "collide",
-        forceCollide<GNode>()
-          .radius((d) => d.radius + 2)
-          .iterations(perf.collideIterations),
-      )
-      .alphaDecay(perf.alphaDecay)
-      .velocityDecay(perf.velocityDecay);
-
-    simRef.current = sim;
-
-    // ── Render loop (Canvas 2D — no WebGL) ────────────────────────────────
-
-    function render() {
-      if (!needsRedrawRef.current && !simActiveRef.current) {
-        rafRef.current = requestAnimationFrame(render);
-        return;
-      }
-      needsRedrawRef.current = false;
-
-      const w = canvas!.clientWidth;
-      const h = canvas!.clientHeight;
-      const { x: tx, y: ty, scale } = transformRef.current;
-
-      // Viewport bounds in world space for culling offscreen elements
-      const vpMinX = -tx / scale;
-      const vpMinY = -ty / scale;
-      const vpMaxX = (w - tx) / scale;
-      const vpMaxY = (h - ty) / scale;
-      const vpPad = 50 / scale;
-
-      ctx.clearRect(0, 0, w, h);
-      ctx.save();
-      ctx.translate(tx, ty);
-      ctx.scale(scale, scale);
-
-      const isDark = document.documentElement.classList.contains("dark");
-      const {
-        dirFilter: renderDirFilter,
-        tagFilter: renderTagFilter,
-        query: renderQuery,
-        hovered: renderHovered,
-        activePath: renderActivePath,
-        foundPath: renderFoundPath,
-      } = renderStateRef.current;
-      const qLower = renderQuery.trim().toLowerCase();
-      const pathSet = renderFoundPath ? new Set(renderFoundPath) : null;
-
-      const hoveredNeighbors = new Set<string>();
-      if (renderHovered) {
-        hoveredNeighbors.add(renderHovered.id);
-        for (const n of adjRef.current.get(renderHovered.id) || [])
-          hoveredNeighbors.add(n);
-      }
-
-      // ── Draw edges ───────────────────────────────────────────────────────
-
-      for (const link of data.links) {
-        const s = link.source as GNode;
-        const t = link.target as GNode;
-        const sx = s.x, sy = s.y, tx = t.x, ty = t.y;
-        if (sx == null || sy == null || tx == null || ty == null) continue;
-
-        // Viewport culling: skip if both endpoints are offscreen
-        if (
-          (sx < vpMinX - vpPad && tx < vpMinX - vpPad) ||
-          (sx > vpMaxX + vpPad && tx > vpMaxX + vpPad) ||
-          (sy < vpMinY - vpPad && ty < vpMinY - vpPad) ||
-          (sy > vpMaxY + vpPad && ty > vpMaxY + vpPad)
-        ) continue;
-
-        // Filtering
-        if (renderDirFilter && s.dir !== renderDirFilter && t.dir !== renderDirFilter) continue;
-        if (renderTagFilter) {
-          if (!s.tags.includes(renderTagFilter) && !t.tags.includes(renderTagFilter))
-            continue;
-        }
-
-        let alpha = 0.15;
-        let width = 0.5;
-        let color = isDark ? "rgba(255,255,255," : "rgba(100,100,100,";
-
-        if (pathSet) {
-          const onPath = pathSet.has(s.id) && pathSet.has(t.id);
-          if (onPath) {
-            alpha = 0.9;
-            width = 2.5;
-            color = "rgba(245,158,11,";
-          } else {
-            alpha = 0.04;
-          }
-        } else if (renderHovered) {
-          const connected =
-            (s.id === renderHovered.id || t.id === renderHovered.id);
-          alpha = connected ? 0.6 : 0.04;
-          width = connected ? 1.5 : 0.3;
-        }
-
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(tx, ty);
-        ctx.strokeStyle = `${color}${alpha})`;
-        ctx.lineWidth = width / scale;
-        ctx.stroke();
-      }
-
-      // ── Draw nodes ───────────────────────────────────────────────────────
-
-      for (const node of data.nodes) {
-        const nx = node.x, ny = node.y;
-        if (nx == null || ny == null) continue;
-
-        // Viewport culling: skip nodes entirely offscreen
-        const cullR = (node.radius / scale) * 4;
-        if (nx < vpMinX - cullR || nx > vpMaxX + cullR || ny < vpMinY - cullR || ny > vpMaxY + cullR) continue;
-
-        // Filtering
-        if (renderDirFilter && node.dir !== renderDirFilter) continue;
-        if (renderTagFilter && !node.tags.includes(renderTagFilter)) continue;
-
-        const isActive = renderActivePath === node.id;
-        const isHovered = renderHovered?.id === node.id;
-        const isNeighbor = hoveredNeighbors.has(node.id);
-        const onPath = pathSet?.has(node.id) ?? false;
-        const queryMatch = qLower
-          ? node.id.toLowerCase().includes(qLower) ||
-            node.label.toLowerCase().includes(qLower)
-          : true;
-
-        let nodeAlpha = 1;
-        if (pathSet && !onPath) nodeAlpha = 0.1;
-        else if (renderHovered && !isNeighbor) nodeAlpha = 0.15;
-        else if (qLower && !queryMatch) nodeAlpha = 0.1;
-
-        const r = node.radius / scale;
-        const [cr, cg, cb] = hexToRgb(node.color);
-        const highlighted = isHovered || isActive || onPath;
-
-        // Layer 1: Outer ambient glow. Large graphs skip non-highlight glows to
-        // avoid creating thousands of radial gradients per animation frame.
-        if (!data.performance.largeGraph || highlighted) {
-          const glowRadius = highlighted ? r * 4 : r * 2.2;
-          const glowAlpha = highlighted ? 0.35 * nodeAlpha : 0.12 * nodeAlpha;
-          const glow = ctx.createRadialGradient(
-            nx, ny, r * 0.3,
-            nx, ny, glowRadius,
-          );
-          glow.addColorStop(0, `rgba(${cr},${cg},${cb},${glowAlpha})`);
-          glow.addColorStop(0.5, `rgba(${cr},${cg},${cb},${glowAlpha * 0.4})`);
-          glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-          ctx.beginPath();
-          ctx.arc(nx, ny, glowRadius, 0, Math.PI * 2);
-          ctx.fillStyle = glow;
-          ctx.fill();
-        }
-
-        // Layer 2: Core disc — soft-edged via gradient (no hard stroke)
-        const core = ctx.createRadialGradient(nx, ny, 0, nx, ny, r);
-        const coreAlpha = nodeAlpha * (highlighted ? 1 : 0.85);
-        core.addColorStop(0, `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 60)},${Math.min(255, cb + 60)},${coreAlpha})`);
-        core.addColorStop(0.6, `rgba(${cr},${cg},${cb},${coreAlpha})`);
-        core.addColorStop(1, `rgba(${cr},${cg},${cb},${coreAlpha * 0.6})`);
-        ctx.beginPath();
-        ctx.arc(nx, ny, r, 0, Math.PI * 2);
-        ctx.fillStyle = core;
-        ctx.fill();
-
-        // Layer 3 (highlight only): Bright center point
-        if (highlighted && nodeAlpha > 0.5) {
-          const bright = ctx.createRadialGradient(nx, ny, 0, nx, ny, r * 0.5);
-          bright.addColorStop(0, `rgba(255,255,255,${isDark ? 0.7 : 0.5})`);
-          bright.addColorStop(1, `rgba(255,255,255,0)`);
-          ctx.beginPath();
-          ctx.arc(nx, ny, r * 0.5, 0, Math.PI * 2);
-          ctx.fillStyle = bright;
-          ctx.fill();
-        }
-
-        // Labels — zoom-adaptive visibility
-        const showLabel =
-          (data.performance.renderLabelsByDefault && scale > 0.6) ||
-          isHovered ||
-          isActive ||
-          onPath ||
-          (qLower && queryMatch);
-        if (showLabel && nodeAlpha > 0.3) {
-          const fontSize = Math.max(10, 12 / scale);
-          ctx.font = `${highlighted ? "600" : "400"} ${fontSize}px system-ui, -apple-system, sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "top";
-
-          const labelY = ny + r + 4 / scale;
-          const textAlpha = Math.min(nodeAlpha, scale > 0.6 ? 1 : 0.8);
-
-          // Halo behind text for readability
-          ctx.fillStyle = isDark
-            ? `rgba(0,0,0,${textAlpha * 0.6})`
-            : `rgba(255,255,255,${textAlpha * 0.6})`;
-          ctx.fillText(node.label, nx + 0.5 / scale, labelY + 0.5 / scale);
-
-          ctx.fillStyle = isDark
-            ? `rgba(220,220,220,${textAlpha})`
-            : `rgba(40,40,40,${textAlpha})`;
-          ctx.fillText(node.label, nx, labelY);
-        }
-      }
-
-      ctx.restore();
-      rafRef.current = requestAnimationFrame(render);
-    }
-
-    // Start the render loop
-    rafRef.current = requestAnimationFrame(render);
-    needsRedrawRef.current = true;
-    simActiveRef.current = true;
-
-    sim.on("tick", () => {
-      needsRedrawRef.current = true;
-    });
-    sim.on("end", () => {
-      simActiveRef.current = false;
-      needsRedrawRef.current = true;
-    });
-
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      sim.stop();
-      ro.disconnect();
+    const updateSize = () => {
+      const rect = wrapper.getBoundingClientRect();
+      setGraphSize({
+        width: Math.max(1, Math.floor(rect.width)),
+        height: Math.max(1, Math.floor(rect.height)),
+      });
     };
+
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(wrapper);
+    return () => ro.disconnect();
+  }, []);
+
+  const built = useMemo(() => {
+    if (!resp) return null;
+    return buildGraphData(resp, tree, themeRef.current, sizeByPageRank, colorByCommunity);
   }, [resp, tree, sizeByPageRank, colorByCommunity]);
 
-  // ── Mouse interactions ──────────────────────────────────────────────────────
-
-  const screenToWorld = useCallback(
-    (sx: number, sy: number): [number, number] => {
-      const { x: tx, y: ty, scale } = transformRef.current;
-      return [(sx - tx) / scale, (sy - ty) / scale];
-    },
-    [],
+  // react-force-graph treats graphData identity changes as data updates.
+  // Keep this object stable across hover/search/path re-renders so pointer
+  // interaction does not restart the force engine or perturb the camera.
+  const graphData = useMemo(
+    () => ({ nodes: built?.nodes ?? [], links: built?.links ?? [] }),
+    [built],
   );
 
-  const findNodeAt = useCallback(
-    (wx: number, wy: number): GNode | null => {
-      if (!dataRef.current) return null;
-      const { scale } = transformRef.current;
-      for (let i = dataRef.current.nodes.length - 1; i >= 0; i--) {
-        const n = dataRef.current.nodes[i]!;
-        if (n.x == null || n.y == null) continue;
-        // Filtering: skip hidden nodes
-        if (dirFilter && n.dir !== dirFilter) continue;
-        if (tagFilter && !n.tags.includes(tagFilter)) continue;
-        const dx = wx - n.x;
-        const dy = wy - n.y;
-        const r = n.radius / scale + 4 / scale;
-        if (dx * dx + dy * dy < r * r) return n;
-      }
-      return null;
-    },
+  const adj = useMemo(() => {
+    const next = new Map<string, Set<string>>();
+    if (!built) return next;
+    for (const n of built.nodes) next.set(n.id, new Set());
+    for (const l of built.links) {
+      const s = typeof l.source === "string" ? l.source : l.source.id;
+      const t = typeof l.target === "string" ? l.target : l.target.id;
+      next.get(s)?.add(t);
+      next.get(t)?.add(s);
+    }
+    return next;
+  }, [built]);
+
+  const pathSet = useMemo(() => foundPath ? new Set(foundPath) : null, [foundPath]);
+  const qLower = query.trim().toLowerCase();
+
+  const nodeMatchesQuery = useCallback(
+    (node: GNode) =>
+      !qLower ||
+      node.id.toLowerCase().includes(qLower) ||
+      node.label.toLowerCase().includes(qLower),
+    [qLower],
+  );
+
+  const nodeVisible = useCallback(
+    (node: GNode) =>
+      (!dirFilter || node.dir === dirFilter) &&
+      (!tagFilter || node.tags.includes(tagFilter)),
     [dirFilter, tagFilter],
   );
 
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const [wx, wy] = screenToWorld(sx, sy);
-      const node = findNodeAt(wx, wy);
-
-      if (node) {
-        draggingRef.current = {
-          node,
-          pan: false,
-          startX: sx,
-          startY: sy,
-          startTx: 0,
-          startTy: 0,
-        };
-        node.fx = node.x;
-        node.fy = node.y;
-        simActiveRef.current = true;
-        simRef.current?.alphaTarget(0.3).restart();
-      } else {
-        draggingRef.current = {
-          node: null,
-          pan: true,
-          startX: sx,
-          startY: sy,
-          startTx: transformRef.current.x,
-          startTy: transformRef.current.y,
-        };
-      }
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  const linkVisible = useCallback(
+    (link: GLink) => {
+      const source = link.source as GNode;
+      const target = link.target as GNode;
+      return nodeVisible(source) && nodeVisible(target);
     },
-    [screenToWorld, findNodeAt],
+    [nodeVisible],
   );
 
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      mouseRef.current = { x: sx, y: sy };
-
-      const drag = draggingRef.current;
-      if (drag) {
-        needsRedrawRef.current = true;
-        if (drag.pan) {
-          transformRef.current.x = drag.startTx + (sx - drag.startX);
-          transformRef.current.y = drag.startTy + (sy - drag.startY);
-        } else if (drag.node) {
-          const [wx, wy] = screenToWorld(sx, sy);
-          drag.node.fx = wx;
-          drag.node.fy = wy;
-        }
-      } else {
-        const [wx, wy] = screenToWorld(sx, sy);
-        const node = findNodeAt(wx, wy);
-        setHovered(node);
-        if (containerRef.current) {
-          containerRef.current.style.cursor = node ? "pointer" : "grab";
-        }
-      }
-    },
-    [screenToWorld, findNodeAt],
-  );
-
-  const handlePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      const drag = draggingRef.current;
-      if (drag?.node) {
-        const dx = Math.abs(
-          e.clientX -
-            (containerRef.current?.getBoundingClientRect().left ?? 0) -
-            drag.startX,
-        );
-        const dy = Math.abs(
-          e.clientY -
-            (containerRef.current?.getBoundingClientRect().top ?? 0) -
-            drag.startY,
-        );
-        // Treat as click if barely moved
-        if (dx < 4 && dy < 4) {
-          if (pathFindActive) {
-            if (!pathSource) setPathSource(drag.node.id);
-            else if (!pathTarget) setPathTarget(drag.node.id);
-            else {
-              setPathSource(drag.node.id);
-              setPathTarget(null);
-              setFoundPath(null);
-            }
-          } else {
-            onNavigate(drag.node.id);
-          }
-        }
-        drag.node.fx = null;
-        drag.node.fy = null;
-        simRef.current?.alphaTarget(0);
-      }
-      draggingRef.current = null;
-    },
-    [onNavigate, pathFindActive, pathSource, pathTarget],
+  const getGraphApi = useCallback(
+    (): GraphApi | undefined => (graphMode === "2d" ? graph2DRef.current : graph3DRef.current) as GraphApi | undefined,
+    [graphMode],
   );
 
   const fitGraphToView = useCallback(() => {
-    const data = dataRef.current;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!data || !rect || data.nodes.length === 0) return;
+    getGraphApi()?.zoomToFit(400, 48, nodeVisible);
+  }, [getGraphApi, nodeVisible]);
 
-    const positioned = data.nodes.filter(
-      (n) => typeof n.x === "number" && typeof n.y === "number",
-    );
-    if (positioned.length === 0) return;
+  useEffect(() => {
+    const graphApi = getGraphApi();
+    if (!built || !graphApi) return;
 
-    const xs = positioned.map((n) => n.x!);
-    const ys = positioned.map((n) => n.y!);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const graphWidth = Math.max(1, maxX - minX);
-    const graphHeight = Math.max(1, maxY - minY);
-    const padding = 48;
-    const scale = Math.max(
-      0.1,
-      Math.min(
-        8,
-        Math.min(
-          (rect.width - padding * 2) / graphWidth,
-          (rect.height - padding * 2) / graphHeight,
-        ),
-      ),
-    );
+    const perf = built.performance.d3;
+    const charge = graphApi.d3Force("charge");
+    charge?.strength?.(perf.chargeStrength);
+    charge?.distanceMax?.(perf.chargeDistanceMax);
 
-    transformRef.current = {
-      x: rect.width / 2 - ((minX + maxX) / 2) * scale,
-      y: rect.height / 2 - ((minY + maxY) / 2) * scale,
-      scale,
-    };
-    needsRedrawRef.current = true;
-  }, []);
+    const link = graphApi.d3Force("link");
+    link?.distance?.(perf.linkDistance);
+    link?.strength?.(perf.linkStrength);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    needsRedrawRef.current = true;
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
-    const t = transformRef.current;
-    const newScale = Math.max(0.1, Math.min(8, t.scale * factor));
-    const ratio = newScale / t.scale;
-    t.x = mx - (mx - t.x) * ratio;
-    t.y = my - (my - t.y) * ratio;
-    t.scale = newScale;
-  }, []);
+    // Keep the same charge/link tuning in both 2D and 3D modes.
+    // Do not force d3ReheatSimulation() here: react-force-graph-3d creates
+    // its internal layout during graphData update. Reheating before that layout
+    // exists starts the animation loop early and crashes on state.layout.tick().
+
+    const timeout = window.setTimeout(() => fitGraphToView(), 250);
+    return () => window.clearTimeout(timeout);
+  }, [built, fitGraphToView, getGraphApi]);
 
   // Path finding
   useEffect(() => {
@@ -825,9 +399,9 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       setFoundPath(null);
       return;
     }
-    const path = bfsPath(adjRef.current, pathSource, pathTarget);
+    const path = bfsPath(adj, pathSource, pathTarget);
     setFoundPath(path.length > 0 ? path : null);
-  }, [pathSource, pathTarget]);
+  }, [adj, pathSource, pathTarget]);
 
   useEffect(() => {
     if (!pathFindActive) {
@@ -837,7 +411,107 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     }
   }, [pathFindActive]);
 
-  const built = dataRef.current;
+  const handleNodeHover = useCallback((node: GNode | null) => {
+    setHovered((current) => (current?.id === node?.id ? current : node));
+  }, []);
+
+  const handleNodeClick = useCallback(
+    (node: GNode) => {
+      if (pathFindActive) {
+        if (!pathSource) setPathSource(node.id);
+        else if (!pathTarget) setPathTarget(node.id);
+        else {
+          setPathSource(node.id);
+          setPathTarget(null);
+          setFoundPath(null);
+        }
+      } else {
+        onNavigate(node.id);
+      }
+    },
+    [onNavigate, pathFindActive, pathSource, pathTarget],
+  );
+
+  const nodeColor = useCallback(
+    (node: GNode) => {
+      const isActive = activePath === node.id;
+      const isHovered = hovered?.id === node.id;
+      const isNeighbor = hovered ? adj.get(hovered.id)?.has(node.id) : false;
+      const onPath = pathSet?.has(node.id) ?? false;
+      const queryMatch = nodeMatchesQuery(node);
+
+      if (isActive || isHovered || onPath || (qLower && queryMatch)) return node.color;
+      if (pathSet && !onPath) return "#243042";
+      if (hovered && !isNeighbor) return "#243042";
+      if (qLower && !queryMatch) return "#243042";
+      return node.color;
+    },
+    [activePath, adj, hovered, nodeMatchesQuery, pathSet, qLower],
+  );
+
+  const linkColor = useCallback(
+    (link: GLink) => {
+      const source = link.source as GNode;
+      const target = link.target as GNode;
+      const isDark = document.documentElement.classList.contains("dark");
+      let alpha = 0.15;
+      let color = isDark ? "rgba(255,255,255," : "rgba(100,100,100,";
+
+      if (pathSet) {
+        const onPath = pathSet.has(source.id) && pathSet.has(target.id);
+        if (onPath) {
+          alpha = 0.9;
+          color = "rgba(245,158,11,";
+        } else {
+          alpha = 0.04;
+        }
+      } else if (hovered) {
+        const connected = source.id === hovered.id || target.id === hovered.id;
+        alpha = connected ? 0.6 : 0.04;
+      }
+      return `${color}${alpha})`;
+    },
+    [hovered, pathSet],
+  );
+
+  const linkWidth = useCallback(
+    (link: GLink) => {
+      const source = link.source as GNode;
+      const target = link.target as GNode;
+      if (pathSet?.has(source.id) && pathSet.has(target.id)) return 2.5;
+      if (hovered && (source.id === hovered.id || target.id === hovered.id)) return 1.5;
+      return 0.5;
+    },
+    [hovered, pathSet],
+  );
+
+  const nodeCanvasObject = useCallback(
+    (node: GNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const radius = Math.max(2, node.radius);
+      ctx.beginPath();
+      ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI, false);
+      ctx.fillStyle = nodeColor(node);
+      ctx.fill();
+
+      const shouldShowLabel =
+        !built?.performance.largeGraph ||
+        activePath === node.id ||
+        hovered?.id === node.id ||
+        pathSet?.has(node.id) ||
+        Boolean(qLower && nodeMatchesQuery(node));
+      if (!shouldShowLabel) return;
+
+      const fontSize = Math.max(3, 12 / globalScale);
+      ctx.font = `${fontSize}px Sans-Serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = document.documentElement.classList.contains("dark")
+        ? "rgba(255,255,255,0.88)"
+        : "rgba(20,20,20,0.82)";
+      ctx.fillText(node.label, node.x ?? 0, (node.y ?? 0) + radius + fontSize);
+    },
+    [activePath, built?.performance.largeGraph, hovered?.id, nodeColor, nodeMatchesQuery, pathSet, qLower],
+  );
 
   return (
     <div className="h-full w-full flex flex-col relative">
@@ -911,6 +585,18 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
 
       {/* ── Analytics bar ── */}
       <div className="flex flex-wrap items-center gap-2 px-3 sm:px-6 py-1.5 border-b border-border/50 bg-card/50 text-xs shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">Mode</span>
+          <Select value={graphMode} onValueChange={(value) => setGraphMode(value as GraphMode)}>
+            <SelectTrigger className="h-6 w-20 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="2d">2D</SelectItem>
+              <SelectItem value="3d">3D</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <label className="flex items-center gap-1.5 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -969,8 +655,8 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         )}
       </div>
 
-      {/* ── Canvas area ── */}
-      <div className="flex-1 relative min-h-0">
+      {/* ── Graph area ── */}
+      <div ref={wrapperRef} className="flex-1 relative min-h-0">
         {error && (
           <div className="absolute inset-0 grid place-items-center text-sm text-destructive font-mono z-10">
             {error}
@@ -989,15 +675,72 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
           </div>
         )}
 
-        <div
-          ref={containerRef}
-          className="absolute inset-0"
-          style={{ cursor: "grab", touchAction: "none" }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onWheel={handleWheel}
-        />
+        {built && built.nodes.length > 0 && graphSize.width > 0 && graphSize.height > 0 && (
+          graphMode === "2d" ? (
+            <ForceGraph2D<GNode, GLink>
+              ref={graph2DRef}
+              width={graphSize.width}
+              height={graphSize.height}
+              graphData={graphData}
+              nodeId="id"
+              nodeVal="radius"
+              nodeLabel="label"
+              nodeVisibility={nodeVisible}
+              nodeColor={nodeColor}
+              nodeCanvasObject={nodeCanvasObject}
+              nodePointerAreaPaint={(node, color, ctx) => {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(node.x ?? 0, node.y ?? 0, Math.max(6, node.radius), 0, 2 * Math.PI, false);
+                ctx.fill();
+              }}
+              linkVisibility={linkVisible}
+              linkColor={linkColor}
+              linkWidth={linkWidth}
+              linkDirectionalParticles={(link) => linkWidth(link) > 1 ? 2 : 0}
+              linkDirectionalParticleWidth={(link) => linkWidth(link) > 2 ? 3 : 1.5}
+              linkDirectionalParticleColor={linkColor}
+              onNodeHover={(node) => handleNodeHover(node as GNode | null)}
+              onNodeClick={(node) => handleNodeClick(node as GNode)}
+              showPointerCursor={(obj) => Boolean(obj && "label" in obj)}
+              backgroundColor="rgba(0,0,0,0)"
+              minZoom={0.15}
+              maxZoom={8}
+              d3AlphaDecay={built.performance.d3.alphaDecay}
+              d3VelocityDecay={built.performance.d3.velocityDecay}
+              cooldownTicks={built.performance.largeGraph ? 120 : undefined}
+            />
+          ) : (
+            <ForceGraph3D<GNode, GLink>
+              ref={graph3DRef}
+              width={graphSize.width}
+              height={graphSize.height}
+              graphData={graphData}
+              nodeId="id"
+              nodeVal="radius"
+              nodeLabel="label"
+              nodeVisibility={nodeVisible}
+              nodeColor={nodeColor}
+              nodeOpacity={0.92}
+              nodeResolution={20}
+              linkVisibility={linkVisible}
+              linkColor={linkColor}
+              linkWidth={linkWidth}
+              linkDirectionalParticles={(link) => linkWidth(link) > 1 ? 2 : 0}
+              linkDirectionalParticleWidth={(link) => linkWidth(link) > 2 ? 3 : 1.5}
+              linkDirectionalParticleColor={linkColor}
+              onNodeHover={(node) => handleNodeHover(node as GNode | null)}
+              onNodeClick={(node) => handleNodeClick(node as GNode)}
+              showPointerCursor={(obj) => Boolean(obj && "label" in obj)}
+              backgroundColor="rgba(0,0,0,0)"
+              showNavInfo={false}
+              numDimensions={3}
+              d3AlphaDecay={built.performance.d3.alphaDecay}
+              d3VelocityDecay={built.performance.d3.velocityDecay}
+              cooldownTicks={built.performance.largeGraph ? 120 : undefined}
+            />
+          )
+        )}
 
         {/* Hover tooltip */}
         {hovered && (
@@ -1010,8 +753,8 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground mt-1">
               <span>
-                {adjRef.current.get(hovered.id)?.size ?? 0} connection
-                {(adjRef.current.get(hovered.id)?.size ?? 0) === 1 ? "" : "s"}
+                {adj.get(hovered.id)?.size ?? 0} connection
+                {(adj.get(hovered.id)?.size ?? 0) === 1 ? "" : "s"}
               </span>
               <span>
                 PR: {(hovered.pagerank * 100).toFixed(2)}%
@@ -1072,7 +815,9 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
             "pointer-events-none z-20",
           )}
         >
-          drag to pan · scroll to zoom
+          {graphMode === "2d"
+            ? "drag to pan · scroll to zoom"
+            : "drag to rotate · right-drag to pan · scroll to zoom"}
         </div>
       </div>
     </div>
