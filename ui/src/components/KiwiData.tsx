@@ -3,6 +3,7 @@ import { ArrowLeft, Database, Play, Plus, RefreshCw, Trash2 } from "lucide-react
 import { Button } from "./ui/button";
 import { api, type ImportConnection } from "../lib/api";
 import { KiwiImportWizard } from "./KiwiImportWizard";
+import { SourceIcon } from "./SourceIcon";
 
 /**
  * KiwiData — the data sources management view.
@@ -57,19 +58,6 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const sourceIcon = (from: string) => {
-    switch (from) {
-      case "firestore": return "\uD83D\uDD25";
-      case "postgres": return "\uD83D\uDC18";
-      case "mysql": return "\uD83D\uDC2C";
-      case "mongodb": return "\uD83C\uDF43";
-      case "notion": return "\u270D\uFE0F";
-      case "airtable": return "\uD83D\uDCCA";
-      case "csv": return "\uD83D\uDCC4";
-      default: return "\uD83D\uDD17";
-    }
-  };
-
   if (wizardOpen) {
     return (
       <KiwiImportWizard
@@ -96,7 +84,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
         </button>
 
         <div className="flex items-center gap-3 mb-2">
-          <span className="text-2xl">{sourceIcon(selectedConn.from)}</span>
+          <SourceIcon source={selectedConn.from} size={28} />
           <h1 className="text-xl font-semibold">{selectedConn.name}</h1>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
@@ -173,7 +161,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-xl">{sourceIcon(conn.from)}</span>
+                  <SourceIcon source={conn.from} size={22} />
                   <div>
                     <div className="font-medium">{conn.name}</div>
                     <div className="text-xs text-muted-foreground">

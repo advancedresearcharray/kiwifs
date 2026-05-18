@@ -2,18 +2,21 @@ import { useCallback, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle, Loader2, Upload } from "lucide-react";
 import { Button } from "./ui/button";
 import { api } from "../lib/api";
+import { SourceIcon } from "./SourceIcon";
 
-type SourceType = "markdown" | "firestore" | "postgres" | "mysql" | "mongodb" | "notion" | "airtable" | "csv";
+type SourceType = "markdown" | "firestore" | "postgres" | "mysql" | "mongodb" | "notion" | "airtable" | "csv" | "json" | "sqlite";
 
-const SOURCE_OPTIONS: { type: SourceType; label: string; icon: string; description: string }[] = [
-  { type: "markdown", label: "Markdown", icon: "\uD83D\uDCC1", description: "Folder of .md files" },
-  { type: "firestore", label: "Firestore", icon: "\uD83D\uDD25", description: "Google Cloud Firestore" },
-  { type: "postgres", label: "PostgreSQL", icon: "\uD83D\uDC18", description: "PostgreSQL database" },
-  { type: "mysql", label: "MySQL", icon: "\uD83D\uDC2C", description: "MySQL / MariaDB" },
-  { type: "mongodb", label: "MongoDB", icon: "\uD83C\uDF43", description: "MongoDB collection" },
-  { type: "notion", label: "Notion", icon: "\u270D\uFE0F", description: "Notion database" },
-  { type: "airtable", label: "Airtable", icon: "\uD83D\uDCCA", description: "Airtable base" },
-  { type: "csv", label: "CSV File", icon: "\uD83D\uDCC4", description: "CSV / JSON file" },
+const SOURCE_OPTIONS: { type: SourceType; label: string; description: string }[] = [
+  { type: "markdown", label: "Markdown", description: "Folder of .md files" },
+  { type: "firestore", label: "Firestore", description: "Google Cloud Firestore" },
+  { type: "postgres", label: "PostgreSQL", description: "PostgreSQL database" },
+  { type: "mysql", label: "MySQL", description: "MySQL / MariaDB" },
+  { type: "mongodb", label: "MongoDB", description: "MongoDB collection" },
+  { type: "notion", label: "Notion", description: "Notion database" },
+  { type: "airtable", label: "Airtable", description: "Airtable base" },
+  { type: "csv", label: "CSV", description: "CSV file" },
+  { type: "json", label: "JSON", description: "JSON / JSONL file" },
+  { type: "sqlite", label: "SQLite", description: "SQLite database" },
 ];
 
 type WizardState = {
@@ -29,8 +32,10 @@ type WizardState = {
   tableId: string;
   apiKey: string;
   credentials: unknown | null;
-  // File/path params (markdown)
+  // File/path params
   path: string;
+  file: string;
+  db: string;
   // Browse results
   tables: { name: string; estimated_count?: number }[];
   selectedTable: string;
@@ -55,6 +60,8 @@ const initialState: WizardState = {
   apiKey: "",
   credentials: null,
   path: "",
+  file: "",
+  db: "",
   tables: [],
   selectedTable: "",
   prefix: "",
@@ -146,6 +153,11 @@ export function KiwiImportWizard({
         params.base_id = state.baseId;
         params.table_id = state.tableId || state.selectedTable;
         params.api_key = state.apiKey;
+      } else if (state.sourceType === "csv" || state.sourceType === "json") {
+        params.file = state.file;
+      } else if (state.sourceType === "sqlite") {
+        params.db = state.db;
+        params.table = state.selectedTable;
       }
 
       const resp = await api.importPreview(params as any);
@@ -187,6 +199,11 @@ export function KiwiImportWizard({
         params.base_id = state.baseId;
         params.table_id = state.tableId || state.selectedTable;
         params.api_key = state.apiKey;
+      } else if (state.sourceType === "csv" || state.sourceType === "json") {
+        params.file = state.file;
+      } else if (state.sourceType === "sqlite") {
+        params.db = state.db;
+        params.table = state.selectedTable;
       }
 
       const result = await api.importRun(params as any);
@@ -198,8 +215,8 @@ export function KiwiImportWizard({
     }
   };
 
-  // Can we skip browse? (markdown/Notion/Airtable don't have browse)
-  const skipsBrowse = state.sourceType === "markdown" || state.sourceType === "notion" || state.sourceType === "airtable" || state.sourceType === "csv";
+  // Can we skip browse? Only firestore/postgres/mysql/mongodb have browse endpoints.
+  const skipsBrowse = state.sourceType === "markdown" || state.sourceType === "notion" || state.sourceType === "airtable" || state.sourceType === "csv" || state.sourceType === "json" || state.sourceType === "sqlite";
 
   return (
     <div className="max-w-3xl mx-auto p-6">
@@ -232,7 +249,7 @@ export function KiwiImportWizard({
               onClick={() => update({ sourceType: opt.type, step: 2 })}
               className="border border-border rounded-lg p-4 hover:bg-accent/50 text-left transition-colors"
             >
-              <div className="text-2xl mb-2">{opt.icon}</div>
+              <div className="mb-2"><SourceIcon source={opt.type} size={28} /></div>
               <div className="font-medium text-sm">{opt.label}</div>
               <div className="text-xs text-muted-foreground">{opt.description}</div>
             </button>
@@ -389,6 +406,47 @@ export function KiwiImportWizard({
             </label>
           )}
 
+          {(state.sourceType === "csv" || state.sourceType === "json") && (
+            <label className="block">
+              <span className="text-sm font-medium">File Path</span>
+              <input
+                type="text"
+                value={state.file}
+                onChange={(e) => update({ file: e.target.value })}
+                placeholder={state.sourceType === "csv" ? "/path/to/data.csv" : "/path/to/data.json"}
+                className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {state.sourceType === "csv" ? "Path to the CSV file" : "Path to the JSON or JSONL file"}
+              </p>
+            </label>
+          )}
+
+          {state.sourceType === "sqlite" && (
+            <>
+              <label className="block">
+                <span className="text-sm font-medium">Database File</span>
+                <input
+                  type="text"
+                  value={state.db}
+                  onChange={(e) => update({ db: e.target.value })}
+                  placeholder="/path/to/database.db"
+                  className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium">Table Name</span>
+                <input
+                  type="text"
+                  value={state.selectedTable}
+                  onChange={(e) => update({ selectedTable: e.target.value })}
+                  placeholder="my_table"
+                  className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                />
+              </label>
+            </>
+          )}
+
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             {skipsBrowse ? (
@@ -397,6 +455,10 @@ export function KiwiImportWizard({
                 let tableName = "data";
                 if (state.sourceType === "markdown") {
                   tableName = state.path.split(/[/\\]/).filter(Boolean).pop() || "docs";
+                } else if (state.sourceType === "csv" || state.sourceType === "json") {
+                  tableName = state.file.split(/[/\\]/).filter(Boolean).pop()?.replace(/\.\w+$/, "") || "data";
+                } else if (state.sourceType === "sqlite") {
+                  tableName = state.selectedTable || "data";
                 } else if (state.databaseId) {
                   tableName = state.databaseId;
                 } else if (state.tableId) {
