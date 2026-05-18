@@ -30,6 +30,7 @@ type Config struct {
 	Workflow   WorkflowConfig   `toml:"workflow"`
 	Drafts     DraftsConfig     `toml:"drafts"`
 	Audit      AuditConfig      `toml:"audit"`
+	Import     ImportConfig     `toml:"import"`
 	// Space holds per-space settings (visibility, etc.) loaded from
 	// the space's own .kiwi/config.toml [space] section.
 	Space SpaceSettingsConfig `toml:"space"`
@@ -45,6 +46,38 @@ type Config struct {
 // B.3 — Audit log config.
 type AuditConfig struct {
 	Enabled bool `toml:"enabled"` // default false
+}
+
+// ImportConfig controls the data import subsystem — Airbyte integration,
+// connector preferences, and API key configuration.
+type ImportConfig struct {
+	// AirbyteAPIKey is an Airbyte Cloud API key for users without Docker.
+	// Supports ${ENV} expansion: api_key = "${AIRBYTE_API_KEY}"
+	AirbyteAPIKey string `toml:"airbyte_api_key"`
+
+	// AirbyteWorkspaceID is the Airbyte Cloud workspace to use.
+	AirbyteWorkspaceID string `toml:"airbyte_workspace_id"`
+
+	// DockerHost overrides DOCKER_HOST for connector execution.
+	DockerHost string `toml:"docker_host"`
+
+	// PreferAirbyte routes network sources through Airbyte even when
+	// legacy built-in connectors are available. Default: true when Docker
+	// is available or airbyte_api_key is set.
+	PreferAirbyte *bool `toml:"prefer_airbyte"`
+
+	// ImagePrefix overrides the default "airbyte/" prefix for connector images.
+	// Useful for private registries: e.g. "registry.example.com/airbyte/"
+	ImagePrefix string `toml:"image_prefix"`
+
+	// PullPolicy controls when Docker images are pulled.
+	// "always" | "if-not-present" | "never". Default: "if-not-present"
+	PullPolicy string `toml:"pull_policy"`
+}
+
+// IsPreferAirbyte returns true unless explicitly set to false.
+func (c ImportConfig) IsPreferAirbyte() bool {
+	return c.PreferAirbyte == nil || *c.PreferAirbyte
 }
 
 // B.5 — Config-driven webhook entry (statically declared in config.toml).

@@ -34,6 +34,12 @@ type importRequest struct {
 	Limit       int             `json:"limit"`
 	Credentials json.RawMessage `json:"credentials,omitempty"` // Service account JSON (Firestore)
 	APIKey      string          `json:"api_key,omitempty"`     // API key (Notion, Airtable)
+
+	// Airbyte-specific fields
+	AirbyteConfig map[string]any `json:"airbyte_config,omitempty"` // Raw Airbyte connector config
+	AirbyteImage  string         `json:"airbyte_image,omitempty"`  // Custom Docker image override
+	Streams       []string       `json:"streams,omitempty"`        // Specific streams to sync
+	Via           string         `json:"via,omitempty"`            // "airbyte" | "airbyte-cloud" | "builtin" (auto if empty)
 }
 
 type importResponse struct {
@@ -121,6 +127,81 @@ func coalesce(ss ...string) string {
 }
 
 func buildAPISource(req importRequest) (importer.Source, error) {
+	// If explicit via=airbyte or airbyte_config provided, use Airbyte directly
+	if req.Via == "airbyte" || req.AirbyteConfig != nil {
+		return buildAirbyteSource(req)
+	}
+
+	// For builtin sources, always use native implementation
+	if importer.IsBuiltinSource(req.From) {
+		return buildBuiltinSource(req)
+	}
+
+	// For network sources: try Airbyte if Docker is available and we have config
+	if req.Via != "builtin" && req.AirbyteConfig != nil && importer.DockerAvailable() {
+		return buildAirbyteSource(req)
+	}
+
+	// Fallback to legacy built-in connectors
+	return buildBuiltinSource(req)
+}
+
+func buildAirbyteSource(req importRequest) (importer.Source, error) {
+	image := req.AirbyteImage
+	if image == "" {
+		image = importer.LookupAirbyteImage(req.From)
+	}
+	if image == "" {
+		return nil, fmt.Errorf("no Airbyte connector image found for %q", req.From)
+	}
+
+	config := req.AirbyteConfig
+	if config == nil {
+		// Try to build Airbyte config from legacy request fields
+		config = legacyToAirbyteConfig(req)
+	}
+	if config == nil {
+		return nil, fmt.Errorf("airbyte_config is required for Airbyte-based import")
+	}
+
+	return importer.NewAirbyteSource(importer.AirbyteSourceOpts{
+		Image:      image,
+		Config:     config,
+		Streams:    req.Streams,
+		SourceName: req.From,
+	})
+}
+
+// legacyToAirbyteConfig translates traditional import request fields into
+// Airbyte connector config format for backward compatibility.
+func legacyToAirbyteConfig(req importRequest) map[string]any {
+	switch req.From {
+	case "postgres":
+		if req.DSN == "" {
+			return nil
+		}
+		return map[string]any{"host": req.DSN, "port": 5432, "database": req.Database}
+	case "notion":
+		if req.APIKey == "" {
+			return nil
+		}
+		return map[string]any{"credentials": map[string]any{"auth_type": "token", "token": req.APIKey}}
+	case "airtable":
+		if req.APIKey == "" {
+			return nil
+		}
+		return map[string]any{"credentials": map[string]any{"auth_method": "api_key", "api_key": req.APIKey}}
+	case "firestore":
+		if len(req.Credentials) == 0 {
+			return nil
+		}
+		return map[string]any{"project_id": req.Project, "service_account_key_json": string(req.Credentials)}
+	default:
+		return nil
+	}
+}
+
+func buildBuiltinSource(req importRequest) (importer.Source, error) {
 	switch req.From {
 	case "postgres":
 		if req.DSN == "" {
@@ -210,8 +291,20 @@ func buildAPISource(req importRequest) (importer.Source, error) {
 		}
 		return importer.NewMarkdown(req.Path, importer.MarkdownOpts{})
 	default:
+		// Try Airbyte as final fallback for unknown source types
+		if importer.DockerAvailable() {
+			image := importer.LookupAirbyteImage(req.From)
+			if image != "" && req.AirbyteConfig != nil {
+				return importer.NewAirbyteSource(importer.AirbyteSourceOpts{
+					Image:      image,
+					Config:     req.AirbyteConfig,
+					Streams:    req.Streams,
+					SourceName: req.From,
+				})
+			}
+		}
 		supported := strings.Join([]string{"markdown", "postgres", "mysql", "firestore", "sqlite", "mongodb", "csv", "json", "jsonl", "notion", "airtable"}, ", ")
-		return nil, fmt.Errorf("unknown source type %q (supported: %s)", req.From, supported)
+		return nil, fmt.Errorf("unknown source type %q (supported: %s). For Airbyte connectors, provide airbyte_config", req.From, supported)
 	}
 }
 
@@ -584,4 +677,117 @@ func RunImport(ctx context.Context, req importRequest, pipe interface {
 	Write(ctx context.Context, path string, content []byte, actor string) (interface{ ETag() string }, error)
 }) (*importResponse, error) {
 	return nil, fmt.Errorf("use the REST API for import")
+}
+
+// --- Airbyte endpoints (Phase 4) ---
+
+type airbyteRequest struct {
+	From         string         `json:"from"`
+	AirbyteImage string         `json:"airbyte_image,omitempty"`
+	Config       map[string]any `json:"config,omitempty"`
+}
+
+// ImportSources lists all available import sources with their backend type.
+func (h *Handlers) ImportSources(c echo.Context) error {
+	sources := importer.ListAvailableSources(importer.DockerAvailable())
+	return c.JSON(http.StatusOK, sources)
+}
+
+// ImportAirbyteSpec returns the connector specification for an Airbyte source.
+func (h *Handlers) ImportAirbyteSpec(c echo.Context) error {
+	var req airbyteRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	image := req.AirbyteImage
+	if image == "" {
+		image = importer.LookupAirbyteImage(req.From)
+	}
+	if image == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("no Airbyte connector for %q", req.From))
+	}
+
+	src, err := importer.NewAirbyteSource(importer.AirbyteSourceOpts{
+		Image:  image,
+		Config: map[string]any{},
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	ctx := c.Request().Context()
+	spec, err := src.Spec(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, spec)
+}
+
+// ImportAirbyteCheck validates connection config against an Airbyte connector.
+func (h *Handlers) ImportAirbyteCheck(c echo.Context) error {
+	var req airbyteRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.Config == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "config is required")
+	}
+
+	image := req.AirbyteImage
+	if image == "" {
+		image = importer.LookupAirbyteImage(req.From)
+	}
+	if image == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("no Airbyte connector for %q", req.From))
+	}
+
+	src, err := importer.NewAirbyteSource(importer.AirbyteSourceOpts{
+		Image:  image,
+		Config: req.Config,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	ctx := c.Request().Context()
+	status, err := src.Check(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, status)
+}
+
+// ImportAirbyteDiscover returns available streams from an Airbyte connector.
+func (h *Handlers) ImportAirbyteDiscover(c echo.Context) error {
+	var req airbyteRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.Config == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "config is required")
+	}
+
+	image := req.AirbyteImage
+	if image == "" {
+		image = importer.LookupAirbyteImage(req.From)
+	}
+	if image == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("no Airbyte connector for %q", req.From))
+	}
+
+	src, err := importer.NewAirbyteSource(importer.AirbyteSourceOpts{
+		Image:  image,
+		Config: req.Config,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	ctx := c.Request().Context()
+	catalog, err := src.Discover(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, catalog)
 }

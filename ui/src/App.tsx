@@ -50,7 +50,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import { api, getCurrentSpace, setCurrentSpace, sseUrl, type BackupStatusResponse, type TreeEntry } from "./lib/api";
+import { api, getCurrentSpace, setCurrentSpace, sseUrl, type TreeEntry } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
 import { isMarkdown } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
@@ -86,7 +86,6 @@ export default function App() {
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatusState>({ kind: "loading", label: "Checking backup sync…" });
 
   // Close all full-screen views. Called before opening a new one so only one
   // view is ever active — the ternary render chain in <main> checks them in
@@ -324,33 +323,6 @@ const handleSpaceSwitch = useCallback(() => {
   }
 
   useEffect(() => {
-    let cancelled = false;
-
-    const refreshSyncStatus = () => {
-      api.backupStatus()
-        .then((status) => {
-          if (!cancelled) setSyncStatus(deriveSyncStatus(status));
-        })
-        .catch((err: unknown) => {
-          if (!cancelled) {
-            setSyncStatus({
-              kind: "error",
-              label: "Backup sync status unavailable",
-              detail: err instanceof Error ? err.message : String(err),
-            });
-          }
-        });
-    };
-
-    refreshSyncStatus();
-    const timer = window.setInterval(refreshSyncStatus, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
@@ -436,7 +408,6 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </ToolbarButton>
-            <SyncStatusIndicator status={syncStatus} />
           </div>
         </header>
 
@@ -768,105 +739,6 @@ function WelcomeScreen({
         </div>
       </div>
     </div>
-  );
-}
-
-type SyncStatusKind = "loading" | "ok" | "stale" | "error" | "disabled";
-
-type SyncStatusState = {
-  kind: SyncStatusKind;
-  label: string;
-  detail?: string;
-};
-
-const SYNC_STALE_MS = 15 * 60 * 1000;
-
-function deriveSyncStatus(response: BackupStatusResponse): SyncStatusState {
-  if (!response.enabled) {
-    return {
-      kind: "disabled",
-      label: "Backup sync not configured",
-      detail: "Set [backup] in .kiwi/config.toml to enable scheduled git pushes.",
-    };
-  }
-
-  const status = response.status;
-  if (!status?.success) {
-    return {
-      kind: "error",
-      label: "Backup sync failed",
-      detail: status?.error || "No successful backup push has been recorded yet.",
-    };
-  }
-
-  if (!status.last_push_at) {
-    return {
-      kind: "stale",
-      label: "Backup sync pending",
-      detail: "Backup sync is enabled, but no push timestamp is available yet.",
-    };
-  }
-
-  const pushedAt = Date.parse(status.last_push_at);
-  if (!Number.isFinite(pushedAt)) {
-    return {
-      kind: "stale",
-      label: "Backup sync timestamp invalid",
-      detail: status.last_push_at,
-    };
-  }
-
-  const ageMs = Date.now() - pushedAt;
-  const lastPush = new Date(pushedAt).toLocaleString();
-  if (ageMs > SYNC_STALE_MS) {
-    return {
-      kind: "stale",
-      label: "Backup sync stale",
-      detail: `Last successful push: ${lastPush}`,
-    };
-  }
-
-  return {
-    kind: "ok",
-    label: "Backup sync OK",
-    detail: `Last successful push: ${lastPush}`,
-  };
-}
-
-function syncDotClass(kind: SyncStatusKind): string {
-  switch (kind) {
-    case "ok":
-      return "bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.18)]";
-    case "disabled":
-      return "bg-muted-foreground/45";
-    case "loading":
-      return "bg-amber-400 animate-pulse";
-    case "stale":
-    case "error":
-    default:
-      return "bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.18)]";
-  }
-}
-
-function SyncStatusIndicator({ status }: { status: SyncStatusState }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={status.label}
-          className="kiwifs-sync-status inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors"
-        >
-          <span className={`h-2.5 w-2.5 rounded-full ${syncDotClass(status.kind)}`} />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" align="end" className="max-w-xs">
-        <div className="space-y-1">
-          <div className="font-medium">{status.label}</div>
-          {status.detail && <div className="text-xs text-muted-foreground break-words">{status.detail}</div>}
-        </div>
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
