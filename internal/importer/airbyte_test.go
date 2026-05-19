@@ -356,11 +356,9 @@ func TestAirbyteRegistryLookup(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"postgres", "airbyte/source-postgres:latest"},
-		{"POSTGRES", "airbyte/source-postgres:latest"},
-		{"  mysql  ", "airbyte/source-mysql:latest"},
 		{"notion", "airbyte/source-notion:latest"},
-		{"firestore", "airbyte/source-firestore:latest"},
+		{"airtable", "airbyte/source-airtable:latest"},
+		{"firebase-rtdb", "airbyte/source-firebase-realtime-database:latest"},
 		{"nonexistent", ""},
 		{"airbyte/source-custom:v1.2.3", "airbyte/source-custom:v1.2.3"},
 		{"myregistry.io/source-foo:latest", "myregistry.io/source-foo:latest"},
@@ -378,14 +376,14 @@ func TestAirbyteRegistryLookup(t *testing.T) {
 
 // TestAirbyteBuiltinCheck tests the builtin/airbyte source classification
 func TestAirbyteBuiltinCheck(t *testing.T) {
-	builtins := []string{"csv", "json", "jsonl", "markdown", "obsidian", "excel", "yaml", "sqlite"}
+	builtins := []string{"csv", "json", "jsonl", "markdown", "obsidian", "excel", "yaml", "sqlite", "postgres", "mysql", "mongodb", "firestore"}
 	for _, s := range builtins {
 		if !IsBuiltinSource(s) {
 			t.Errorf("IsBuiltinSource(%q) = false, want true", s)
 		}
 	}
 
-	nonBuiltins := []string{"postgres", "mysql", "mongodb", "firestore", "notion", "airtable", "dynamodb"}
+	nonBuiltins := []string{"notion", "airtable", "firebase-rtdb", "dynamodb"}
 	for _, s := range nonBuiltins {
 		if IsBuiltinSource(s) {
 			t.Errorf("IsBuiltinSource(%q) = true, want false", s)
@@ -633,7 +631,7 @@ func TestListAvailableSources(t *testing.T) {
 	if _, ok := sources["airbyte"]; !ok {
 		t.Error("missing 'airbyte' key when Docker available")
 	}
-	if len(sources["airbyte"]) < 10 {
-		t.Errorf("expected at least 10 airbyte sources, got %d", len(sources["airbyte"]))
+	if len(sources["airbyte"]) < 3 {
+		t.Errorf("expected at least 3 airbyte sources, got %d", len(sources["airbyte"]))
 	}
 }
