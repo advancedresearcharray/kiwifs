@@ -66,8 +66,8 @@ func TestCSVImport(t *testing.T) {
 	if !strings.Contains(s, "_source: students") {
 		t.Fatalf("missing _source: %s", s)
 	}
-	if !strings.Contains(s, "Auto-imported from students") {
-		t.Fatalf("missing auto-imported line: %s", s)
+	if !strings.Contains(s, "| name") {
+		t.Fatalf("missing markdown table: %s", s)
 	}
 }
 
