@@ -9,7 +9,6 @@ import {
   Database,
   File,
   FileAxis3D,
-  History,
   LayoutGrid,
   Moon,
   Network,
@@ -54,6 +53,7 @@ import { api, getCurrentSpace, setCurrentSpace, sseUrl, type TreeEntry } from ".
 import { useTheme } from "./hooks/useTheme";
 import { isMarkdown } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
+import { HostToolbarActions } from "./components/HostToolbarActions";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -384,12 +384,6 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
               <Network className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton
-              onClick={() => { if (!activePath) return; const next = !historyOpen; closeAllViews(); setHistoryOpen(next); }}
-              label="Version history"
-            >
-              <History className="h-4 w-4" />
-            </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !basesOpen; closeAllViews(); setBasesOpen(next); }} label="Bases">
               <LayoutGrid className="h-4 w-4" />
             </ToolbarButton>
@@ -408,6 +402,7 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
               <Database className="h-4 w-4" />
             </ToolbarButton>
+            <HostToolbarActions />
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </ToolbarButton>

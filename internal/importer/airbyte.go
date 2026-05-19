@@ -226,12 +226,14 @@ func (s *AirbyteSource) Stream(ctx context.Context) (<-chan Record, <-chan error
 				if msg.Record == nil {
 					continue
 				}
-				rec := s.recordToImporterRecord(msg.Record)
-				select {
-				case records <- rec:
-				case <-ctx.Done():
-					_ = cmd.Process.Kill()
-					return
+				recs := s.recordsFromAirbyte(msg.Record)
+				for _, rec := range recs {
+					select {
+					case records <- rec:
+					case <-ctx.Done():
+						_ = cmd.Process.Kill()
+						return
+					}
 				}
 			case AirbyteMessageTrace:
 				if msg.Trace != nil && msg.Trace.Error != nil {
@@ -252,6 +254,89 @@ func (s *AirbyteSource) Stream(ctx context.Context) (<-chan Record, <-chan error
 	}()
 
 	return records, errs
+}
+
+func (s *AirbyteSource) recordsFromAirbyte(rec *AirbyteRecordMessage) []Record {
+	// Detect Firebase RTDB key/value pattern: {"key": "...", "value": "{...json...}"}
+	if keyVal, hasKey := rec.Data["key"]; hasKey {
+		if valStr, hasVal := rec.Data["value"]; hasVal {
+			if keyStr, ok := keyVal.(string); ok {
+				return s.explodeRTDBRecord(rec, keyStr, valStr)
+			}
+		}
+	}
+	return []Record{s.recordToImporterRecord(rec)}
+}
+
+// explodeRTDBRecord takes a Firebase RTDB key/value record and explodes nested
+// objects into individual records. For example, key="users" with value containing
+// {user1: {...}, user2: {...}} produces separate records for each user.
+func (s *AirbyteSource) explodeRTDBRecord(rec *AirbyteRecordMessage, key string, rawValue any) []Record {
+	var valueMap map[string]any
+
+	switch v := rawValue.(type) {
+	case string:
+		if err := json.Unmarshal([]byte(v), &valueMap); err != nil {
+			// Not a JSON object string — treat as a simple leaf value
+			return []Record{s.makeLeafRecord(rec, key, rawValue)}
+		}
+	case map[string]any:
+		valueMap = v
+	default:
+		return []Record{s.makeLeafRecord(rec, key, rawValue)}
+	}
+
+	// Check if the value map contains nested objects (collection pattern)
+	// e.g., users: {user1: {name: "Alice", ...}, user2: {name: "Bob", ...}}
+	hasNestedObjects := false
+	for _, v := range valueMap {
+		if _, isMap := v.(map[string]any); isMap {
+			hasNestedObjects = true
+			break
+		}
+	}
+
+	if !hasNestedObjects {
+		// Flat object — render as a single record with fields as frontmatter
+		return []Record{{
+			SourceID:   fmt.Sprintf("airbyte:%s:%s:%s", s.sourceName, rec.Stream, key),
+			SourceDSN:  s.image,
+			Table:      rec.Stream,
+			Fields:     valueMap,
+			PrimaryKey: key,
+		}}
+	}
+
+	// Collection of nested objects — explode into one record per child
+	var records []Record
+	for childKey, childVal := range valueMap {
+		childMap, isMap := childVal.(map[string]any)
+		if !isMap {
+			// Scalar child — create a simple record
+			childMap = map[string]any{"value": childVal}
+		}
+		childMap["_parent"] = key
+		pk := key + "/" + childKey
+		records = append(records, Record{
+			SourceID:   fmt.Sprintf("airbyte:%s:%s:%s", s.sourceName, rec.Stream, pk),
+			SourceDSN:  s.image,
+			Table:      rec.Stream,
+			Fields:     childMap,
+			PrimaryKey: pk,
+		})
+	}
+	return records
+}
+
+func (s *AirbyteSource) makeLeafRecord(rec *AirbyteRecordMessage, key string, value any) Record {
+	fields := map[string]any{"value": value}
+	return Record{
+		SourceID:   fmt.Sprintf("airbyte:%s:%s:%s", s.sourceName, rec.Stream, key),
+		SourceDSN:  s.image,
+		Table:      rec.Stream,
+		Fields:     fields,
+		PrimaryKey: key,
+	}
 }
 
 func (s *AirbyteSource) recordToImporterRecord(rec *AirbyteRecordMessage) Record {

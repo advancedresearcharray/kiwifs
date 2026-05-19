@@ -3,7 +3,9 @@ package importer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -153,8 +155,67 @@ func renderMarkdown(fm map[string]any, title, table, id string) []byte {
 	_ = enc.Close()
 	buf.WriteString("---\n\n")
 	fmt.Fprintf(&buf, "# %s\n\n", title)
-	fmt.Fprintf(&buf, "> Auto-imported from %s (row %s)\n", table, id)
+
+	// Render user-facing fields as a markdown table (skip internal fields)
+	var dataFields [][2]string
+	for k, v := range fm {
+		if strings.HasPrefix(k, "_") {
+			continue
+		}
+		valStr := formatFieldValue(v)
+		if valStr == "" {
+			continue
+		}
+		dataFields = append(dataFields, [2]string{k, valStr})
+	}
+
+	if len(dataFields) > 0 {
+		sort.Slice(dataFields, func(i, j int) bool { return dataFields[i][0] < dataFields[j][0] })
+		buf.WriteString("| Field | Value |\n")
+		buf.WriteString("|-------|-------|\n")
+		for _, f := range dataFields {
+			buf.WriteString(fmt.Sprintf("| %s | %s |\n", f[0], escapeTableCell(f[1])))
+		}
+	}
+
 	return buf.Bytes()
+}
+
+func formatFieldValue(v any) string {
+	switch val := v.(type) {
+	case nil:
+		return ""
+	case string:
+		if len(val) > 200 {
+			return val[:200] + "..."
+		}
+		return val
+	case float64:
+		if val == float64(int64(val)) {
+			return fmt.Sprintf("%d", int64(val))
+		}
+		return fmt.Sprintf("%g", val)
+	case bool:
+		if val {
+			return "true"
+		}
+		return "false"
+	case map[string]any, []any:
+		b, _ := json.Marshal(val)
+		s := string(b)
+		if len(s) > 200 {
+			return s[:200] + "..."
+		}
+		return s
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+func escapeTableCell(s string) string {
+	s = strings.ReplaceAll(s, "|", "\\|")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return s
 }
 
 // renderRawContent handles sources that provide complete markdown content

@@ -7,10 +7,11 @@ import {
   applyKiwiThemeFromThemeUrl,
   listenForKiwiTheme,
 } from "./lib/kiwiTheme";
+import type { KiwiHostConfig } from "./lib/hostConfig";
 
 declare global {
   interface Window {
-    __KIWIFS_CONFIG__?: { allowedOrigins?: string[] };
+    __KIWIFS_CONFIG__?: KiwiHostConfig;
   }
 }
 
