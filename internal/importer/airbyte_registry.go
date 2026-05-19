@@ -5,7 +5,6 @@ import "strings"
 // AirbyteRegistry maps source type names to their Airbyte Docker image.
 // Phase 1: only sources we actively route through Airbyte.
 var AirbyteRegistry = map[string]string{
-	"firestore":     "airbyte/source-firestore:latest",
 	"firebase-rtdb": "airbyte/source-firebase-realtime-database:latest",
 	"notion":        "airbyte/source-notion:latest",
 	"airtable":      "airbyte/source-airtable:latest",
@@ -35,18 +34,19 @@ var AirbyteRegistry = map[string]string{
 
 // BuiltinSources are handled natively by KiwiFS without Docker/Airbyte.
 var BuiltinSources = map[string]bool{
-	"markdown": true,
-	"obsidian": true,
-	"csv":      true,
-	"json":     true,
-	"jsonl":    true,
-	"excel":    true,
-	"yaml":     true,
-	"sqlite":   true,
+	"markdown":  true,
+	"obsidian":  true,
+	"csv":       true,
+	"json":      true,
+	"jsonl":     true,
+	"excel":     true,
+	"yaml":      true,
+	"sqlite":    true,
 	// Native network sources (Go driver, no Airbyte)
-	"postgres": true,
-	"mysql":    true,
-	"mongodb":  true,
+	"postgres":  true,
+	"mysql":     true,
+	"mongodb":   true,
+	"firestore": true,
 }
 
 // LookupAirbyteImage returns the Docker image for a given source name.
@@ -69,7 +69,6 @@ func IsBuiltinSource(sourceType string) bool {
 // AirbyteCloudDefinitionIDs maps source type names to Airbyte Cloud source definition IDs.
 // Phase 1: only sources we actively support via Airbyte Cloud.
 var AirbyteCloudDefinitionIDs = map[string]string{
-	"firestore":     "bea97e0a-4894-4a0e-97ce-8dae0c45bc53",
 	"firebase-rtdb": "acb5f973-a565-441e-992f-4946f3e65662",
 	"notion":        "6e00b415-b02e-4160-bf02-58571571a0b8",
 	"airtable":      "14c6e7ea-97ed-4f5e-a7b5-25e9a80b8212",

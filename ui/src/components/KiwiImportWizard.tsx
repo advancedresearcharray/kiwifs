@@ -94,6 +94,8 @@ type WizardState = {
   collection: string;
   table: string;
   query: string;
+  project: string;
+  credentials: string;
   connectionTested: boolean;
   connectionOk: boolean;
   connectionError: string;
@@ -114,6 +116,7 @@ const initialState: WizardState = {
   path: "", file: "", db: "", uploadedFile: null,
   dbHost: "localhost", dbPort: "", dbName: "", dbUser: "", dbPass: "", dbSSL: false, useConnectionString: false,
   dsn: "", uri: "", database: "", collection: "", table: "", query: "",
+  project: "", credentials: "",
   connectionTested: false, connectionOk: false, connectionError: "",
   browsedTables: [], browseLoading: false,
   selectedStreams: [], selectedTable: "",
@@ -277,6 +280,7 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
       const params: Record<string, unknown> = { from: state.sourceType };
       if (state.sourceType === "postgres" || state.sourceType === "mysql") params.dsn = getEffectiveDSN();
       else if (state.sourceType === "mongodb") { params.uri = getEffectiveURI(); params.database = state.useConnectionString ? state.database : state.dbName; }
+      else if (state.sourceType === "firestore") { params.project = state.project; if (state.credentials) params.credentials = JSON.parse(state.credentials); }
       const resp = await api.importBrowse(params as any);
       update({ connectionTested: true, connectionOk: true, connectionError: "", browsedTables: resp.tables || [] });
     } catch (err) {
@@ -310,6 +314,7 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
         else if (state.sourceType === "markdown" || state.sourceType === "obsidian") params.path = state.path;
         else if (state.sourceType === "postgres" || state.sourceType === "mysql") { params.dsn = getEffectiveDSN(); params.table = state.table; if (state.query) params.query = state.query; }
         else if (state.sourceType === "mongodb") { params.uri = getEffectiveURI(); params.database = state.useConnectionString ? state.database : state.dbName; params.collection = state.collection; }
+        else if (state.sourceType === "firestore") { params.project = state.project; params.collection = state.collection; if (state.credentials) params.credentials = JSON.parse(state.credentials); }
         else if (["csv", "json", "jsonl", "yaml", "excel"].includes(state.sourceType!)) params.file = state.file;
         else if (state.sourceType === "sqlite") { params.db = state.db; params.table = state.selectedTable; }
         const resp = await api.importPreview(params as any);
@@ -334,6 +339,7 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
         else if (state.sourceType === "markdown" || state.sourceType === "obsidian") params.path = state.path;
         else if (state.sourceType === "postgres" || state.sourceType === "mysql") { params.dsn = getEffectiveDSN(); params.table = state.table; if (state.query) params.query = state.query; }
         else if (state.sourceType === "mongodb") { params.uri = getEffectiveURI(); params.database = state.useConnectionString ? state.database : state.dbName; params.collection = state.collection; }
+        else if (state.sourceType === "firestore") { params.project = state.project; params.collection = state.collection; if (state.credentials) params.credentials = JSON.parse(state.credentials); }
         else if (["csv", "json", "jsonl", "yaml", "excel"].includes(state.sourceType!)) params.file = state.file;
         else if (state.sourceType === "sqlite") { params.db = state.db; params.table = state.selectedTable; }
         result = await api.importRun(params as any);
@@ -405,7 +411,11 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
         <div className="space-y-4">
           {isAirbyteSourceType(state.sourceType) ? (
             <AirbyteConfigForm sourceType={state.sourceType} spec={state.airbyteSpec} specLoading={specLoading} specError={specError} config={state.airbyteConfig} dockerAvailable={state.airbyteDockerAvailable} cloudMode={state.airbyteCloudMode} onConfigChange={(cfg) => update({ airbyteConfig: cfg })} onConnect={handleAirbyteCheck} connecting={loading} onCancel={onClose} onRetry={() => { setSpecError(null); update({ airbyteSpec: null, airbyteCloudMode: false }); }} />
+          ) : state.sourceType === "firestore" ? (
+            <FirestoreForm state={state} update={update} onCancel={onClose} onTestConnection={handleTestConnection} onNext={() => update({ selectedTable: state.collection || "data", step: 3 })} loading={loading} />
           ) : (state.sourceType === "postgres" || state.sourceType === "mysql" || state.sourceType === "mongodb") ? (
+            <NativeSourceForm sourceType={state.sourceType} state={state} update={update} onCancel={onClose} onTestConnection={handleTestConnection} onNext={() => update({ selectedTable: state.table || state.collection || state.selectedTable || "data", step: 3 })} loading={loading} />
+          ) : UPLOADABLE_SOURCES.has(state.sourceType) ? (
             <NativeSourceForm sourceType={state.sourceType} state={state} update={update} onCancel={onClose} onTestConnection={handleTestConnection} onNext={() => update({ selectedTable: state.table || state.collection || state.selectedTable || "data", step: 3 })} loading={loading} />
           ) : UPLOADABLE_SOURCES.has(state.sourceType) ? (
             <UploadableSourceForm sourceType={state.sourceType} state={state} update={update} onCancel={onClose} onNext={() => {
@@ -700,6 +710,83 @@ function OneOfField({ fieldKey, prop, value, isRequired, onChange }: { fieldKey:
       <label className="block"><span className="text-sm font-medium">{label}{isRequired && <span className="text-destructive ml-0.5">*</span>}</span><select value={activeIdx} onChange={(e) => selectOption(Number(e.target.value))} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm">{options.map((opt, i) => <option key={i} value={i}>{opt.title || `Option ${i + 1}`}</option>)}</select></label>
       {activeOption?.properties && (<div className="space-y-3 pl-3 border-l-2 border-border">{Object.entries(activeOption.properties).filter(([, v]) => v.const === undefined).map(([k, v]) => (<SpecField key={k} fieldKey={k} prop={v} value={(value as Record<string, unknown>)?.[k]} isRequired={activeOption.required?.includes(k) ?? false} onChange={(newVal) => onChange({ ...(value || {}), [k]: newVal })} />))}</div>)}
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Native Source Form (PostgreSQL, MySQL, MongoDB)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════
+   Firestore Form (Project ID + Service Account JSON + Collection)
+   ═══════════════════════════════════════════════════════════ */
+
+function FirestoreForm({ state, update, onCancel, onTestConnection, onNext, loading }: {
+  state: WizardState; update: (p: Partial<WizardState>) => void;
+  onCancel: () => void; onTestConnection: () => void; onNext: () => void; loading: boolean;
+}) {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      update({ credentials: text, connectionTested: false, connectionOk: false });
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.project_id && !state.project) update({ project: parsed.project_id });
+      } catch { /* ignore parse errors */ }
+    };
+    reader.readAsText(file);
+  };
+
+  const canTest = state.project.trim().length > 0 && state.credentials.trim().length > 0;
+  const canProceed = state.connectionOk && state.collection.trim().length > 0;
+
+  return (
+    <>
+      <div className="flex items-center gap-2.5 mb-4">
+        <SourceIcon source="firestore" size={22} />
+        <div><h2 className="font-medium">Connect to Firestore</h2><p className="text-xs text-muted-foreground mt-0.5">Credentials are used for this session only and are not stored on the server.</p></div>
+      </div>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="text-sm font-medium">Project ID<span className="text-destructive ml-0.5">*</span></span>
+          <input type="text" value={state.project} onChange={(e) => update({ project: e.target.value, connectionTested: false })} placeholder="my-firebase-project" className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono" />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium">Service Account JSON<span className="text-destructive ml-0.5">*</span></span>
+          <input type="file" accept=".json" onChange={handleFileUpload} className="mt-1 block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground file:cursor-pointer hover:file:bg-primary/90" />
+          {state.credentials && <p className="text-xs text-green-600 dark:text-green-400 mt-1.5 flex items-center gap-1"><Check className="h-3.5 w-3.5" />Credentials loaded</p>}
+        </label>
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <Button size="sm" variant={state.connectionOk ? "outline" : "default"} onClick={onTestConnection} disabled={loading || !canTest}>
+          {loading ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Testing...</> : state.connectionOk ? <><Check className="h-3.5 w-3.5 mr-1.5 text-green-500" /> Connected</> : <><Database className="h-3.5 w-3.5 mr-1.5" /> Test connection</>}
+        </Button>
+        {state.connectionTested && state.connectionOk && <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" />{state.browsedTables.length > 0 ? `${state.browsedTables.length} collection${state.browsedTables.length !== 1 ? "s" : ""} found` : "Connected successfully"}</span>}
+        {state.connectionTested && !state.connectionOk && <span className="text-xs text-destructive flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span className="line-clamp-2">{state.connectionError}</span></span>}
+      </div>
+      {state.connectionOk && (
+        <div className="mt-4 pt-4 border-t border-border space-y-3">
+          <label className="block">
+            <span className="text-sm font-medium">Collection<span className="text-destructive ml-0.5">*</span></span>
+            {state.browsedTables.length > 0 ? (
+              <select value={state.collection} onChange={(e) => update({ collection: e.target.value })} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
+                <option value="">Select a collection...</option>
+                {state.browsedTables.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+            ) : (
+              <input type="text" value={state.collection} onChange={(e) => update({ collection: e.target.value })} placeholder="users" className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />
+            )}
+          </label>
+        </div>
+      )}
+      <div className="flex justify-end gap-2 pt-4">
+        <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" onClick={onNext} disabled={loading || !canProceed}>{loading && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}Continue <ArrowRight className="h-3.5 w-3.5 ml-1.5" /></Button>
+      </div>
+    </>
   );
 }
 

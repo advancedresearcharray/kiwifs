@@ -5,6 +5,7 @@ WORKDIR /ui
 COPY ui/package.json ui/package-lock.json* ui/.npmrc* ./
 RUN npm install --no-audit --no-fund --loglevel=error
 COPY ui ./
+ENV NODE_OPTIONS=--max-old-space-size=3072
 RUN npm run build
 
 # Stage 2: Build the Go binary with the UI assets embedded.
@@ -25,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /kiwifs .
 # Stage 3: Minimal runtime.
 FROM alpine:3.20
 
-RUN apk add --no-cache git ca-certificates \
+RUN apk add --no-cache git ca-certificates docker-cli \
     && addgroup -S kiwi && adduser -S kiwi -G kiwi
 
 COPY --from=builder /kiwifs /usr/local/bin/kiwifs

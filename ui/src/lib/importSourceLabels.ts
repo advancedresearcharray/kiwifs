@@ -37,7 +37,7 @@ export const IMPORT_SOURCE_OPTIONS: ImportSourceOption[] = [
   { type: "mysql", label: "MySQL", description: "MySQL / MariaDB", backend: "native" },
   { type: "mongodb", label: "MongoDB", description: "MongoDB collection", backend: "native" },
   // Airbyte-powered (complex auth / API churn — migrating from legacy)
-  { type: "firestore", label: "Firestore", description: "Google Cloud Firestore", backend: "airbyte" },
+  { type: "firestore", label: "Firestore", description: "Google Cloud Firestore", backend: "native" },
   { type: "firebase-rtdb", label: "Firebase RTDB", description: "Firebase Realtime Database", backend: "airbyte" },
   { type: "notion", label: "Notion", description: "Notion workspace", backend: "airbyte" },
   { type: "airtable", label: "Airtable", description: "Airtable base", backend: "airbyte" },
