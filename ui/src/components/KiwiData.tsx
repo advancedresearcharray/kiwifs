@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Database, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { api, type ImportConnection } from "../lib/api";
 import { sourceTypeLabel } from "../lib/importSourceLabels";
 import { KiwiImportWizard } from "./KiwiImportWizard";
 import { SourceIcon } from "./SourceIcon";
 
-/** Prefer title case / brand labels when the saved name repeats the raw `from` slug. */
 function connectionDisplayName(conn: ImportConnection): string {
   const fromKey = conn.from.trim().toLowerCase();
   const raw = (conn.name ?? "").trim();
@@ -19,12 +26,6 @@ function connectionDisplayName(conn: ImportConnection): string {
   return raw;
 }
 
-/**
- * KiwiData — the data sources management view.
- *
- * Shows saved import connections with their status and provides
- * entry points to the import wizard and re-import functionality.
- */
 export function KiwiData({ onClose }: { onClose: () => void }) {
   const [connections, setConnections] = useState<ImportConnection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,12 +33,15 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
   const [selectedConn, setSelectedConn] = useState<ImportConnection | null>(null);
   const [reImporting, setReImporting] = useState<string | null>(null);
 
+  // Dialog state
+  const [confirmDelete, setConfirmDelete] = useState<ImportConnection | null>(null);
+  const [resultDialog, setResultDialog] = useState<{ title: string; message: string; variant?: "success" | "error" } | null>(null);
+
   const fetchConnections = useCallback(async () => {
     try {
       const conns = await api.importConnections();
       setConnections(conns ?? []);
     } catch {
-      // Connection store may not be available (e.g. fresh install)
       setConnections([]);
     } finally {
       setLoading(false);
@@ -48,14 +52,15 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
     fetchConnections();
   }, [fetchConnections]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Remove this data source connection?")) return;
+  const handleDelete = async (conn: ImportConnection) => {
     try {
-      await api.importDeleteConnection(id);
-      setConnections((prev) => prev.filter((c) => c.id !== id));
-      if (selectedConn?.id === id) setSelectedConn(null);
+      await api.importDeleteConnection(conn.id);
+      setConnections((prev) => prev.filter((c) => c.id !== conn.id));
+      if (selectedConn?.id === conn.id) setSelectedConn(null);
+      setConfirmDelete(null);
     } catch (err) {
-      alert(`Failed to delete: ${err}`);
+      setConfirmDelete(null);
+      setResultDialog({ title: "Delete failed", message: String(err), variant: "error" });
     }
   };
 
@@ -63,10 +68,14 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
     setReImporting(conn.id);
     try {
       const result = await api.importRunConnection(conn.id);
-      alert(`Sync complete: ${result.imported} imported, ${result.skipped} skipped`);
+      setResultDialog({
+        title: "Sync complete",
+        message: `${result.imported} documents imported, ${result.skipped} unchanged.`,
+        variant: "success",
+      });
       fetchConnections();
     } catch (err) {
-      alert(`Sync failed: ${err}`);
+      setResultDialog({ title: "Sync failed", message: String(err), variant: "error" });
     } finally {
       setReImporting(null);
     }
@@ -76,8 +85,11 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
     try {
       await api.importToggleSync(conn.id, enabled);
       fetchConnections();
+      if (selectedConn?.id === conn.id) {
+        setSelectedConn({ ...selectedConn, sync_enabled: enabled, sync_status: enabled ? "idle" : undefined });
+      }
     } catch (err) {
-      alert(`Failed to toggle sync: ${err}`);
+      setResultDialog({ title: "Failed", message: String(err), variant: "error" });
     }
   };
 
@@ -85,10 +97,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
     return (
       <KiwiImportWizard
         onClose={() => setWizardOpen(false)}
-        onComplete={() => {
-          setWizardOpen(false);
-          fetchConnections();
-        }}
+        onComplete={() => { setWizardOpen(false); fetchConnections(); }}
       />
     );
   }
@@ -126,7 +135,6 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
           {selectedConn.prefix && <>Prefix: <code className="bg-muted px-1 rounded">{selectedConn.prefix}/</code> &middot; </>}
           {selectedConn.last_stats && <>{selectedConn.last_stats.imported} docs</>}
           {selectedConn.last_run && <> &middot; last synced {new Date(selectedConn.last_run).toLocaleString()}</>}
-          {selectedConn.next_sync && selectedConn.sync_enabled && <> &middot; next sync {timeAgo(selectedConn.next_sync).replace(" ago", "")}</>}
         </p>
 
         {selectedConn.sync_error && (
@@ -160,13 +168,12 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
               Resume sync
             </Button>
           )}
-          <Button size="sm" variant="destructive" onClick={() => handleDelete(selectedConn.id)}>
+          <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(selectedConn)}>
             <Trash2 className="h-3.5 w-3.5 mr-1.5" />
             Remove
           </Button>
         </div>
 
-        {/* Connection details */}
         <div className="border border-border rounded-lg p-4 text-sm space-y-2">
           <div><strong>Type:</strong> {sourceTypeLabel(selectedConn.from)}</div>
           {selectedConn.project && <div><strong>Project:</strong> {selectedConn.project}</div>}
@@ -175,6 +182,18 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
           {selectedConn.database && <div><strong>Database:</strong> {selectedConn.database}</div>}
           {selectedConn.dsn && <div><strong>DSN:</strong> <code className="bg-muted px-1 rounded text-xs">{selectedConn.dsn.replace(/:[^@]+@/, ":***@")}</code></div>}
         </div>
+
+        {/* Dialogs */}
+        <ConfirmDialog
+          open={confirmDelete !== null}
+          title="Remove data source"
+          description={`This will remove "${connectionDisplayName(confirmDelete!)}" and stop auto-sync. Imported files will not be deleted.`}
+          confirmLabel="Remove"
+          variant="destructive"
+          onConfirm={() => confirmDelete && handleDelete(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+        <ResultDialog dialog={resultDialog} onClose={() => setResultDialog(null)} />
       </div>
     );
   }
@@ -232,16 +251,8 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       <span>{sourceTypeLabel(conn.from)}</span>
-                      {conn.prefix && (
-                        <>
-                          {" "}&middot; <code>{conn.prefix}/</code>
-                        </>
-                      )}
-                      {conn.last_stats && (
-                        <>
-                          {" "}&middot; {conn.last_stats.imported} docs
-                        </>
-                      )}
+                      {conn.prefix && <> &middot; <code>{conn.prefix}/</code></>}
+                      {conn.last_stats && <> &middot; {conn.last_stats.imported} docs</>}
                       {" "}&middot; {conn.last_run ? `synced ${timeAgo(conn.last_run)}` : "never synced"}
                     </div>
                   </div>
@@ -260,7 +271,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
                     size="sm"
                     variant="ghost"
                     title="Remove"
-                    onClick={(e) => { e.stopPropagation(); handleDelete(conn.id); }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDelete(conn); }}
                   >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
@@ -279,7 +290,60 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       )}
+
+      {/* Dialogs */}
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Remove data source"
+        description={confirmDelete ? `This will remove "${connectionDisplayName(confirmDelete)}" and stop auto-sync. Imported files will not be deleted.` : ""}
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => confirmDelete && handleDelete(confirmDelete)}
+        onCancel={() => setConfirmDelete(null)}
+      />
+      <ResultDialog dialog={resultDialog} onClose={() => setResultDialog(null)} />
     </div>
+  );
+}
+
+function ConfirmDialog({ open, title, description, confirmLabel, variant, onConfirm, onCancel }: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  variant?: "destructive" | "default";
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button variant={variant || "default"} onClick={onConfirm}>{confirmLabel}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ResultDialog({ dialog, onClose }: { dialog: { title: string; message: string; variant?: "success" | "error" } | null; onClose: () => void }) {
+  return (
+    <Dialog open={dialog !== null} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className={dialog?.variant === "error" ? "text-destructive" : ""}>{dialog?.title}</DialogTitle>
+          <DialogDescription>{dialog?.message}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button onClick={onClose}>OK</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
