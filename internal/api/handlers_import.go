@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kiwifs/kiwifs/internal/importer"
 	"github.com/labstack/echo/v4"
@@ -91,23 +92,39 @@ func (h *Handlers) Import(c echo.Context) error {
 	}
 
 	// Auto-save connection metadata on successful import (no credentials stored)
-	if h.connStore != nil && stats.Imported > 0 {
-		connMeta := &importer.ConnectionMeta{
-			From:       req.From,
-			Name:       req.From + ":" + coalesce(req.Collection, req.Table, req.DatabaseID, req.TableID),
-			Project:    req.Project,
-			Table:      req.Table,
-			Collection: req.Collection,
-			Database:   req.Database,
-			DatabaseID: req.DatabaseID,
-			BaseID:     req.BaseID,
-			TableID:    req.TableID,
-			DSN:        req.DSN,
-			URI:        req.URI,
-			Prefix:     opts.Prefix,
-			IDColumn:   req.IDColumn,
-			Columns:    req.Columns,
-			LastStats:  &importer.ConnectionStats{Imported: stats.Imported, Skipped: stats.Skipped, Errors: stats.Errors},
+	if h.connStore != nil {
+		// Upsert: find existing connection with same source+prefix to avoid duplicates
+		existing := h.connStore.FindBySourceAndPrefix(req.From, opts.Prefix)
+		connMeta := existing
+		if connMeta == nil {
+			connMeta = &importer.ConnectionMeta{}
+		}
+		connMeta.From = req.From
+		connMeta.Name = req.From + ":" + coalesce(req.Collection, req.Table, req.DatabaseID, req.TableID)
+		connMeta.Project = req.Project
+		connMeta.Table = req.Table
+		connMeta.Collection = req.Collection
+		connMeta.Database = req.Database
+		connMeta.DatabaseID = req.DatabaseID
+		connMeta.BaseID = req.BaseID
+		connMeta.TableID = req.TableID
+		connMeta.DSN = req.DSN
+		connMeta.URI = req.URI
+		connMeta.Prefix = opts.Prefix
+		connMeta.IDColumn = req.IDColumn
+		connMeta.Columns = req.Columns
+		connMeta.Via = req.Via
+		connMeta.AirbyteImage = req.AirbyteImage
+		connMeta.Streams = req.Streams
+		connMeta.LastStats = &importer.ConnectionStats{Imported: stats.Imported, Skipped: stats.Skipped, Errors: stats.Errors}
+		connMeta.LastRun = time.Now().UTC().Format(time.RFC3339)
+
+		// Auto-enable sync for syncable sources (default: every hour)
+		if importer.IsSyncable(req.From) && !connMeta.SyncEnabled {
+			connMeta.SyncEnabled = true
+			connMeta.SyncInterval = "1h"
+			connMeta.SyncStatus = "idle"
+			connMeta.NextSync = time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339)
 		}
 		_ = h.connStore.Save(connMeta)
 	}
@@ -126,6 +143,31 @@ func coalesce(ss ...string) string {
 		}
 	}
 	return ""
+}
+
+// buildSourceFromConnection creates an importer Source from a saved connection.
+// Used by the sync scheduler — note: only works for connections that have stored
+// their airbyte config or use native connectors that don't require credentials.
+func buildSourceFromConnection(conn *importer.ConnectionMeta) (importer.Source, error) {
+	req := importRequest{
+		From:         conn.From,
+		DSN:          conn.DSN,
+		URI:          conn.URI,
+		Table:        conn.Table,
+		Collection:   conn.Collection,
+		Database:     conn.Database,
+		DatabaseID:   conn.DatabaseID,
+		BaseID:       conn.BaseID,
+		TableID:      conn.TableID,
+		Project:      conn.Project,
+		Prefix:       conn.Prefix,
+		IDColumn:     conn.IDColumn,
+		Columns:      conn.Columns,
+		Via:          conn.Via,
+		AirbyteImage: conn.AirbyteImage,
+		Streams:      conn.Streams,
+	}
+	return buildAPISource(req)
 }
 
 func buildAPISource(req importRequest) (importer.Source, error) {
@@ -643,6 +685,57 @@ func (h *Handlers) DeleteConnection(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// ToggleSync pauses or resumes auto-sync for a connection, or changes interval.
+func (h *Handlers) ToggleSync(c echo.Context) error {
+	if h.connStore == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "connection store not available")
+	}
+
+	id := c.Param("id")
+	conn, ok := h.connStore.Get(id)
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotFound, "connection not found")
+	}
+
+	var req struct {
+		Enabled  *bool  `json:"enabled,omitempty"`
+		Interval string `json:"interval,omitempty"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	if req.Enabled != nil {
+		conn.SyncEnabled = *req.Enabled
+	}
+	if req.Interval != "" {
+		conn.SyncInterval = req.Interval
+	}
+
+	if conn.SyncEnabled {
+		conn.SyncStatus = "idle"
+		conn.NextSync = time.Now().UTC().Add(parseSyncInterval(conn.SyncInterval)).Format(time.RFC3339)
+	} else {
+		conn.SyncStatus = ""
+		conn.NextSync = ""
+		conn.SyncError = ""
+	}
+
+	if err := h.connStore.Save(conn); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(http.StatusOK, conn)
+}
+
+// SyncStatus returns the sync status for all sync-enabled connections.
+func (h *Handlers) SyncStatus(c echo.Context) error {
+	if h.connStore == nil {
+		return c.JSON(http.StatusOK, []any{})
+	}
+	return c.JSON(http.StatusOK, h.connStore.ListSyncEnabled())
+}
+
 // RunConnection re-runs an import for a saved connection.
 // Credentials must be provided in the request body (they are not stored).
 func (h *Handlers) RunConnection(c echo.Context) error {
@@ -721,6 +814,13 @@ func (h *Handlers) RunConnection(c echo.Context) error {
 		Skipped:  stats.Skipped,
 		Errors:   stats.Errors,
 	})
+}
+
+func parseSyncInterval(interval string) time.Duration {
+	if d, err := time.ParseDuration(interval); err == nil && d > 0 {
+		return d
+	}
+	return 1 * time.Hour
 }
 
 // RunImport is used by the MCP tool to trigger an import programmatically.

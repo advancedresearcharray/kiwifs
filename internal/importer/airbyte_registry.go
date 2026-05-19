@@ -10,6 +10,23 @@ var AirbyteRegistry = map[string]string{
 	"airtable":      "airbyte/source-airtable:latest",
 }
 
+// SyncableSources marks which sources support periodic auto-sync.
+// These are live data sources where content changes over time.
+var SyncableSources = map[string]bool{
+	"firebase-rtdb": true,
+	"firestore":     true,
+	"postgres":      true,
+	"mysql":         true,
+	"mongodb":       true,
+	"notion":        true,
+	"airtable":      true,
+}
+
+// IsSyncable returns true if the source supports auto-sync.
+func IsSyncable(sourceType string) bool {
+	return SyncableSources[strings.ToLower(strings.TrimSpace(sourceType))]
+}
+
 // Future sources (uncomment when ready):
 // "postgres":      "airbyte/source-postgres:latest",
 // "mysql":         "airbyte/source-mysql:latest",
@@ -105,11 +122,16 @@ func LookupAirbyteDefinitionID(sourceType string) string {
 // ListAvailableSources returns all available source names grouped by type.
 func ListAvailableSources(airbyteAvailable bool) map[string][]string {
 	result := map[string][]string{
-		"builtin": make([]string, 0),
+		"builtin":  make([]string, 0),
+		"syncable": make([]string, 0),
 	}
 
 	for name := range BuiltinSources {
 		result["builtin"] = append(result["builtin"], name)
+	}
+
+	for name := range SyncableSources {
+		result["syncable"] = append(result["syncable"], name)
 	}
 
 	if airbyteAvailable {

@@ -90,6 +90,9 @@ type Server struct {
 	janitorSched  *janitor.Scheduler
 	janitorCancel context.CancelFunc
 
+	syncSched  *importer.SyncScheduler
+	syncCancel context.CancelFunc
+
 	auth atomic.Pointer[liveAuth]
 }
 
@@ -354,6 +357,14 @@ func (s *Server) setupRoutes() {
 		log.Printf("api: init connection store: %v (import connections disabled)", err)
 	}
 
+	// Initialize sync scheduler for auto-sync connections
+	if connStore != nil {
+		buildSrc := func(conn *importer.ConnectionMeta) (importer.Source, error) {
+			return buildSourceFromConnection(conn)
+		}
+		s.syncSched = importer.NewSyncScheduler(connStore, s.pipe, buildSrc)
+	}
+
 	publishMetrics, pmErr := rbac.NewPublishMetricsStore(s.pipe.Store.AbsPath(""))
 	if pmErr != nil {
 		log.Printf("api: init publish metrics: %v (view counts disabled)", pmErr)
@@ -462,6 +473,8 @@ func (s *Server) setupRoutes() {
 	api.POST("/import/connections", h.SaveConnection)
 	api.DELETE("/import/connections/:id", h.DeleteConnection)
 	api.POST("/import/connections/:id/run", h.RunConnection)
+	api.POST("/import/connections/:id/sync", h.ToggleSync)
+	api.GET("/import/sync/status", h.SyncStatus)
 	api.GET("/import/sources", h.ImportSources)
 	api.POST("/import/airbyte/spec", h.ImportAirbyteSpec)
 	api.POST("/import/airbyte/check", h.ImportAirbyteCheck)
@@ -579,6 +592,11 @@ func (s *Server) Start(addr string) error {
 		s.janitorCancel = cancel
 		s.janitorSched.Start(ctx)
 	}
+	if s.syncSched != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		s.syncCancel = cancel
+		s.syncSched.Start(ctx)
+	}
 	return s.echo.Start(addr)
 }
 
@@ -588,6 +606,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.janitorSched != nil {
 		s.janitorSched.Stop()
+	}
+	if s.syncCancel != nil {
+		s.syncCancel()
+	}
+	if s.syncSched != nil {
+		s.syncSched.Stop()
 	}
 	return s.echo.Shutdown(ctx)
 }

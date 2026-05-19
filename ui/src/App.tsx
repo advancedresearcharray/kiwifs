@@ -5,7 +5,6 @@ import {
   Clock,
   Clock4,
   Columns3,
-  Crosshair,
   Database,
   File,
   FileAxis3D,
@@ -378,9 +377,6 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label="New page (⌘N)">
               <Plus className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={revealActivePageInTree} label="Reveal current page in tree" disabled={!activePath}>
-              <Crosshair className="h-4 w-4" />
-            </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
               <Network className="h-4 w-4" />
             </ToolbarButton>
@@ -609,6 +605,7 @@ const handleSpaceSwitch = useCallback(() => {
                 onNavigate={navigate}
                 onEdit={() => setEditing(true)}
                 onHistory={() => setHistoryOpen(true)}
+                onRevealInTree={revealActivePageInTree}
                 onToggleStar={() => toggleStar(activePath)}
                 isStarred={isStarred(activePath)}
                 onTogglePin={() => togglePin(activePath)}

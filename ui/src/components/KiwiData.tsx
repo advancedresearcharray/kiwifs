@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Database, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Database, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { api, type ImportConnection } from "../lib/api";
 import { sourceTypeLabel } from "../lib/importSourceLabels";
@@ -63,12 +63,21 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
     setReImporting(conn.id);
     try {
       const result = await api.importRunConnection(conn.id);
-      alert(`Import complete: ${result.imported} imported, ${result.skipped} skipped`);
+      alert(`Sync complete: ${result.imported} imported, ${result.skipped} skipped`);
       fetchConnections();
     } catch (err) {
-      alert(`Re-import failed: ${err}`);
+      alert(`Sync failed: ${err}`);
     } finally {
       setReImporting(null);
+    }
+  };
+
+  const handleToggleSync = async (conn: ImportConnection, enabled: boolean) => {
+    try {
+      await api.importToggleSync(conn.id, enabled);
+      fetchConnections();
+    } catch (err) {
+      alert(`Failed to toggle sync: ${err}`);
     }
   };
 
@@ -100,12 +109,31 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-3 mb-2">
           <SourceIcon source={selectedConn.from} size={28} />
           <h1 className="text-xl font-semibold">{connectionDisplayName(selectedConn)}</h1>
+          {selectedConn.sync_enabled && (
+            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+              selectedConn.sync_status === "running" ? "bg-blue-500/10 text-blue-600" :
+              selectedConn.sync_status === "error" ? "bg-red-500/10 text-red-600" :
+              "bg-emerald-500/10 text-emerald-600"
+            }`}>
+              <RefreshCw className={`h-3 w-3 ${selectedConn.sync_status === "running" ? "animate-spin" : ""}`} />
+              {selectedConn.sync_status === "running" ? "Syncing..." :
+               selectedConn.sync_status === "error" ? "Sync error" :
+               `Auto-sync every ${selectedConn.sync_interval || "1h"}`}
+            </span>
+          )}
         </div>
         <p className="text-sm text-muted-foreground mb-4">
           {selectedConn.prefix && <>Prefix: <code className="bg-muted px-1 rounded">{selectedConn.prefix}/</code> &middot; </>}
           {selectedConn.last_stats && <>{selectedConn.last_stats.imported} docs</>}
-          {selectedConn.last_run && <> &middot; last imported {new Date(selectedConn.last_run).toLocaleString()}</>}
+          {selectedConn.last_run && <> &middot; last synced {new Date(selectedConn.last_run).toLocaleString()}</>}
+          {selectedConn.next_sync && selectedConn.sync_enabled && <> &middot; next sync {timeAgo(selectedConn.next_sync).replace(" ago", "")}</>}
         </p>
+
+        {selectedConn.sync_error && (
+          <div className="text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded-lg px-3 py-2 mb-4">
+            Last sync error: {selectedConn.sync_error}
+          </div>
+        )}
 
         <div className="flex gap-2 mb-6">
           <Button
@@ -118,8 +146,20 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
             ) : (
               <Play className="h-3.5 w-3.5 mr-1.5" />
             )}
-            Re-import
+            Sync now
           </Button>
+          {selectedConn.sync_enabled && (
+            <Button size="sm" variant="outline" onClick={() => handleToggleSync(selectedConn, false)}>
+              <Pause className="h-3.5 w-3.5 mr-1.5" />
+              Pause sync
+            </Button>
+          )}
+          {!selectedConn.sync_enabled && (
+            <Button size="sm" variant="outline" onClick={() => handleToggleSync(selectedConn, true)}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              Resume sync
+            </Button>
+          )}
           <Button size="sm" variant="destructive" onClick={() => handleDelete(selectedConn.id)}>
             <Trash2 className="h-3.5 w-3.5 mr-1.5" />
             Remove
@@ -177,7 +217,19 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center gap-3">
                   <SourceIcon source={conn.from} size={22} />
                   <div>
-                    <div className="font-medium">{connectionDisplayName(conn)}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {connectionDisplayName(conn)}
+                      {conn.sync_enabled && (
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                          conn.sync_status === "running" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" :
+                          conn.sync_status === "error" ? "bg-red-500/10 text-red-600 dark:text-red-400" :
+                          "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        }`}>
+                          {conn.sync_status === "running" ? <RefreshCw className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
+                          {conn.sync_status === "running" ? "Syncing" : conn.sync_status === "error" ? "Error" : "Auto-sync"}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       <span>{sourceTypeLabel(conn.from)}</span>
                       {conn.prefix && (
@@ -190,7 +242,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
                           {" "}&middot; {conn.last_stats.imported} docs
                         </>
                       )}
-                      {" "}&middot; {conn.last_run ? `imported ${timeAgo(conn.last_run)}` : "never imported"}
+                      {" "}&middot; {conn.last_run ? `synced ${timeAgo(conn.last_run)}` : "never synced"}
                     </div>
                   </div>
                 </div>
@@ -198,6 +250,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
                   <Button
                     size="sm"
                     variant="ghost"
+                    title="Sync now"
                     onClick={(e) => { e.stopPropagation(); handleReImport(conn); }}
                     disabled={reImporting === conn.id}
                   >
@@ -206,6 +259,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
                   <Button
                     size="sm"
                     variant="ghost"
+                    title="Remove"
                     onClick={(e) => { e.stopPropagation(); handleDelete(conn.id); }}
                   >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />

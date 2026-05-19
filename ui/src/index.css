@@ -520,3 +520,29 @@
   h1, h2, h3 { break-after: avoid; }
   pre, table, figure { break-inside: avoid; }
 }
+
+/* Sidebar tree: pulse when "Show in sidebar" locates a page */
+@keyframes kiwi-tree-reveal-flash {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
+    background-color: transparent;
+  }
+  25% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 70%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 28%, var(--accent, transparent));
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 45%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 18%, var(--accent, transparent));
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
+    background-color: transparent;
+  }
+}
+
+.kiwi-tree-reveal-flash {
+  animation: kiwi-tree-reveal-flash 1.1s ease-out;
+  position: relative;
+  z-index: 1;
+}

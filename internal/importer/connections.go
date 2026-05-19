@@ -32,6 +32,19 @@ type ConnectionMeta struct {
 	LastRun    string          `json:"last_run,omitempty"`
 	LastStats  *ConnectionStats `json:"last_stats,omitempty"`
 	CreatedAt  string          `json:"created_at"`
+
+	// Sync fields
+	SyncEnabled  bool   `json:"sync_enabled"`
+	SyncInterval string `json:"sync_interval,omitempty"` // "5m", "1h", "6h", "24h"
+	NextSync     string `json:"next_sync,omitempty"`
+	SyncStatus   string `json:"sync_status,omitempty"` // "idle", "running", "error"
+	SyncError    string `json:"sync_error,omitempty"`
+
+	// Airbyte fields for re-running
+	Via          string         `json:"via,omitempty"` // "airbyte", "airbyte-cloud", "builtin"
+	AirbyteImage string         `json:"airbyte_image,omitempty"`
+	Streams      []string       `json:"streams,omitempty"`
+	AirbyteState json.RawMessage `json:"airbyte_state,omitempty"` // incremental sync cursor
 }
 
 // ConnectionStats records the result of the most recent import run.
@@ -128,6 +141,19 @@ func (s *ConnectionStore) Save(c *ConnectionMeta) error {
 	return s.save()
 }
 
+// FindBySourceAndPrefix finds an existing connection matching source type and prefix.
+func (s *ConnectionStore) FindBySourceAndPrefix(from, prefix string) *ConnectionMeta {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, c := range s.conns {
+		if c.From == from && c.Prefix == prefix {
+			return c
+		}
+	}
+	return nil
+}
+
 // Delete removes a connection by ID.
 func (s *ConnectionStore) Delete(id string) error {
 	s.mu.Lock()
@@ -152,4 +178,45 @@ func (s *ConnectionStore) UpdateLastRun(id string, stats *ConnectionStats) error
 	c.LastRun = time.Now().UTC().Format(time.RFC3339)
 	c.LastStats = stats
 	return s.save()
+}
+
+// UpdateSyncStatus updates the sync status and optional error message.
+func (s *ConnectionStore) UpdateSyncStatus(id, status, errMsg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c, ok := s.conns[id]
+	if !ok {
+		return fmt.Errorf("connection %q not found", id)
+	}
+	c.SyncStatus = status
+	c.SyncError = errMsg
+	return s.save()
+}
+
+// UpdateNextSync sets the next scheduled sync time.
+func (s *ConnectionStore) UpdateNextSync(id, next string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c, ok := s.conns[id]
+	if !ok {
+		return fmt.Errorf("connection %q not found", id)
+	}
+	c.NextSync = next
+	return s.save()
+}
+
+// ListSyncEnabled returns connections with sync_enabled=true.
+func (s *ConnectionStore) ListSyncEnabled() []*ConnectionMeta {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*ConnectionMeta, 0)
+	for _, c := range s.conns {
+		if c.SyncEnabled {
+			out = append(out, c)
+		}
+	}
+	return out
 }

@@ -743,6 +743,14 @@ export const api = {
     });
   },
 
+  async importToggleSync(id: string, enabled: boolean, interval?: string): Promise<ImportConnection> {
+    return request(`${kiwiBase()}/import/connections/${id}/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, interval }),
+    });
+  },
+
   async importSources(): Promise<{ builtin: string[]; airbyte: string[] | null; docker_available: boolean; cloud_key_present: boolean }> {
     return request(`${kiwiBase()}/import/sources`);
   },
@@ -923,6 +931,11 @@ export type ImportConnection = {
   last_run?: string;
   last_stats?: { imported: number; skipped: number; errors?: string[] };
   created_at: string;
+  sync_enabled?: boolean;
+  sync_interval?: string;
+  next_sync?: string;
+  sync_status?: string;
+  sync_error?: string;
 };
 
 export type AirbyteSpecProperty = {

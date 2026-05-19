@@ -406,9 +406,9 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
       {state.step === 4 && !isAirbyte && <PreviewStep state={state} onBack={() => update({ step: 3 })} onImport={handleImport} loading={loading} />}
       {/* Step 5 */}
       {state.step === 5 && isAirbyte && <PreviewStep state={state} onBack={() => update({ step: 4 })} onImport={handleImport} loading={loading} />}
-      {state.step === 5 && !isAirbyte && state.importResult && <ResultsStep result={state.importResult} onComplete={onComplete} />}
+      {state.step === 5 && !isAirbyte && state.importResult && <ResultsStep result={state.importResult} sourceType={state.sourceType} onComplete={onComplete} />}
       {/* Step 6 */}
-      {state.step === 6 && isAirbyte && state.importResult && <ResultsStep result={state.importResult} onComplete={onComplete} />}
+      {state.step === 6 && isAirbyte && state.importResult && <ResultsStep result={state.importResult} sourceType={state.sourceType} onComplete={onComplete} />}
     </div>
   );
 }
@@ -595,20 +595,27 @@ function PreviewStep({ state, onBack, onImport, loading }: { state: WizardState;
    Results Step
    ═══════════════════════════════════════════════════════════ */
 
-function ResultsStep({ result, onComplete }: { result: { imported: number; skipped: number; errors: string[] }; onComplete: () => void }) {
+function ResultsStep({ result, sourceType, onComplete }: { result: { imported: number; skipped: number; errors: string[] }; sourceType: string | null; onComplete: () => void }) {
   const errors = result.errors ?? [];
   const hasErrors = errors.length > 0;
+  const syncable = sourceType != null && ["firebase-rtdb", "firestore", "postgres", "mysql", "mongodb", "notion", "airtable"].includes(sourceType);
   return (
     <div className="text-center py-10">
       <div className={`h-14 w-14 mx-auto mb-5 rounded-full flex items-center justify-center ${hasErrors ? "bg-amber-500/10" : "bg-green-500/10"}`}>
         {hasErrors ? <AlertCircle className="h-7 w-7 text-amber-500" /> : <CheckCircle className="h-7 w-7 text-green-500" />}
       </div>
       <h2 className="text-lg font-semibold mb-1">{hasErrors ? "Import completed with errors" : "Import complete"}</h2>
-      <div className="text-sm text-muted-foreground space-y-0.5 mb-6">
+      <div className="text-sm text-muted-foreground space-y-0.5 mb-4">
         <div><strong>{result.imported}</strong> documents imported</div>
         {result.skipped > 0 && <div><strong>{result.skipped}</strong> unchanged (skipped)</div>}
         {hasErrors && <div className="text-destructive"><strong>{errors.length}</strong> error{errors.length !== 1 ? "s" : ""}</div>}
       </div>
+      {syncable && !hasErrors && (
+        <div className="inline-flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-full px-3 py-1.5 mb-4">
+          <RefreshCw className="h-3 w-3" />
+          <span>Auto-sync enabled — updates every hour</span>
+        </div>
+      )}
       {hasErrors && (
         <div className="text-left mx-auto max-w-md mb-6">
           <details className="border border-border rounded-lg">

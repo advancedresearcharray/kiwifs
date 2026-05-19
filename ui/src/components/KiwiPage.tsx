@@ -10,7 +10,7 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Edit, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
 import { dirOf, titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
@@ -38,6 +38,7 @@ import { PageSkeleton } from "./PageSkeleton";
 import { trackRecent } from "./KiwiFavorites";
 import { Badge } from "@kw/components/ui/badge";
 import { Button } from "@kw/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@kw/components/ui/tooltip";
 import remarkEmoji from "remark-emoji";
 import remarkSupersub from "remark-supersub";
 import remarkDefinitionList from "remark-definition-list";
@@ -52,6 +53,7 @@ type Props = {
   onNavigate: (path: string) => void;
   onEdit: () => void;
   onHistory?: () => void;
+  onRevealInTree?: () => void;
   onToggleStar?: () => void;
   isStarred?: boolean;
   onTogglePin?: () => void;
@@ -358,7 +360,7 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
   return "unknown";
 }
 
-export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey }: Props) {
+export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey }: Props) {
   const treeEntry = useMemo(() => findEntry(tree, path), [tree, path]);
   const isDir = treeEntry?.isDir ?? false;
 
@@ -530,15 +532,35 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onToggleSt
                 )}
               </div>
               <div className="kiwi-page-actions flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+                {onRevealInTree && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" onClick={onRevealInTree} className="h-8 w-8" aria-label="Show in sidebar">
+                        <Crosshair className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Show in sidebar</TooltipContent>
+                  </Tooltip>
+                )}
                 {onTogglePin && (
-                  <Button variant="ghost" size="icon" onClick={onTogglePin} className="h-8 w-8" aria-label={isPinned ? "Unpin page" : "Pin page"}>
-                    <Pin className={"h-4 w-4" + (isPinned ? " fill-current text-primary" : "")} />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" onClick={onTogglePin} className="h-8 w-8" aria-label={isPinned ? "Unpin page" : "Pin page"}>
+                        <Pin className={"h-4 w-4" + (isPinned ? " fill-current text-primary" : "")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{isPinned ? "Unpin" : "Pin"}</TooltipContent>
+                  </Tooltip>
                 )}
                 {onToggleStar && (
-                  <Button variant="ghost" size="icon" onClick={onToggleStar} className="h-8 w-8" aria-label={isStarred ? "Unstar page" : "Star page"}>
-                    <Star className={"h-4 w-4" + (isStarred ? " fill-amber-500 text-amber-500" : "")} />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" onClick={onToggleStar} className="h-8 w-8" aria-label={isStarred ? "Unstar page" : "Star page"}>
+                        <Star className={"h-4 w-4" + (isStarred ? " fill-amber-500 text-amber-500" : "")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{isStarred ? "Unstar" : "Star"}</TooltipContent>
+                  </Tooltip>
                 )}
                 {onHistory && (
                   <Button variant="outline" size="sm" onClick={onHistory}>
