@@ -449,7 +449,14 @@ func (s *AirbyteSource) runDocker(ctx context.Context, args []string) ([]byte, e
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("docker exit %d: %s", exitErr.ExitCode(), string(exitErr.Stderr))
+			detail := string(exitErr.Stderr)
+			if detail == "" && len(out) > 0 {
+				detail = string(out)
+			}
+			if len(detail) > 500 {
+				detail = detail[:500]
+			}
+			return nil, fmt.Errorf("docker exit %d: %s", exitErr.ExitCode(), detail)
 		}
 		return nil, err
 	}
@@ -468,6 +475,7 @@ func (s *AirbyteSource) writeTempJSON(pattern string, data any) (string, error) 
 		return "", err
 	}
 	tmp.Close()
+	os.Chmod(tmp.Name(), 0644)
 	return tmp.Name(), nil
 }
 

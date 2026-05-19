@@ -84,7 +84,7 @@ function sortChildren(children: TreeEntry[]): TreeEntry[] {
 function treeErrorMessage(raw: string): string {
   const lower = raw.toLowerCase();
   if (lower.includes("502") || lower.includes("bad gateway")) {
-    return "Cannot reach the workspace server. It may be restarting — please wait a moment.";
+    return "Cannot reach the workspace server";
   }
   if (lower.includes("404") || lower.includes("not found")) {
     return "This workspace could not be found. It may have been removed or the URL is incorrect.";

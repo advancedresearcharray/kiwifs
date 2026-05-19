@@ -124,35 +124,6 @@ const initialState: WizardState = {
   previews: [], importResult: null,
 };
 
-/* ─── Visual step indicator ─── */
-
-function StepIndicator({ current, total, labels }: { current: number; total: number; labels: string[] }) {
-  return (
-    <div className="flex items-center gap-1 mb-6">
-      {labels.slice(0, total).map((label, i) => {
-        const stepNum = i + 1;
-        const isActive = stepNum === current;
-        const isDone = stepNum < current;
-        return (
-          <div key={i} className="flex items-center gap-1">
-            {i > 0 && <div className={`h-px w-4 sm:w-6 ${isDone ? "bg-primary" : "bg-border"}`} />}
-            <div className="flex items-center gap-1.5">
-              <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium transition-colors
-                ${isDone ? "bg-primary text-primary-foreground" : ""}
-                ${isActive ? "bg-primary text-primary-foreground ring-2 ring-primary/30" : ""}
-                ${!isDone && !isActive ? "bg-muted text-muted-foreground" : ""}
-              `}>
-                {isDone ? <Check className="h-3.5 w-3.5" /> : stepNum}
-              </div>
-              <span className={`text-xs hidden sm:inline ${isActive ? "font-medium text-foreground" : "text-muted-foreground"}`}>{label}</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ═══════════════════════════════════════════════════════════
    Drag-and-Drop File Upload Zone
    ═══════════════════════════════════════════════════════════ */
@@ -219,6 +190,7 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
   const [loading, setLoading] = useState(false);
   const [specLoading, setSpecLoading] = useState(false);
   const [specError, setSpecError] = useState<string | null>(null);
+  const [specRetry, setSpecRetry] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const update = useCallback((partial: Partial<WizardState>) => { setState((prev) => ({ ...prev, ...partial })); setError(null); }, []);
@@ -246,7 +218,7 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
       }
     });
     return () => { cancelled = true; };
-  }, [state.sourceType, state.step, state.airbyteSpec, state.airbyteCloudMode, update]);
+  }, [state.sourceType, state.step, state.airbyteSpec, state.airbyteCloudMode, specRetry, update]);
 
   const buildConnectionString = useCallback((): string => {
     const s = state;
@@ -351,7 +323,6 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
 
   const isAirbyte = isAirbyteSourceType(state.sourceType);
   const totalSteps = isAirbyte ? 6 : 5;
-  const stepLabels = isAirbyte ? ["Source", "Connect", "Streams", "Configure", "Preview", "Import"] : ["Source", "Connect", "Configure", "Preview", "Import"];
 
   return (
     <div className="max-w-3xl mx-auto p-6">
@@ -360,7 +331,6 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
         <div className="min-w-0 flex-1"><h1 className="text-lg font-semibold">Import data</h1></div>
         <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-accent/50"><X className="h-4 w-4" /></button>
       </div>
-      {state.sourceType && state.step < totalSteps && <StepIndicator current={state.step} total={totalSteps} labels={stepLabels} />}
       {error && (
         <div className="bg-destructive/10 border border-destructive/20 text-sm px-4 py-3 rounded-lg mb-4 flex items-start gap-3">
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
@@ -410,7 +380,7 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
       {state.step === 2 && state.sourceType && (
         <div className="space-y-4">
           {isAirbyteSourceType(state.sourceType) ? (
-            <AirbyteConfigForm sourceType={state.sourceType} spec={state.airbyteSpec} specLoading={specLoading} specError={specError} config={state.airbyteConfig} dockerAvailable={state.airbyteDockerAvailable} cloudMode={state.airbyteCloudMode} onConfigChange={(cfg) => update({ airbyteConfig: cfg })} onConnect={handleAirbyteCheck} connecting={loading} onCancel={onClose} onRetry={() => { setSpecError(null); update({ airbyteSpec: null, airbyteCloudMode: false }); }} />
+            <AirbyteConfigForm sourceType={state.sourceType} spec={state.airbyteSpec} specLoading={specLoading} specError={specError} config={state.airbyteConfig} dockerAvailable={state.airbyteDockerAvailable} cloudMode={state.airbyteCloudMode} onConfigChange={(cfg) => update({ airbyteConfig: cfg })} onConnect={handleAirbyteCheck} connecting={loading} onCancel={onClose} onRetry={() => { setSpecError(null); setSpecRetry((n) => n + 1); update({ airbyteSpec: null, airbyteCloudMode: false, airbyteDockerAvailable: null }); }} />
           ) : state.sourceType === "firestore" ? (
             <FirestoreForm state={state} update={update} onCancel={onClose} onTestConnection={handleTestConnection} onNext={() => update({ selectedTable: state.collection || "data", step: 3 })} loading={loading} />
           ) : (state.sourceType === "postgres" || state.sourceType === "mysql" || state.sourceType === "mongodb") ? (
@@ -662,7 +632,7 @@ function AirbyteConfigForm({ sourceType, spec, specLoading, specError, config, d
   if (cloudMode) return (<div className="text-center py-8 space-y-3"><Cloud className="h-10 w-10 mx-auto text-blue-500" /><h2 className="font-medium">Airbyte Cloud connected</h2><p className="text-sm text-muted-foreground max-w-md mx-auto">Your <strong>{sourceTypeLabel(sourceType)}</strong> connector will be managed through Airbyte Cloud.</p><div className="pt-2 flex gap-2 justify-center"><Button variant="outline" size="sm" onClick={onCancel}>Go back</Button><Button size="sm" onClick={onConnect}>Configure connection</Button></div></div>);
   if (dockerAvailable === false) return (<div className="text-center py-8 space-y-3"><AlertCircle className="h-10 w-10 mx-auto text-amber-500" /><h2 className="font-medium">Docker or Airbyte API key required</h2><p className="text-sm text-muted-foreground max-w-md mx-auto">The <strong>{sourceTypeLabel(sourceType)}</strong> connector requires either Docker or an Airbyte Cloud API key.</p><p className="text-xs text-muted-foreground max-w-sm mx-auto">Set <code className="bg-muted px-1.5 py-0.5 rounded">AIRBYTE_API_KEY</code> or install Docker Desktop.</p><div className="pt-2"><Button variant="outline" size="sm" onClick={onCancel}>Go back</Button></div></div>);
   if (specError) return (<div className="text-center py-8 space-y-3"><AlertCircle className="h-10 w-10 mx-auto text-muted-foreground" /><h2 className="font-medium">Connector unavailable</h2><p className="text-sm text-muted-foreground max-w-md mx-auto">{specError}</p><div className="flex items-center justify-center gap-2 pt-2"><Button variant="outline" size="sm" onClick={onCancel}>Go back</Button><Button variant="outline" size="sm" onClick={onRetry}><RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Retry</Button></div></div>);
-  if (specLoading || !spec) return (<div className="flex flex-col items-center justify-center py-12 gap-3"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /><p className="text-sm text-muted-foreground">Loading {sourceTypeLabel(sourceType)} connector...</p><p className="text-xs text-muted-foreground">First run may take a minute to pull the Docker image</p></div>);
+  if (specLoading || !spec) return (<div className="flex flex-col items-center justify-center py-12 gap-3"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /><p className="text-sm text-muted-foreground">Loading {sourceTypeLabel(sourceType)} connector...</p></div>);
 
   const schema = spec.connectionSpecification;
   const properties = schema.properties || {};
