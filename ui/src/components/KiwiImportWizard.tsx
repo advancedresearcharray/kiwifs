@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, ArrowRight, CheckCircle, Loader2, AlertCircle, RefreshCw,
   Cloud, FolderOpen, FileText, Database, ChevronDown,
-  ChevronRight, Eye, Zap, Check, X, Upload, Info,
+  ChevronRight, Eye, Import, Check, X, Upload, Info,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { api, type AirbyteSpecProperty, type AirbyteSpecResponse, type AirbyteStream } from "../lib/api";
@@ -585,7 +585,7 @@ function PreviewStep({ state, onBack, onImport, loading }: { state: WizardState;
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="outline" size="sm" onClick={onBack}>Back</Button>
-        <Button size="sm" onClick={onImport} disabled={loading}>{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}Import</Button>
+        <Button size="sm" onClick={onImport} disabled={loading}>{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Import className="h-3.5 w-3.5 mr-1.5" />}Import</Button>
       </div>
     </div>
   );
@@ -596,7 +596,8 @@ function PreviewStep({ state, onBack, onImport, loading }: { state: WizardState;
    ═══════════════════════════════════════════════════════════ */
 
 function ResultsStep({ result, onComplete }: { result: { imported: number; skipped: number; errors: string[] }; onComplete: () => void }) {
-  const hasErrors = result.errors.length > 0;
+  const errors = result.errors ?? [];
+  const hasErrors = errors.length > 0;
   return (
     <div className="text-center py-10">
       <div className={`h-14 w-14 mx-auto mb-5 rounded-full flex items-center justify-center ${hasErrors ? "bg-amber-500/10" : "bg-green-500/10"}`}>
@@ -606,13 +607,13 @@ function ResultsStep({ result, onComplete }: { result: { imported: number; skipp
       <div className="text-sm text-muted-foreground space-y-0.5 mb-6">
         <div><strong>{result.imported}</strong> documents imported</div>
         {result.skipped > 0 && <div><strong>{result.skipped}</strong> unchanged (skipped)</div>}
-        {hasErrors && <div className="text-destructive"><strong>{result.errors.length}</strong> error{result.errors.length !== 1 ? "s" : ""}</div>}
+        {hasErrors && <div className="text-destructive"><strong>{errors.length}</strong> error{errors.length !== 1 ? "s" : ""}</div>}
       </div>
       {hasErrors && (
         <div className="text-left mx-auto max-w-md mb-6">
           <details className="border border-border rounded-lg">
             <summary className="px-4 py-2 text-sm cursor-pointer text-muted-foreground hover:text-foreground">View errors</summary>
-            <div className="px-4 py-2 text-xs text-destructive space-y-1 max-h-32 overflow-auto">{result.errors.map((e, i) => <div key={i}>{e}</div>)}</div>
+            <div className="px-4 py-2 text-xs text-destructive space-y-1 max-h-32 overflow-auto">{errors.map((e, i) => <div key={i}>{e}</div>)}</div>
           </details>
         </div>
       )}
@@ -665,7 +666,7 @@ function SpecField({ fieldKey, prop, value, isRequired, onChange }: { fieldKey: 
   if (prop.type === "boolean") return (<label className="flex items-center gap-2"><input type="checkbox" checked={value as boolean ?? prop.default ?? false} onChange={(e) => onChange(e.target.checked)} className="rounded border-border accent-primary" /><span className="text-sm font-medium">{label}</span>{prop.description && <span className="text-xs text-muted-foreground">— {prop.description}</span>}</label>);
   if (prop.type === "integer" || prop.type === "number") return (<label className="block"><span className="text-sm font-medium">{label}{isRequired && <span className="text-destructive ml-0.5">*</span>}</span><input type="number" value={(value as number) ?? prop.default ?? ""} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />{prop.description && <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>}</label>);
   if (prop.type === "object" && prop.properties) return (<label className="block"><span className="text-sm font-medium">{label}{isRequired && <span className="text-destructive ml-0.5">*</span>}</span><textarea value={typeof value === "string" ? value : JSON.stringify(value ?? {}, null, 2)} onChange={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { /* typing */ } }} placeholder="{}" rows={4} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono" />{prop.description && <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>}</label>);
-  return (<label className="block"><span className="text-sm font-medium">{label}{isRequired && <span className="text-destructive ml-0.5">*</span>}</span><input type={isSecret ? "password" : "text"} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value || undefined)} placeholder={prop.default != null ? String(prop.default) : undefined} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono" />{prop.description && <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>}</label>);
+  return (<label className="block"><span className="text-sm font-medium">{label}{isRequired && <span className="text-destructive ml-0.5">*</span>}</span><input type={isSecret ? "password" : "text"} value={value != null ? String(value) : ""} onChange={(e) => onChange(e.target.value || undefined)} placeholder={prop.default != null ? String(prop.default) : undefined} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono" />{prop.description && <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>}</label>);
 }
 
 function OneOfField({ fieldKey, prop, value, isRequired, onChange }: { fieldKey: string; prop: AirbyteSpecProperty; value: Record<string, unknown> | undefined; isRequired: boolean; onChange: (v: unknown) => void }) {
