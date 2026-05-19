@@ -493,6 +493,11 @@ type previewRequest struct {
 	Credentials json.RawMessage `json:"credentials,omitempty"`
 	APIKey      string          `json:"api_key,omitempty"`
 	Limit       int             `json:"limit"`
+
+	AirbyteConfig map[string]any `json:"airbyte_config,omitempty"`
+	AirbyteImage  string         `json:"airbyte_image,omitempty"`
+	Streams       []string       `json:"streams,omitempty"`
+	Via           string         `json:"via,omitempty"`
 }
 
 type previewRecord struct {
@@ -522,20 +527,24 @@ func (h *Handlers) ImportPreview(c echo.Context) error {
 
 	// Build an importRequest to reuse buildAPISource
 	ir := importRequest{
-		From:        req.From,
-		DSN:         req.DSN,
-		URI:         req.URI,
-		DB:          req.DB,
-		Table:       req.Table,
-		Collection:  req.Collection,
-		Database:    req.Database,
-		DatabaseID:  req.DatabaseID,
-		BaseID:      req.BaseID,
-		TableID:     req.TableID,
-		Project:     req.Project,
-		Credentials: req.Credentials,
-		APIKey:      req.APIKey,
-		Limit:       limit,
+		From:          req.From,
+		DSN:           req.DSN,
+		URI:           req.URI,
+		DB:            req.DB,
+		Table:         req.Table,
+		Collection:    req.Collection,
+		Database:      req.Database,
+		DatabaseID:    req.DatabaseID,
+		BaseID:        req.BaseID,
+		TableID:       req.TableID,
+		Project:       req.Project,
+		Credentials:   req.Credentials,
+		APIKey:        req.APIKey,
+		Limit:         limit,
+		AirbyteConfig: req.AirbyteConfig,
+		AirbyteImage:  req.AirbyteImage,
+		Streams:       req.Streams,
+		Via:           req.Via,
 	}
 
 	src, err := buildAPISource(ir)
