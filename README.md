@@ -448,14 +448,20 @@ Every feature is accessible via `kiwifs <command>`:
 | `kiwifs query` | Run a DQL query against the local index |
 | `kiwifs import` | Bulk-import from 19 data sources (Markdown, Postgres, CSV, Notion, etc.) |
 | `kiwifs export` | Export knowledge base to JSONL or CSV |
+| `kiwifs clip` | Clip a web page into the knowledge base |
 | `kiwifs aggregate` | Run SQL aggregates (count, avg, sum, min, max) over frontmatter |
 | `kiwifs analytics` | Content health dashboard (stale, orphans, broken links) |
+| `kiwifs bench` | Run storage and latency benchmarks |
 | `kiwifs view` | Manage computed views (create, refresh, list) |
 | `kiwifs mount` | FUSE-mount a remote KiwiFS server as a local folder |
 | `kiwifs reindex` | Rebuild search indexes from files (FTS5 + vector + metadata) |
 | `kiwifs lint` | Validate workspace (orphan pages, broken links, missing frontmatter) |
 | `kiwifs connect` | Auto-configure MCP in your IDE (Cursor, Claude Code, VS Code, Windsurf, etc.) |
+| `kiwifs rules` | View and manage workspace rules |
+| `kiwifs token` | Manage API tokens for KiwiFS spaces |
 | `kiwifs login` | Browser-based login via WorkOS (global credential for CLI + cloud) |
+| `kiwifs logout` | Remove stored KiwiFS Cloud credentials |
+| `kiwifs whoami` | Show the currently authenticated user |
 | `kiwifs update` | Self-update to the latest release |
 | `kiwifs backup` | Push to a git remote for off-site backup |
 | `kiwifs restore` | Clone from a git remote and rebuild indexes |
