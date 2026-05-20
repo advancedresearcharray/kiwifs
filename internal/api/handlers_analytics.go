@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/kiwifs/kiwifs/internal/janitor"
@@ -38,11 +39,18 @@ type PageStat struct {
 }
 
 type AnalyticsResponse struct {
-	TotalPages int            `json:"total_pages"`
-	TotalWords int            `json:"total_words"`
-	Health     HealthStats    `json:"health"`
-	Coverage   CoverageStats  `json:"coverage"`
-	TopUpdated []PageStat     `json:"top_updated"`
+	TotalPages int           `json:"total_pages"`
+	TotalWords int           `json:"total_words"`
+	Health     HealthStats   `json:"health"`
+	Coverage   CoverageStats `json:"coverage"`
+	TopUpdated []PageStat    `json:"top_updated"`
+}
+
+type PageViewsResponse struct {
+	Top     int                   `json:"top"`
+	Path    string                `json:"path,omitempty"`
+	Since   int64                 `json:"since,omitempty"`
+	Results []search.PageViewStat `json:"results"`
 }
 
 func (h *Handlers) Analytics(c echo.Context) error {
@@ -62,6 +70,47 @@ func (h *Handlers) Analytics(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (h *Handlers) PageViews(c echo.Context) error {
+	recorder, ok := h.searcher.(search.PageViewRecorder)
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotImplemented, "page view analytics requires sqlite search backend")
+	}
+	top := search.NormalizeLimit(parseIntParam(c, "top", 20))
+	path := c.QueryParam("path")
+	since, err := parseAnalyticsSince(c.QueryParam("since"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid since: expected unix timestamp or RFC3339 date")
+	}
+
+	results, err := recorder.PageViews(c.Request().Context(), top, path, since)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if results == nil {
+		results = []search.PageViewStat{}
+	}
+	return c.JSON(http.StatusOK, PageViewsResponse{
+		Top:     top,
+		Path:    path,
+		Since:   since,
+		Results: results,
+	})
+}
+
+func parseAnalyticsSince(raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	if unix, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return unix, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return 0, err
+	}
+	return t.Unix(), nil
 }
 
 func BuildAnalytics(ctx context.Context, sq *search.SQLite, janitorSched *janitor.Scheduler, scope string, staleThreshold int) (*AnalyticsResponse, error) {

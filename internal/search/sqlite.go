@@ -99,24 +99,24 @@ func pathRowID(path string) int64 {
 //
 // Two pools share the same underlying DB file (WAL makes this safe):
 //
-//   writeDB — SetMaxOpenConns(1). Serialises every writer at the Go pool
-//             boundary, so there's never more than one writer in the SQLite
-//             engine at once. FTS5 and the regular tables see each DML/DDL
-//             run to completion before the next one starts, which is what
-//             the engine wants anyway, and we avoid the SQLITE_BUSY retries
-//             that crop up when two writers race for the WAL write lock.
+//	writeDB — SetMaxOpenConns(1). Serialises every writer at the Go pool
+//	          boundary, so there's never more than one writer in the SQLite
+//	          engine at once. FTS5 and the regular tables see each DML/DDL
+//	          run to completion before the next one starts, which is what
+//	          the engine wants anyway, and we avoid the SQLITE_BUSY retries
+//	          that crop up when two writers race for the WAL write lock.
 //
-//   readDB —  SetMaxOpenConns(N). WAL readers are MVCC-style: they see a
-//             consistent snapshot even while a writer is mid-transaction,
-//             so searches never wait on indexing to finish. Opened with
-//             `query_only=1` so a bug in this layer can't silently mutate
-//             through the read pool.
+//	readDB —  SetMaxOpenConns(N). WAL readers are MVCC-style: they see a
+//	          consistent snapshot even while a writer is mid-transaction,
+//	          so searches never wait on indexing to finish. Opened with
+//	          `query_only=1` so a bug in this layer can't silently mutate
+//	          through the read pool.
 type SQLite struct {
-	root               string
-	store              storage.Storage   // reindex source; keeps the search layer storage-agnostic
-	writeDB            *sql.DB           // MaxOpenConns=1 — every write/DDL
-	readDB             *sql.DB           // MaxOpenConns=N — read-only snapshot reads
-	computedFields     bool              // when true, _word_count etc. are injected into frontmatter
+	root                 string
+	store                storage.Storage   // reindex source; keeps the search layer storage-agnostic
+	writeDB              *sql.DB           // MaxOpenConns=1 — every write/DDL
+	readDB               *sql.DB           // MaxOpenConns=N — read-only snapshot reads
+	computedFields       bool              // when true, _word_count etc. are injected into frontmatter
 	customComputedFields map[string]string // user-defined computed fields: key → expression
 }
 
@@ -241,7 +241,17 @@ CREATE INDEX IF NOT EXISTS idx_meta_visibility ON file_meta(json_extract(frontma
 CREATE INDEX IF NOT EXISTS idx_meta_type ON file_meta(json_extract(frontmatter, '$.type'));
 CREATE INDEX IF NOT EXISTS idx_meta_priority ON file_meta(json_extract(frontmatter, '$.priority'));
 CREATE INDEX IF NOT EXISTS idx_meta_assignee ON file_meta(json_extract(frontmatter, '$.assignee'));
-CREATE INDEX IF NOT EXISTS idx_meta_claimed_by ON file_meta(json_extract(frontmatter, '$.claimed-by'));`
+CREATE INDEX IF NOT EXISTS idx_meta_claimed_by ON file_meta(json_extract(frontmatter, '$.claimed-by'));
+CREATE TABLE IF NOT EXISTS page_views (
+	path TEXT NOT NULL,
+	source TEXT NOT NULL DEFAULT 'api',
+	count INTEGER NOT NULL DEFAULT 0,
+	first_seen INTEGER NOT NULL,
+	last_seen INTEGER NOT NULL,
+	PRIMARY KEY (path, source)
+);
+CREATE INDEX IF NOT EXISTS idx_page_views_last_seen ON page_views(last_seen);
+CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);`
 	_, err := s.writeDB.ExecContext(ctx, ddl)
 	if err != nil {
 		return fmt.Errorf("create schema: %w", err)
@@ -336,6 +346,66 @@ WHERE docs MATCH ?`
 		})
 	}
 	return results, rows.Err()
+}
+
+func (s *SQLite) RecordPageView(ctx context.Context, path, source string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "api"
+	}
+	now := time.Now().Unix()
+	_, err := s.writeDB.ExecContext(ctx, `
+INSERT INTO page_views(path, source, count, first_seen, last_seen)
+VALUES (?, ?, 1, ?, ?)
+ON CONFLICT(path, source) DO UPDATE SET
+	count = count + 1,
+	last_seen = excluded.last_seen
+`, path, source, now, now)
+	if err != nil {
+		return fmt.Errorf("record page view: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLite) PageViews(ctx context.Context, limit int, path string, since int64) ([]PageViewStat, error) {
+	limit = NormalizeLimit(limit)
+
+	sqlQ := `SELECT path, SUM(count) AS views, MIN(first_seen), MAX(last_seen) FROM page_views`
+	args := []any{}
+	where := []string{}
+	if path != "" {
+		where = append(where, `path = ?`)
+		args = append(args, path)
+	}
+	if since > 0 {
+		where = append(where, `last_seen >= ?`)
+		args = append(args, since)
+	}
+	if len(where) > 0 {
+		sqlQ += ` WHERE ` + strings.Join(where, ` AND `)
+	}
+	sqlQ += ` GROUP BY path ORDER BY views DESC, last_seen DESC, path ASC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.readDB.QueryContext(ctx, sqlQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query page views: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []PageViewStat
+	for rows.Next() {
+		var stat PageViewStat
+		if err := rows.Scan(&stat.Path, &stat.Count, &stat.FirstSeen, &stat.LastSeen); err != nil {
+			return nil, err
+		}
+		stats = append(stats, stat)
+	}
+	return stats, rows.Err()
 }
 
 func generateSnippet(content []byte, queryTerms []string, maxLen int) string {
