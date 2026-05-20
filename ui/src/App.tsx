@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  BarChart3,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -21,6 +22,7 @@ import {
   Star,
   Sun,
 } from "lucide-react";
+import { KiwiEngagement } from "./components/KiwiEngagement";
 import { KiwiTree } from "./components/KiwiTree";
 import { KiwiPage } from "./components/KiwiPage";
 import { KiwiEditor } from "./components/KiwiEditor";
@@ -84,6 +86,7 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
+  const [engagementOpen, setEngagementOpen] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
 
   // Close all full-screen views. Called before opening a new one so only one
@@ -97,6 +100,7 @@ export default function App() {
     setDataOpen(false);
     setGraphOpen(false);
     setHistoryOpen(false);
+    setEngagementOpen(false);
   }, []);
 
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
@@ -320,6 +324,7 @@ const handleSpaceSwitch = useCallback(() => {
     setCanvasOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setEngagementOpen(false);
     recordVisit(path);
     if (isMobile) setSidebarOpen(false);
   }
@@ -397,6 +402,9 @@ const handleSpaceSwitch = useCallback(() => {
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
               <Database className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => { const next = !engagementOpen; closeAllViews(); setEngagementOpen(next); }} label="Engagement analytics">
+              <BarChart3 className="h-4 w-4" />
             </ToolbarButton>
             <HostToolbarActions />
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
@@ -546,8 +554,16 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
-            {basesOpen ? (
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen || engagementOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+            {engagementOpen ? (
+              <KiwiEngagement
+                onClose={() => setEngagementOpen(false)}
+                onNavigate={(p) => {
+                  setEngagementOpen(false);
+                  navigate(p);
+                }}
+              />
+            ) : basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
                 onNavigate={(p) => { setBasesOpen(false); navigate(p); }}

@@ -270,6 +270,11 @@ func (h *Handlers) SemanticSearch(c echo.Context) error {
 	if results == nil {
 		results = []vectorstore.Result{}
 	}
+	if len(results) == 0 {
+		if recorder, ok := h.searcher.(search.FailedSearchRecorder); ok {
+			_ = recorder.RecordFailedSearch(c.Request().Context(), req.Query, "semantic")
+		}
+	}
 	tracing.Record(c.Request().Context(), tracing.Event{Kind: tracing.KindSearch, Query: req.Query, HitCount: len(results), Detail: "semantic"})
 	return c.JSON(http.StatusOK, semanticResponse{
 		Query:   req.Query,

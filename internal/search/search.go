@@ -139,6 +139,7 @@ type FailedSearchRecorder interface {
 type PageViewRecorder interface {
 	RecordPageView(ctx context.Context, path, source string) error
 	PageViews(ctx context.Context, limit int, path string, since int64) ([]PageViewStat, error)
+	PageViewTotal(ctx context.Context, pathPrefix string, since int64) (int, error)
 }
 
 // NormalizeLimit clamps a caller-supplied limit into [1, maxSearchLimit].

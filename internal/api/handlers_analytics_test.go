@@ -33,6 +33,56 @@ func TestAnalyticsEndpoint(t *testing.T) {
 	if resp.Health.Stale.Paths == nil {
 		t.Fatal("stale paths should not be nil (should be empty slice)")
 	}
+	if resp.Engagement.TopViewed == nil {
+		t.Fatal("engagement.top_viewed should not be nil")
+	}
+	if resp.Engagement.FailedSearches == nil {
+		t.Fatal("engagement.failed_searches should not be nil")
+	}
+}
+
+func TestAnalyticsEngagementStats(t *testing.T) {
+	s, _ := buildSQLiteTestServer(t)
+
+	mustPutFile(t, s, "guide.md", "# Guide\nA page about kiwi notes.\n")
+
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/kiwi/file?path=guide.md", nil)
+		rec := httptest.NewRecorder()
+		s.echo.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET guide.md: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/kiwi/search?q=missing-widget", nil)
+		rec := httptest.NewRecorder()
+		s.echo.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /search: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var resp AnalyticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Engagement.TotalViews != 3 {
+		t.Fatalf("expected total_views=3, got %d", resp.Engagement.TotalViews)
+	}
+	if len(resp.Engagement.TopViewed) != 1 || resp.Engagement.TopViewed[0].Path != "guide.md" || resp.Engagement.TopViewed[0].Count != 3 {
+		t.Fatalf("unexpected top_viewed: %+v", resp.Engagement.TopViewed)
+	}
+	if len(resp.Engagement.FailedSearches) != 1 || resp.Engagement.FailedSearches[0].Query != "missing-widget" {
+		t.Fatalf("unexpected failed_searches: %+v", resp.Engagement.FailedSearches)
+	}
 }
 
 func TestAnalyticsScopeFiltering(t *testing.T) {

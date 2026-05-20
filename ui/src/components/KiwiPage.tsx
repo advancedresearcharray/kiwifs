@@ -10,7 +10,7 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
 import { dirOf, titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
@@ -368,6 +368,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
   const [lastModified, setLastModified] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [commentCount, setCommentCount] = useState(0);
+  const [viewCount, setViewCount] = useState<number | null>(null);
   const [lastAuthor, setLastAuthor] = useState<string | null>(null);
   const [versionError, setVersionError] = useState(false);
   const [commentError, setCommentError] = useState(false);
@@ -413,6 +414,25 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
       if (!cancelled) setCommentCount(r.comments.length);
     }).catch(() => { if (!cancelled) setCommentError(true); });
     return () => { cancelled = true; };
+  }, [path, refreshKey, isDir]);
+
+  useEffect(() => {
+    if (isDir) return;
+    let cancelled = false;
+    setViewCount(null);
+    api
+      .pageViews({ path, top: 1 })
+      .then((r) => {
+        if (!cancelled) {
+          setViewCount(r.results[0]?.count ?? 0);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setViewCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [path, refreshKey, isDir]);
 
   const resolver = useMemo(() => buildResolver(tree), [tree]);
@@ -604,6 +624,12 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                 <span className="flex items-center gap-1">
                   <BookOpen className="h-3 w-3" />
                   {reading.words.toLocaleString()} words · {reading.minutes} min read
+                </span>
+              )}
+              {viewCount != null && viewCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <Eye className="h-3 w-3" />
+                  {viewCount.toLocaleString()} view{viewCount === 1 ? "" : "s"}
                 </span>
               )}
               {(versionError || commentError) && (

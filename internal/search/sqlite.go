@@ -432,6 +432,30 @@ ON CONFLICT(path, source) DO UPDATE SET
 	return nil
 }
 
+// PageViewTotal returns the sum of view counts, optionally scoped to a path prefix.
+func (s *SQLite) PageViewTotal(ctx context.Context, pathPrefix string, since int64) (int, error) {
+	sqlQ := `SELECT COALESCE(SUM(count), 0) FROM page_views`
+	args := []any{}
+	where := []string{}
+	if pathPrefix != "" {
+		where = append(where, `path LIKE ?`)
+		args = append(args, pathPrefix+"%")
+	}
+	if since > 0 {
+		where = append(where, `last_seen >= ?`)
+		args = append(args, since)
+	}
+	if len(where) > 0 {
+		sqlQ += ` WHERE ` + strings.Join(where, ` AND `)
+	}
+	var total int
+	err := s.readDB.QueryRowContext(ctx, sqlQ, args...).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("page view total: %w", err)
+	}
+	return total, nil
+}
+
 func (s *SQLite) PageViews(ctx context.Context, limit int, path string, since int64) ([]PageViewStat, error) {
 	limit = NormalizeLimit(limit)
 

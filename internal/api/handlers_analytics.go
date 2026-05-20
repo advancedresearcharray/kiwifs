@@ -38,12 +38,19 @@ type PageStat struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+type EngagementStats struct {
+	TotalViews     int                       `json:"total_views"`
+	TopViewed      []search.PageViewStat     `json:"top_viewed"`
+	FailedSearches []search.FailedSearchStat `json:"failed_searches"`
+}
+
 type AnalyticsResponse struct {
 	TotalPages int           `json:"total_pages"`
 	TotalWords int           `json:"total_words"`
 	Health     HealthStats   `json:"health"`
 	Coverage   CoverageStats `json:"coverage"`
 	TopUpdated []PageStat    `json:"top_updated"`
+	Engagement EngagementStats `json:"engagement"`
 }
 
 type FailedSearchesResponse struct {
@@ -253,7 +260,56 @@ func BuildAnalytics(ctx context.Context, sq *search.SQLite, janitorSched *janito
 		resp.Health.Empty.Paths = []string{}
 	}
 
+	eng, err := buildEngagementStats(ctx, sq, scope)
+	if err != nil {
+		return nil, fmt.Errorf("engagement: %w", err)
+	}
+	resp.Engagement = eng
+
 	return resp, nil
+}
+
+func buildEngagementStats(ctx context.Context, sq *search.SQLite, scope string) (EngagementStats, error) {
+	eng := EngagementStats{
+		TopViewed:      []search.PageViewStat{},
+		FailedSearches: []search.FailedSearchStat{},
+	}
+	if pv, ok := interface{}(sq).(search.PageViewRecorder); ok {
+		total, err := pv.PageViewTotal(ctx, scope, 0)
+		if err != nil {
+			return eng, err
+		}
+		eng.TotalViews = total
+
+		top, err := pv.PageViews(ctx, 50, "", 0)
+		if err != nil {
+			return eng, err
+		}
+		if scope != "" {
+			filtered := top[:0]
+			for _, v := range top {
+				if hasPrefix(v.Path, scope) {
+					filtered = append(filtered, v)
+				}
+			}
+			top = filtered
+		}
+		if len(top) > 10 {
+			top = top[:10]
+		}
+		eng.TopViewed = top
+	}
+	if fr, ok := interface{}(sq).(search.FailedSearchRecorder); ok {
+		failed, err := fr.FailedSearches(ctx, 10, 0)
+		if err != nil {
+			return eng, err
+		}
+		if failed == nil {
+			failed = []search.FailedSearchStat{}
+		}
+		eng.FailedSearches = failed
+	}
+	return eng, nil
 }
 
 func buildCoverageFromDB(ctx context.Context, db *sql.DB, scopeSQL string, scopeArgs []any, resp *AnalyticsResponse) error {

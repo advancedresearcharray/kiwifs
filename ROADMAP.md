@@ -65,7 +65,7 @@ Outbound integration and content health signals.
 
 - [ ] **Webhooks** — POST to Slack/CI/custom URLs on write/delete events, HMAC signing, retry with backoff
 - [x] **Content analytics** — stale page detection, orphan pages, broken links, empty pages, link coverage, health checks (`kiwifs analytics`, `kiwifs janitor`, `GET /api/kiwi/analytics`)
-- [ ] **Page view tracking** — view counts, failed search queries
+- [x] **Page view tracking** — SQLite `page_views` + `failed_searches` tables, REST `/analytics/views` and `/analytics/failed-searches`, engagement section in `/analytics` + `kiwifs analytics`, web UI engagement panel + per-page view counts
 
 ## v0.5 — Access control & governance
 

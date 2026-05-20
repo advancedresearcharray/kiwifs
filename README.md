@@ -458,7 +458,7 @@ Every feature is accessible via `kiwifs <command>`:
 | `kiwifs export` | Export knowledge base to JSONL or CSV |
 | `kiwifs clip` | Clip a web page into the knowledge base |
 | `kiwifs aggregate` | Run SQL aggregates (count, avg, sum, min, max) over frontmatter |
-| `kiwifs analytics` | Content health dashboard (stale, orphans, broken links) |
+| `kiwifs analytics` | Content health + engagement (stale, orphans, page views, failed searches) |
 | `kiwifs bench` | Run storage and latency benchmarks |
 | `kiwifs view` | Manage computed views (create, refresh, list) |
 | `kiwifs mount` | FUSE-mount a remote KiwiFS server as a local folder |
@@ -674,7 +674,9 @@ GET    /api/kiwi/query/aggregate            → aggregation (count, avg, sum, mi
 POST   /api/kiwi/view/refresh              → refresh computed views
 POST   /api/kiwi/import                    → bulk import from data source
 GET    /api/kiwi/export                    → export to JSONL/CSV stream
-GET    /api/kiwi/analytics                 → content health dashboard
+GET    /api/kiwi/analytics                 → content health + engagement dashboard
+GET    /api/kiwi/analytics/views           → top page views (`?path=`, `?top=`, `?since=`)
+GET    /api/kiwi/analytics/failed-searches → zero-result search queries (`?top=`, `?since=`)
 GET    /api/kiwi/health-check?path=        → per-page health metrics
 GET    /api/kiwi/context                   → schema + playbook + index in one call
 
