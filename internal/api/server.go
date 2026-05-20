@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -62,10 +63,47 @@ func WithBackupStatus(fn func() any) ServerOption {
 	return func(s *Server) { s.backupStatusFn = fn }
 }
 
+func WithProtocolHealth(probes []ProtocolHealthProbe) ServerOption {
+	return func(s *Server) { s.protocolHealth = probes }
+}
+
 func (s *Server) SetBackupStatus(fn func() any) {
 	s.backupStatusFn = fn
 	if s.handlers != nil {
 		s.handlers.backupStatusFn = fn
+	}
+}
+
+func (s *Server) SetProtocolHealth(probes []ProtocolHealthProbe) {
+	s.protocolHealth = probes
+	if s.handlers != nil {
+		s.handlers.protocolHealth = probes
+	}
+}
+
+type ProtocolHealthProbe struct {
+	Name    string
+	Enabled bool
+	Addr    string
+	Port    int
+	Check   func(context.Context) error
+}
+
+func NewTCPProtocolHealthProbe(name string, enabled bool, addr string, port int, timeout time.Duration) ProtocolHealthProbe {
+	return ProtocolHealthProbe{
+		Name:    name,
+		Enabled: enabled,
+		Addr:    addr,
+		Port:    port,
+		Check: func(ctx context.Context) error {
+			dialer := net.Dialer{Timeout: timeout}
+			conn, err := dialer.DialContext(ctx, "tcp", addr)
+			if err != nil {
+				return err
+			}
+			_ = conn.Close()
+			return nil
+		},
 	}
 }
 
@@ -85,6 +123,7 @@ type Server struct {
 	schemaReload   func()
 	auditLogger    *AuditLogger
 	backupStatusFn func() any
+	protocolHealth []ProtocolHealthProbe
 	handlers       *Handlers
 
 	janitorSched  *janitor.Scheduler
@@ -399,6 +438,7 @@ func (s *Server) setupRoutes() {
 		publishMetrics:       publishMetrics,
 		schemaReload:         s.schemaReload,
 		backupStatusFn:       s.backupStatusFn,
+		protocolHealth:       s.protocolHealth,
 	}
 	s.handlers = h
 	prev := s.pipe.OnInvalidate

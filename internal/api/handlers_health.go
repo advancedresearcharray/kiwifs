@@ -35,18 +35,67 @@ func (h *Handlers) Healthz(c echo.Context) error {
 }
 
 func (h *Handlers) Readyz(c echo.Context) error {
+	type protocolStatus struct {
+		Enabled  bool   `json:"enabled"`
+		Healthy  bool   `json:"healthy,omitempty"`
+		Port     int    `json:"port,omitempty"`
+		Endpoint string `json:"endpoint,omitempty"`
+		Error    string `json:"error,omitempty"`
+	}
+	type readyResponse struct {
+		Status    string                    `json:"status"`
+		Error     string                    `json:"error,omitempty"`
+		Protocols map[string]protocolStatus `json:"protocols,omitempty"`
+	}
 	if h.store == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "no-store"})
 	}
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 500*time.Millisecond)
 	defer cancel()
 	if _, err := h.store.Stat(ctx, ""); err != nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{
-			"status": "storage-unreachable",
-			"error":  err.Error(),
+		return c.JSON(http.StatusServiceUnavailable, readyResponse{
+			Status: "storage-unreachable",
+			Error:  err.Error(),
 		})
 	}
-	return c.JSON(http.StatusOK, map[string]string{"status": "ready"})
+
+	protocols := make(map[string]protocolStatus, len(h.protocolHealth))
+	ready := true
+	for _, probe := range h.protocolHealth {
+		if probe.Name == "" {
+			continue
+		}
+		status := protocolStatus{
+			Enabled:  probe.Enabled,
+			Port:     probe.Port,
+			Endpoint: probe.Addr,
+		}
+		if probe.Enabled {
+			check := probe.Check
+			if check == nil {
+				status.Healthy = true
+			} else if err := check(ctx); err != nil {
+				status.Healthy = false
+				status.Error = err.Error()
+				ready = false
+			} else {
+				status.Healthy = true
+			}
+		}
+		protocols[probe.Name] = status
+	}
+
+	if !ready {
+		return c.JSON(http.StatusServiceUnavailable, readyResponse{
+			Status:    "protocol-unhealthy",
+			Protocols: protocols,
+		})
+	}
+	resp := readyResponse{Status: "ready"}
+	if len(protocols) > 0 {
+		resp.Protocols = protocols
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handlers) Metrics(c echo.Context) error {
