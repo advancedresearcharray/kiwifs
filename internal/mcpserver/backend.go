@@ -23,7 +23,7 @@ type SearchResult struct {
 }
 
 type MetaResult struct {
-	Path       string          `json:"path"`
+	Path        string          `json:"path"`
 	Frontmatter json.RawMessage `json:"frontmatter"`
 }
 
@@ -51,11 +51,11 @@ var (
 
 // QueryResult is the response from a DQL query via the dataview engine.
 type QueryResult struct {
-	Columns []string           `json:"columns"`
-	Rows    []map[string]any   `json:"rows"`
-	Total   int                `json:"total"`
-	HasMore bool               `json:"has_more"`
-	Groups  []GroupResult      `json:"groups,omitempty"`
+	Columns []string         `json:"columns"`
+	Rows    []map[string]any `json:"rows"`
+	Total   int              `json:"total"`
+	HasMore bool             `json:"has_more"`
+	Groups  []GroupResult    `json:"groups,omitempty"`
 }
 
 // GroupResult mirrors dataview.GroupResult for MCP transport.
@@ -148,7 +148,7 @@ type Backend interface {
 	BulkWrite(ctx context.Context, files []BulkFile, actor, provenance string) (map[string]string, error)
 	Aggregate(ctx context.Context, groupBy, calc, where, pathPrefix string) (map[string]map[string]any, error)
 	Analytics(ctx context.Context, scope string, staleThreshold int) (json.RawMessage, error)
-	MemoryReport(ctx context.Context, episodesPrefix string) (json.RawMessage, error)
+	MemoryReport(ctx context.Context, episodesPrefix string, limit, offset int) (json.RawMessage, error)
 	HealthCheckPage(ctx context.Context, path string) (json.RawMessage, error)
 	Append(ctx context.Context, path, content, separator, actor string) (string, error)
 	Rename(ctx context.Context, from, to, actor string) (string, error)
@@ -213,9 +213,9 @@ type SuggestionResult struct {
 }
 
 type EmbeddingsResult struct {
-	Path       string          `json:"path"`
-	Model      string          `json:"model"`
-	Dimensions int             `json:"dimensions"`
+	Path       string           `json:"path"`
+	Model      string           `json:"model"`
+	Dimensions int              `json:"dimensions"`
 	Chunks     []EmbeddingChunk `json:"chunks"`
 }
 
@@ -226,14 +226,14 @@ type EmbeddingChunk struct {
 }
 
 type GraphAnalyticsResult struct {
-	TotalNodes           int              `json:"total_nodes"`
-	TotalEdges           int              `json:"total_edges"`
-	Components           int              `json:"components"`
-	TopPages             []PageRankEntry  `json:"top_pages"`
-	Orphans              []string         `json:"orphans"`
-	LargestComponentSize int              `json:"largest_component_size"`
-	Clusters             []Cluster        `json:"clusters"`
-	Bridges              []Bridge         `json:"bridges"`
+	TotalNodes           int             `json:"total_nodes"`
+	TotalEdges           int             `json:"total_edges"`
+	Components           int             `json:"components"`
+	TopPages             []PageRankEntry `json:"top_pages"`
+	Orphans              []string        `json:"orphans"`
+	LargestComponentSize int             `json:"largest_component_size"`
+	Clusters             []Cluster       `json:"clusters"`
+	Bridges              []Bridge        `json:"bridges"`
 }
 
 type PageRankEntry struct {
@@ -274,12 +274,12 @@ type GraphPathResult struct {
 }
 
 type VelocityResult struct {
-	Period            string              `json:"period"`
-	TotalChanges      int                 `json:"total_changes"`
-	HotSpots          []HotSpotEntry      `json:"hot_spots"`
-	ColdSpots         []ColdSpotEntry     `json:"cold_spots"`
-	Bursts            []BurstEntry        `json:"bursts"`
-	SingleAuthorPages []string            `json:"single_author_pages"`
+	Period            string          `json:"period"`
+	TotalChanges      int             `json:"total_changes"`
+	HotSpots          []HotSpotEntry  `json:"hot_spots"`
+	ColdSpots         []ColdSpotEntry `json:"cold_spots"`
+	Bursts            []BurstEntry    `json:"bursts"`
+	SingleAuthorPages []string        `json:"single_author_pages"`
 }
 
 type HotSpotEntry struct {
@@ -306,8 +306,8 @@ type EvalQuery struct {
 }
 
 type EvalResult struct {
-	FTS      EvalMetrics      `json:"fts"`
-	Semantic EvalMetrics      `json:"semantic"`
+	FTS      EvalMetrics       `json:"fts"`
+	Semantic EvalMetrics       `json:"semantic"`
 	PerQuery []EvalQueryResult `json:"per_query"`
 }
 
@@ -332,13 +332,13 @@ type ClipResultMCP struct {
 }
 
 type ViewInfo struct {
-	Name    string      `json:"name"`
-	Query   string      `json:"query"`
-	Layout  string      `json:"layout"`
+	Name    string       `json:"name"`
+	Query   string       `json:"query"`
+	Layout  string       `json:"layout"`
 	Columns []ViewColumn `json:"columns,omitempty"`
 	Filters []ViewFilter `json:"filters,omitempty"`
 	Sort    []ViewSort   `json:"sort,omitempty"`
-	GroupBy string      `json:"group_by,omitempty"`
+	GroupBy string       `json:"group_by,omitempty"`
 }
 
 type ViewColumn struct {
@@ -361,8 +361,8 @@ type ViewSort struct {
 
 // WorkflowDef is the MCP-transport representation of a workflow definition.
 type WorkflowDef struct {
-	Name        string              `json:"name"`
-	States      []WorkflowState     `json:"states"`
+	Name        string               `json:"name"`
+	States      []WorkflowState      `json:"states"`
 	Transitions []WorkflowTransition `json:"transitions"`
 }
 
@@ -386,8 +386,8 @@ type WorkflowAdvanceResult struct {
 }
 
 type WorkflowBoardResult struct {
-	Workflow WorkflowDef                   `json:"workflow"`
-	Board    map[string][]map[string]any   `json:"board"`
+	Workflow WorkflowDef                 `json:"workflow"`
+	Board    map[string][]map[string]any `json:"board"`
 }
 
 type TimelineResult struct {

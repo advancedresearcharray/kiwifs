@@ -351,6 +351,8 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Tool: mcp.NewTool("kiwi_memory_report",
 				mcp.WithDescription("Report episodic memory coverage: lists markdown files classified as episodic and whether any page cites them under merged-from (central/semantic consolidation). Use before or after merge jobs to find episodes not yet folded into concept pages."),
 				mcp.WithString("episodes_prefix", mcp.Description("Override path prefix for episodic files (default from [memory] episodes_path_prefix or episodes/)")),
+				mcp.WithNumber("limit", mcp.Description("Maximum episodic_files and unmerged entries to return. Omit or set 0 for all entries.")),
+				mcp.WithNumber("offset", mcp.Description("Number of episodic_files and unmerged entries to skip before returning results.")),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
@@ -1293,8 +1295,16 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		prefix, _ := args["episodes_prefix"].(string)
+		limit, err := optionalNonNegativeIntArg(args, "limit")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		offset, err := optionalNonNegativeIntArg(args, "offset")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
-		raw, err := b.MemoryReport(ctx, prefix)
+		raw, err := b.MemoryReport(ctx, prefix, limit, offset)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Memory report failed: %v", err)), nil
 		}
@@ -1307,7 +1317,10 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Episodic files:           %d\n", rep.EpisodicCount)
 		fmt.Fprintf(&sb, "merged-from references:   %d\n", rep.MergedFromRefs)
-		fmt.Fprintf(&sb, "Unmerged (no merged-from): %d\n", len(rep.Unmerged))
+		fmt.Fprintf(&sb, "Unmerged (no merged-from): %d\n", rep.TotalUnmerged)
+		if limit > 0 || offset > 0 {
+			fmt.Fprintf(&sb, "Showing unmerged:          %d (offset %d)\n", len(rep.Unmerged), offset)
+		}
 		for _, u := range rep.Unmerged {
 			fmt.Fprintf(&sb, "  - %s", u.Path)
 			if u.EpisodeID != "" {
@@ -1322,6 +1335,27 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 			sb.WriteString("All episodic files are referenced by at least one merged-from list.\n")
 		}
 		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func optionalNonNegativeIntArg(args map[string]any, name string) (int, error) {
+	raw, ok := args[name]
+	if !ok || raw == nil {
+		return 0, nil
+	}
+	switch v := raw.(type) {
+	case float64:
+		if v < 0 || v != float64(int(v)) {
+			return 0, fmt.Errorf("%s must be a non-negative integer", name)
+		}
+		return int(v), nil
+	case int:
+		if v < 0 {
+			return 0, fmt.Errorf("%s must be a non-negative integer", name)
+		}
+		return v, nil
+	default:
+		return 0, fmt.Errorf("%s must be a non-negative integer", name)
 	}
 }
 
