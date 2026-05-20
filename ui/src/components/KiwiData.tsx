@@ -15,6 +15,7 @@ import { KiwiImportWizard } from "./KiwiImportWizard";
 import { SourceIcon } from "./SourceIcon";
 
 function connectionDisplayName(conn: ImportConnection): string {
+  if (!conn?.from) return "Unknown source";
   const fromKey = conn.from.trim().toLowerCase();
   const raw = (conn.name ?? "").trim();
   if (!raw) return sourceTypeLabel(conn.from);
@@ -187,7 +188,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
         <ConfirmDialog
           open={confirmDelete !== null}
           title="Remove data source"
-          description={`This will remove "${connectionDisplayName(confirmDelete!)}" and stop auto-sync. Imported files will not be deleted.`}
+          description={confirmDelete ? `This will remove "${connectionDisplayName(confirmDelete)}" and stop auto-sync. Imported files will not be deleted.` : ""}
           confirmLabel="Remove"
           variant="destructive"
           onConfirm={() => confirmDelete && handleDelete(confirmDelete)}
@@ -226,7 +227,7 @@ export function KiwiData({ onClose }: { onClose: () => void }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {connections.map((conn) => (
+          {connections.filter((conn) => conn?.from).map((conn) => (
             <div
               key={conn.id}
               className="border border-border rounded-lg p-4 hover:bg-accent/50 cursor-pointer transition-colors group"

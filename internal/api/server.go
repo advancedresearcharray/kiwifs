@@ -484,6 +484,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/import/airbyte-cloud/connections", h.ImportAirbyteCloudConnections)
 	api.POST("/import/airbyte-cloud/sync", h.ImportAirbyteCloudSync)
 	api.GET("/export", h.Export)
+	api.POST("/export/document", h.ExportDocument)
 	api.GET("/analytics", h.Analytics)
 	api.POST("/lint", h.Lint)
 	api.GET("/health-check", h.HealthCheck)

@@ -48,6 +48,7 @@ type importRequest struct {
 type importResponse struct {
 	Imported int      `json:"imported"`
 	Skipped  int      `json:"skipped"`
+	Archived int      `json:"archived,omitempty"`
 	Errors   []string `json:"errors"`
 }
 
@@ -83,6 +84,7 @@ func (h *Handlers) Import(c echo.Context) error {
 		DryRun:   req.DryRun,
 		Limit:    req.Limit,
 		Actor:    actor,
+		FullSync: !req.DryRun && req.Limit == 0 && importer.IsSyncable(req.From),
 	}
 
 	ctx := c.Request().Context()
@@ -116,7 +118,7 @@ func (h *Handlers) Import(c echo.Context) error {
 		connMeta.Via = req.Via
 		connMeta.AirbyteImage = req.AirbyteImage
 		connMeta.Streams = req.Streams
-		connMeta.LastStats = &importer.ConnectionStats{Imported: stats.Imported, Skipped: stats.Skipped, Errors: stats.Errors}
+		connMeta.LastStats = &importer.ConnectionStats{Imported: stats.Imported, Skipped: stats.Skipped, Archived: stats.Archived, Errors: stats.Errors}
 		connMeta.LastRun = time.Now().UTC().Format(time.RFC3339)
 
 		// Auto-enable sync for syncable sources (default: every hour)
@@ -132,6 +134,7 @@ func (h *Handlers) Import(c echo.Context) error {
 	return c.JSON(http.StatusOK, importResponse{
 		Imported: stats.Imported,
 		Skipped:  stats.Skipped,
+		Archived: stats.Archived,
 		Errors:   stats.Errors,
 	})
 }
@@ -812,6 +815,7 @@ func (h *Handlers) RunConnection(c echo.Context) error {
 	return c.JSON(http.StatusOK, importResponse{
 		Imported: stats.Imported,
 		Skipped:  stats.Skipped,
+		Archived: stats.Archived,
 		Errors:   stats.Errors,
 	})
 }
@@ -1310,6 +1314,7 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	return c.JSON(http.StatusOK, importResponse{
 		Imported: stats.Imported,
 		Skipped:  stats.Skipped,
+		Archived: stats.Archived,
 		Errors:   stats.Errors,
 	})
 }
