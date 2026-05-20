@@ -22,7 +22,7 @@ import {
   Star,
   Sun,
 } from "lucide-react";
-import { KiwiEngagement } from "./components/KiwiEngagement";
+import { KiwiAnalytics } from "./components/KiwiAnalytics";
 import { KiwiTree } from "./components/KiwiTree";
 import { KiwiPage } from "./components/KiwiPage";
 import { KiwiEditor } from "./components/KiwiEditor";
@@ -556,7 +556,7 @@ const handleSpaceSwitch = useCallback(() => {
           {/* Main content area */}
           <main className={`flex-1 relative ${basesOpen || canvasOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen || engagementOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
             {engagementOpen ? (
-              <KiwiEngagement
+              <KiwiAnalytics
                 onClose={() => setEngagementOpen(false)}
                 onNavigate={(p) => {
                   setEngagementOpen(false);

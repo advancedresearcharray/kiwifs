@@ -259,6 +259,9 @@ func BuildAnalytics(ctx context.Context, sq *search.SQLite, janitorSched *janito
 	if resp.Health.Empty.Paths == nil {
 		resp.Health.Empty.Paths = []string{}
 	}
+	if resp.Health.NoFrontmatter.Paths == nil {
+		resp.Health.NoFrontmatter.Paths = []string{}
+	}
 
 	eng, err := buildEngagementStats(ctx, sq, scope)
 	if err != nil {

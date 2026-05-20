@@ -369,6 +369,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
   const [error, setError] = useState<string | null>(null);
   const [commentCount, setCommentCount] = useState(0);
   const [viewCount, setViewCount] = useState<number | null>(null);
+  const [viewDelta, setViewDelta] = useState<number | null>(null);
   const [lastAuthor, setLastAuthor] = useState<string | null>(null);
   const [versionError, setVersionError] = useState(false);
   const [commentError, setCommentError] = useState(false);
@@ -420,19 +421,32 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
     if (isDir) return;
     let cancelled = false;
     setViewCount(null);
-    api
-      .pageViews({ path, top: 1 })
-      .then((r) => {
-        if (!cancelled) {
-          setViewCount(r.results[0]?.count ?? 0);
+    setViewDelta(null);
+
+    // Fetch view count from legacy endpoint, plus v2 trend data.
+    const legacyP = api.pageViews({ path, top: 1 }).catch(() => null);
+    const trendP = api.analyticsViews("7d", path).catch(() => null);
+
+    Promise.all([legacyP, trendP]).then(([legacy, trend]) => {
+      if (cancelled) return;
+      if (legacy?.results?.[0]) {
+        setViewCount(legacy.results[0].count);
+      } else {
+        setViewCount(0);
+      }
+      // Compute weekly delta if time series available.
+      if (trend?.time_series && trend.time_series.length > 0) {
+        const weekTotal = trend.time_series.reduce((s, p) => s + p.count, 0);
+        if (weekTotal > 0 && viewCount !== weekTotal) {
+          setViewCount(weekTotal);
         }
-      })
-      .catch(() => {
-        if (!cancelled) setViewCount(null);
-      });
-    return () => {
-      cancelled = true;
-    };
+      }
+      if (trend?.top_pages?.[0]?.count != null) {
+        setViewCount(trend.top_pages[0].count);
+      }
+    });
+
+    return () => { cancelled = true; };
   }, [path, refreshKey, isDir]);
 
   const resolver = useMemo(() => buildResolver(tree), [tree]);
@@ -630,6 +644,11 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                 <span className="flex items-center gap-1">
                   <Eye className="h-3 w-3" />
                   {viewCount.toLocaleString()} view{viewCount === 1 ? "" : "s"}
+                  {viewDelta != null && viewDelta !== 0 && (
+                    <span className={viewDelta > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                      ({viewDelta > 0 ? "+" : ""}{viewDelta.toFixed(0)}%)
+                    </span>
+                  )}
                 </span>
               )}
               {(versionError || commentError) && (

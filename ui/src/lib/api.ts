@@ -260,6 +260,45 @@ export const api = {
     return request(`${kiwiBase()}/analytics/views${q ? `?${q}` : ""}`);
   },
 
+  async analyticsOverview(period = "7d"): Promise<OverviewStats> {
+    const qs = new URLSearchParams({ period });
+    return request(`${kiwiBase()}/analytics/overview?${qs}`);
+  },
+
+  async analyticsViews(period = "30d", path?: string): Promise<AnalyticsViewsResponse> {
+    const qs = new URLSearchParams({ period });
+    if (path) qs.set("path", path);
+    return request(`${kiwiBase()}/analytics/views/v2?${qs}`);
+  },
+
+  async analyticsSearches(period = "30d"): Promise<AnalyticsSearchesResponse> {
+    const qs = new URLSearchParams({ period });
+    return request(`${kiwiBase()}/analytics/searches?${qs}`);
+  },
+
+  async analyticsTrends(period = "7d"): Promise<AnalyticsTrendsResponse> {
+    const qs = new URLSearchParams({ period });
+    return request(`${kiwiBase()}/analytics/trends?${qs}`);
+  },
+
+  async analyticsContentGaps(limit = 20): Promise<AnalyticsContentGapsResponse> {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    return request(`${kiwiBase()}/analytics/content-gaps?${qs}`);
+  },
+
+  async dismissContentGap(query: string, searchType = "search"): Promise<{ dismissed: string }> {
+    return request(`${kiwiBase()}/analytics/content-gaps/dismiss`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Actor": actor(), ..._extraHeaders },
+      body: JSON.stringify({ query, search_type: searchType }),
+    });
+  },
+
+  async analyticsSources(period = "7d"): Promise<AnalyticsSourcesResponse> {
+    const qs = new URLSearchParams({ period });
+    return request(`${kiwiBase()}/analytics/sources?${qs}`);
+  },
+
   async readFile(path: string): Promise<{ content: string; etag: string | null; lastModified: string | null }> {
     const qs = new URLSearchParams({ path });
     const res = await fetch(`${kiwiBase()}/file?${qs}`, {
@@ -1033,7 +1072,70 @@ export type AnalyticsResponse = {
     avg_links_per_page: number;
   };
   top_updated: { path: string; updated_at: string }[];
-  engagement: AnalyticsEngagement;
+  engagement?: AnalyticsEngagement;
+};
+
+// --- Analytics v2 types ---
+
+export type TimePoint = {
+  timestamp: number;
+  count: number;
+};
+
+export type TrendStat = {
+  path: string;
+  current_views: number;
+  previous_views: number;
+  delta_percent: number;
+};
+
+export type SearchStat = {
+  query: string;
+  search_type: string;
+  count: number;
+  had_results: number;
+};
+
+export type OverviewStats = {
+  period: string;
+  total_views: number;
+  views_delta_percent: number;
+  total_searches: number;
+  searches_delta_percent: number;
+  search_success_rate: number;
+  success_rate_delta_pp: number;
+  unique_pages_viewed: number;
+  unique_pages_delta_percent: number;
+};
+
+export type AnalyticsViewsResponse = {
+  period: string;
+  path?: string;
+  source?: string;
+  time_series: TimePoint[];
+  top_pages: PageViewStat[];
+};
+
+export type AnalyticsSearchesResponse = {
+  period: string;
+  search_success_rate: number;
+  time_series: TimePoint[];
+  top_failed: SearchStat[];
+};
+
+export type AnalyticsTrendsResponse = {
+  period: string;
+  trending: TrendStat[];
+  declining: TrendStat[];
+};
+
+export type AnalyticsContentGapsResponse = {
+  results: FailedSearchStat[];
+};
+
+export type AnalyticsSourcesResponse = {
+  period: string;
+  sources: Record<string, number>;
 };
 
 // --- Publish types ---

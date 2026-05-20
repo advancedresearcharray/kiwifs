@@ -96,7 +96,10 @@ func (h *Handlers) Search(c echo.Context) error {
 			}
 		}
 	}
-	if len(results) == 0 {
+	// Record all search events (success and failure) for analytics v2.
+	if recorder, ok := h.searcher.(search.SearchRecorder); ok {
+		_ = recorder.RecordSearch(c.Request().Context(), q, "search", len(results) > 0)
+	} else if len(results) == 0 {
 		if recorder, ok := h.searcher.(search.FailedSearchRecorder); ok {
 			_ = recorder.RecordFailedSearch(c.Request().Context(), q, "search")
 		}
@@ -129,7 +132,9 @@ func (h *Handlers) VerifiedSearch(c echo.Context) error {
 	if results == nil {
 		results = []search.Result{}
 	}
-	if len(results) == 0 {
+	if recorder, ok := h.searcher.(search.SearchRecorder); ok {
+		_ = recorder.RecordSearch(c.Request().Context(), q, "verified", len(results) > 0)
+	} else if len(results) == 0 {
 		if recorder, ok := h.searcher.(search.FailedSearchRecorder); ok {
 			_ = recorder.RecordFailedSearch(c.Request().Context(), q, "verified")
 		}
@@ -270,7 +275,9 @@ func (h *Handlers) SemanticSearch(c echo.Context) error {
 	if results == nil {
 		results = []vectorstore.Result{}
 	}
-	if len(results) == 0 {
+	if recorder, ok := h.searcher.(search.SearchRecorder); ok {
+		_ = recorder.RecordSearch(c.Request().Context(), req.Query, "semantic", len(results) > 0)
+	} else if len(results) == 0 {
 		if recorder, ok := h.searcher.(search.FailedSearchRecorder); ok {
 			_ = recorder.RecordFailedSearch(c.Request().Context(), req.Query, "semantic")
 		}

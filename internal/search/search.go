@@ -44,6 +44,40 @@ type PageViewStat struct {
 	LastSeen  int64  `json:"last_seen"`
 }
 
+// TimePoint is a single data point in a time-series.
+type TimePoint struct {
+	Timestamp int64 `json:"timestamp"`
+	Count     int   `json:"count"`
+}
+
+// TrendStat is a page with a computed trend (current vs previous period).
+type TrendStat struct {
+	Path          string  `json:"path"`
+	CurrentViews  int     `json:"current_views"`
+	PreviousViews int     `json:"previous_views"`
+	DeltaPercent  float64 `json:"delta_percent"`
+}
+
+// SearchStat is an aggregate of search queries (both successful and failed).
+type SearchStat struct {
+	Query      string `json:"query"`
+	SearchType string `json:"search_type"`
+	Count      int    `json:"count"`
+	HadResults int    `json:"had_results"`
+}
+
+// OverviewStats summarises key metrics for a period with deltas vs the prior period.
+type OverviewStats struct {
+	TotalViews        int     `json:"total_views"`
+	ViewsDelta        float64 `json:"views_delta_percent"`
+	TotalSearches     int     `json:"total_searches"`
+	SearchesDelta     float64 `json:"searches_delta_percent"`
+	SearchSuccessRate float64 `json:"search_success_rate"`
+	SuccessRateDelta  float64 `json:"success_rate_delta_pp"`
+	UniquePages       int     `json:"unique_pages_viewed"`
+	UniquePagesDelta  float64 `json:"unique_pages_delta_percent"`
+}
+
 const defaultSearchLimit = 50
 
 const maxSearchLimit = 200
@@ -134,12 +168,47 @@ type FailedSearchRecorder interface {
 	FailedSearches(ctx context.Context, limit int, since int64) ([]FailedSearchStat, error)
 }
 
+// SearchRecorder extends FailedSearchRecorder with success recording.
+type SearchRecorder interface {
+	RecordSearch(ctx context.Context, query, searchType string, hadResults bool) error
+	FailedSearches(ctx context.Context, limit int, since int64) ([]FailedSearchStat, error)
+}
+
 // PageViewRecorder is implemented by search backends that can persist read
 // analytics for knowledge pages.
 type PageViewRecorder interface {
 	RecordPageView(ctx context.Context, path, source string) error
 	PageViews(ctx context.Context, limit int, path string, since int64) ([]PageViewStat, error)
 	PageViewTotal(ctx context.Context, pathPrefix string, since int64) (int, error)
+}
+
+// AnalyticsQuerier is implemented by search backends that support the v2
+// time-bucketed analytics query layer.
+type AnalyticsQuerier interface {
+	// PageViewsInRange sums page view counts within [since, until].
+	PageViewsInRange(ctx context.Context, pathPrefix string, since, until int64) ([]PageViewStat, error)
+	// PageViewTimeSeries returns time-bucketed view counts.
+	PageViewTimeSeries(ctx context.Context, path string, since, until, bucketSize int64) ([]TimePoint, error)
+	// SearchSuccessRate returns the ratio of successful searches in [since, until].
+	SearchSuccessRate(ctx context.Context, since, until int64) (float64, error)
+	// TrendingPages compares current vs previous period to find trending pages.
+	TrendingPages(ctx context.Context, periodDays int) ([]TrendStat, error)
+	// DecliningPages returns pages with negative trends or zero views in current period.
+	DecliningPages(ctx context.Context, periodDays int) ([]TrendStat, error)
+	// ContentGaps returns failed searches not yet dismissed.
+	ContentGaps(ctx context.Context, limit int) ([]FailedSearchStat, error)
+	// DismissContentGap marks a failed search as noise.
+	DismissContentGap(ctx context.Context, query, searchType string) error
+	// AnalyticsOverview returns summary stats with deltas.
+	AnalyticsOverview(ctx context.Context, periodSeconds int64) (*OverviewStats, error)
+	// SearchTimeSeries returns time-bucketed search counts.
+	SearchTimeSeries(ctx context.Context, since, until, bucketSize int64) ([]TimePoint, error)
+	// TopSearches returns the most popular search queries in a period.
+	TopSearches(ctx context.Context, limit int, since int64, failedOnly bool) ([]SearchStat, error)
+	// SourceBreakdown returns view counts grouped by source within [since, until].
+	SourceBreakdown(ctx context.Context, since, until int64) (map[string]int, error)
+	// LeastViewed returns pages with zero views in the given period + their last update date.
+	LeastViewed(ctx context.Context, since int64, limit int) ([]PageViewStat, error)
 }
 
 // NormalizeLimit clamps a caller-supplied limit into [1, maxSearchLimit].

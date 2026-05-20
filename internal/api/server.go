@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/kiwifs/kiwifs/internal/analytics"
 	"github.com/kiwifs/kiwifs/internal/claims"
 	"github.com/kiwifs/kiwifs/internal/comments"
 	"github.com/kiwifs/kiwifs/internal/config"
@@ -131,6 +132,8 @@ type Server struct {
 
 	syncSched  *importer.SyncScheduler
 	syncCancel context.CancelFunc
+
+	analyticsWriter *analytics.Writer
 
 	auth atomic.Pointer[liveAuth]
 }
@@ -409,6 +412,12 @@ func (s *Server) setupRoutes() {
 		log.Printf("api: init publish metrics: %v (view counts disabled)", pmErr)
 	}
 
+	// Initialize analytics writer if SQLite backend is available.
+	if sq, ok := s.pipe.Searcher.(*search.SQLite); ok {
+		w := analytics.NewWriter(sq.WriteDB())
+		s.analyticsWriter = w
+	}
+
 	h := &Handlers{
 		store:                s.pipe.Store,
 		versioner:            s.pipe.Versioner,
@@ -439,6 +448,7 @@ func (s *Server) setupRoutes() {
 		schemaReload:         s.schemaReload,
 		backupStatusFn:       s.backupStatusFn,
 		protocolHealth:       s.protocolHealth,
+		analyticsWriter:      s.analyticsWriter,
 	}
 	s.handlers = h
 	prev := s.pipe.OnInvalidate
@@ -528,6 +538,13 @@ func (s *Server) setupRoutes() {
 	api.GET("/analytics", h.Analytics)
 	api.GET("/analytics/failed-searches", h.FailedSearches)
 	api.GET("/analytics/views", h.PageViews)
+	api.GET("/analytics/overview", h.AnalyticsOverview)
+	api.GET("/analytics/views/v2", h.AnalyticsViews)
+	api.GET("/analytics/searches", h.AnalyticsSearches)
+	api.GET("/analytics/trends", h.AnalyticsTrends)
+	api.GET("/analytics/content-gaps", h.AnalyticsContentGaps)
+	api.POST("/analytics/content-gaps/dismiss", h.AnalyticsDismissContentGap)
+	api.GET("/analytics/sources", h.AnalyticsSources)
 	api.POST("/lint", h.Lint)
 	api.GET("/health-check", h.HealthCheck)
 	api.GET("/context", h.Context)
@@ -640,6 +657,9 @@ func (s *Server) Start(addr string) error {
 		s.syncCancel = cancel
 		s.syncSched.Start(ctx)
 	}
+	if s.analyticsWriter != nil {
+		s.analyticsWriter.Start()
+	}
 	return s.echo.Start(addr)
 }
 
@@ -655,6 +675,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.syncSched != nil {
 		s.syncSched.Stop()
+	}
+	// Flush remaining analytics events before the DB connection closes.
+	if s.analyticsWriter != nil {
+		s.analyticsWriter.Stop()
 	}
 	return s.echo.Shutdown(ctx)
 }

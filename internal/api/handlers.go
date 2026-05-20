@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/analytics"
 	"github.com/kiwifs/kiwifs/internal/claims"
 	"github.com/kiwifs/kiwifs/internal/comments"
 	"github.com/kiwifs/kiwifs/internal/config"
@@ -67,6 +68,8 @@ type Handlers struct {
 
 	backupStatusFn func() any
 	protocolHealth []ProtocolHealthProbe
+
+	analyticsWriter *analytics.Writer
 
 	graphCache atomic.Pointer[graphResponse]
 	graphGroup singleflight.Group

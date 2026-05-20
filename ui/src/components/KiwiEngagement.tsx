@@ -52,14 +52,16 @@ export function KiwiEngagement({ onClose, onNavigate }: Props) {
         {error && (
           <p className="text-sm text-destructive">{error}</p>
         )}
-        {data && !loading && !error && (
+        {data && !loading && !error && (() => {
+          const eng = data.engagement ?? { total_views: 0, top_viewed: [], failed_searches: [] };
+          return (
           <div className="space-y-8">
             <section>
               <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
                 Overview
               </h2>
               <p className="text-3xl font-bold tabular-nums">
-                {data.engagement.total_views.toLocaleString()}
+                {eng.total_views.toLocaleString()}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 total page views across {data.total_pages.toLocaleString()} indexed pages
@@ -71,13 +73,13 @@ export function KiwiEngagement({ onClose, onNavigate }: Props) {
                 <BarChart3 className="h-4 w-4" />
                 Most viewed pages
               </h2>
-              {data.engagement.top_viewed.length === 0 ? (
+              {eng.top_viewed.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No views recorded yet. Open pages in the wiki UI to start tracking.
                 </p>
               ) : (
                 <ul className="space-y-1">
-                  {data.engagement.top_viewed.map((row) => (
+                  {eng.top_viewed.map((row) => (
                     <li key={row.path}>
                       <button
                         type="button"
@@ -106,11 +108,11 @@ export function KiwiEngagement({ onClose, onNavigate }: Props) {
               <p className="text-xs text-muted-foreground mb-2">
                 Queries that returned zero results (helps find content gaps).
               </p>
-              {data.engagement.failed_searches.length === 0 ? (
+              {eng.failed_searches.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No failed searches recorded.</p>
               ) : (
                 <ul className="space-y-1">
-                  {data.engagement.failed_searches.map((row) => (
+                  {eng.failed_searches.map((row) => (
                     <li
                       key={`${row.search_type}:${row.query}`}
                       className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm bg-muted/40"
@@ -125,7 +127,8 @@ export function KiwiEngagement({ onClose, onNavigate }: Props) {
               )}
             </section>
           </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/analytics"
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/kiwifs/kiwifs/internal/search"
@@ -140,7 +141,7 @@ func (h *Handlers) ReadFile(c echo.Context) error {
 		c.Response().Header().Set("X-Permalink", pl)
 	}
 
-	if storage.IsKnowledgeFile(path) {
+	if storage.IsKnowledgeFile(path) && !analytics.IsBot(c.Request().UserAgent()) {
 		if recorder, ok := h.searcher.(search.PageViewRecorder); ok {
 			_ = recorder.RecordPageView(c.Request().Context(), path, pageViewSource(c))
 		}

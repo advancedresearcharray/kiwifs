@@ -260,7 +260,41 @@ CREATE TABLE IF NOT EXISTS page_views (
 	PRIMARY KEY (path, source)
 );
 CREATE INDEX IF NOT EXISTS idx_page_views_last_seen ON page_views(last_seen);
-CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);`
+CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);
+CREATE TABLE IF NOT EXISTS page_view_hours (
+	path TEXT NOT NULL,
+	source TEXT NOT NULL,
+	hour INTEGER NOT NULL,
+	count INTEGER NOT NULL DEFAULT 0,
+	unique_actors INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (path, source, hour)
+);
+CREATE INDEX IF NOT EXISTS idx_pvh_hour ON page_view_hours(hour);
+CREATE INDEX IF NOT EXISTS idx_pvh_path ON page_view_hours(path);
+CREATE TABLE IF NOT EXISTS search_hours (
+	query TEXT NOT NULL,
+	search_type TEXT NOT NULL,
+	hour INTEGER NOT NULL,
+	count INTEGER NOT NULL DEFAULT 0,
+	had_results INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (query, search_type, hour)
+);
+CREATE INDEX IF NOT EXISTS idx_sh_hour ON search_hours(hour);
+CREATE TABLE IF NOT EXISTS page_view_days (
+	path TEXT NOT NULL,
+	source TEXT NOT NULL,
+	day INTEGER NOT NULL,
+	count INTEGER NOT NULL DEFAULT 0,
+	unique_actors INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (path, source, day)
+);
+CREATE INDEX IF NOT EXISTS idx_pvd_day ON page_view_days(day);
+CREATE TABLE IF NOT EXISTS content_gap_dismissals (
+	query TEXT NOT NULL,
+	search_type TEXT NOT NULL,
+	dismissed_at INTEGER NOT NULL,
+	PRIMARY KEY (query, search_type)
+);`
 	_, err := s.writeDB.ExecContext(ctx, ddl)
 	if err != nil {
 		return fmt.Errorf("create schema: %w", err)
@@ -268,7 +302,47 @@ CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);`
 
 	s.writeDB.ExecContext(ctx, `ALTER TABLE file_meta ADD COLUMN tasks TEXT NOT NULL DEFAULT '[]'`)
 
+	// Migrate legacy page_views rows into page_view_hours. Uses last_seen
+	// truncated to the hour as the bucket. Idempotent: ON CONFLICT merges.
+	s.migratePageViewsToHours(ctx)
+	// Migrate legacy failed_searches rows into search_hours.
+	s.migrateFailedSearchesToHours(ctx)
+
 	return nil
+}
+
+func (s *SQLite) migratePageViewsToHours(ctx context.Context) {
+	// Check if legacy page_views has any rows not yet migrated.
+	var count int
+	if err := s.writeDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_views`).Scan(&count); err != nil || count == 0 {
+		return
+	}
+	// Check if page_view_hours already has data (migration already happened).
+	var hourCount int
+	if err := s.writeDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_view_hours`).Scan(&hourCount); err == nil && hourCount > 0 {
+		return
+	}
+	_, _ = s.writeDB.ExecContext(ctx, `
+INSERT OR IGNORE INTO page_view_hours(path, source, hour, count, unique_actors)
+SELECT path, source, last_seen - (last_seen % 3600), count, 0
+FROM page_views
+`)
+}
+
+func (s *SQLite) migrateFailedSearchesToHours(ctx context.Context) {
+	var count int
+	if err := s.writeDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM failed_searches`).Scan(&count); err != nil || count == 0 {
+		return
+	}
+	var hourCount int
+	if err := s.writeDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_hours`).Scan(&hourCount); err == nil && hourCount > 0 {
+		return
+	}
+	_, _ = s.writeDB.ExecContext(ctx, `
+INSERT OR IGNORE INTO search_hours(query, search_type, hour, count, had_results)
+SELECT query, search_type, last_seen - (last_seen % 3600), count, 0
+FROM failed_searches
+`)
 }
 
 // migrateContentless detects a pre-contentless FTS5 docs table and drops it
@@ -358,6 +432,13 @@ WHERE docs MATCH ?`
 }
 
 func (s *SQLite) RecordFailedSearch(ctx context.Context, query, searchType string) error {
+	return s.RecordSearch(ctx, query, searchType, false)
+}
+
+// RecordSearch records a search event (both successful and failed) into the
+// legacy failed_searches table (for failed only) and the time-bucketed
+// search_hours table (for all searches).
+func (s *SQLite) RecordSearch(ctx context.Context, query, searchType string, hadResults bool) error {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil
@@ -367,15 +448,35 @@ func (s *SQLite) RecordFailedSearch(ctx context.Context, query, searchType strin
 		searchType = "search"
 	}
 	now := time.Now().Unix()
-	_, err := s.writeDB.ExecContext(ctx, `
+	hour := now - now%3600
+
+	// Legacy table: only record failures (backward compat).
+	if !hadResults {
+		_, err := s.writeDB.ExecContext(ctx, `
 INSERT INTO failed_searches(query, search_type, count, first_seen, last_seen)
 VALUES (?, ?, 1, ?, ?)
 ON CONFLICT(query, search_type) DO UPDATE SET
 	count = count + 1,
 	last_seen = excluded.last_seen
 `, query, searchType, now, now)
+		if err != nil {
+			return fmt.Errorf("record failed search (legacy): %w", err)
+		}
+	}
+
+	// Time-bucketed table: record all searches with had_results flag.
+	hadResultsInt := 0
+	if hadResults {
+		hadResultsInt = 1
+	}
+	_, err := s.writeDB.ExecContext(ctx, `
+INSERT INTO search_hours(query, search_type, hour, count, had_results)
+VALUES (?, ?, ?, 1, ?)
+ON CONFLICT(query, search_type, hour) DO UPDATE SET
+	count = count + 1
+`, query, searchType, hour, hadResultsInt)
 	if err != nil {
-		return fmt.Errorf("record failed search: %w", err)
+		return fmt.Errorf("record search (hourly): %w", err)
 	}
 	return nil
 }
@@ -419,6 +520,9 @@ func (s *SQLite) RecordPageView(ctx context.Context, path, source string) error 
 		source = "api"
 	}
 	now := time.Now().Unix()
+	hour := now - now%3600
+
+	// Write to legacy table (backward compat with old /analytics endpoint).
 	_, err := s.writeDB.ExecContext(ctx, `
 INSERT INTO page_views(path, source, count, first_seen, last_seen)
 VALUES (?, ?, 1, ?, ?)
@@ -427,7 +531,18 @@ ON CONFLICT(path, source) DO UPDATE SET
 	last_seen = excluded.last_seen
 `, path, source, now, now)
 	if err != nil {
-		return fmt.Errorf("record page view: %w", err)
+		return fmt.Errorf("record page view (legacy): %w", err)
+	}
+
+	// Write to time-bucketed table.
+	_, err = s.writeDB.ExecContext(ctx, `
+INSERT INTO page_view_hours(path, source, hour, count, unique_actors)
+VALUES (?, ?, ?, 1, 0)
+ON CONFLICT(path, source, hour) DO UPDATE SET
+	count = count + 1
+`, path, source, hour)
+	if err != nil {
+		return fmt.Errorf("record page view (hourly): %w", err)
 	}
 	return nil
 }
