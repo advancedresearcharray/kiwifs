@@ -1410,6 +1410,18 @@ func handleAnalytics(b Backend) server.ToolHandlerFunc {
 				Path      string `json:"path"`
 				UpdatedAt string `json:"updated_at"`
 			} `json:"top_updated"`
+			Engagement struct {
+				TotalViews     int `json:"total_views"`
+				TopViewed      []struct {
+					Path  string `json:"path"`
+					Count int    `json:"count"`
+				} `json:"top_viewed"`
+				FailedSearches []struct {
+					Query      string `json:"query"`
+					Count      int    `json:"count"`
+					SearchType string `json:"search_type"`
+				} `json:"failed_searches"`
+			} `json:"engagement"`
 		}
 		if err := json.Unmarshal(raw, &data); err != nil {
 			return mcp.NewToolResultText(string(raw)), nil
@@ -1436,6 +1448,20 @@ func handleAnalytics(b Backend) server.ToolHandlerFunc {
 			sb.WriteString("\nRecently Updated\n")
 			for _, p := range data.TopUpdated {
 				fmt.Fprintf(&sb, "  %s  %s\n", p.Path, p.UpdatedAt)
+			}
+		}
+		sb.WriteString("\nEngagement\n")
+		fmt.Fprintf(&sb, "Total page views:  %d\n", data.Engagement.TotalViews)
+		if len(data.Engagement.TopViewed) > 0 {
+			sb.WriteString("Top viewed:\n")
+			for _, v := range data.Engagement.TopViewed {
+				fmt.Fprintf(&sb, "  %s  %d views\n", v.Path, v.Count)
+			}
+		}
+		if len(data.Engagement.FailedSearches) > 0 {
+			sb.WriteString("Failed searches:\n")
+			for _, f := range data.Engagement.FailedSearches {
+				fmt.Fprintf(&sb, "  %s  %d× (%s)\n", f.Query, f.Count, f.SearchType)
 			}
 		}
 		return mcp.NewToolResultText(sb.String()), nil

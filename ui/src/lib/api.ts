@@ -244,10 +244,26 @@ export const api = {
     return request(`${kiwiBase()}/tree?${qs}`);
   },
 
+  async analytics(scope = "", staleThreshold = 30): Promise<AnalyticsResponse> {
+    const qs = new URLSearchParams();
+    if (scope) qs.set("scope", scope);
+    if (staleThreshold !== 30) qs.set("stale_threshold", String(staleThreshold));
+    const q = qs.toString();
+    return request(`${kiwiBase()}/analytics${q ? `?${q}` : ""}`);
+  },
+
+  async pageViews(opts?: { path?: string; top?: number }): Promise<{ top: number; results: PageViewStat[] }> {
+    const qs = new URLSearchParams();
+    if (opts?.path) qs.set("path", opts.path);
+    if (opts?.top) qs.set("top", String(opts.top));
+    const q = qs.toString();
+    return request(`${kiwiBase()}/analytics/views${q ? `?${q}` : ""}`);
+  },
+
   async readFile(path: string): Promise<{ content: string; etag: string | null; lastModified: string | null }> {
     const qs = new URLSearchParams({ path });
     const res = await fetch(`${kiwiBase()}/file?${qs}`, {
-      headers: { "X-Actor": actor(), ..._extraHeaders },
+      headers: { "X-Actor": actor(), "X-Kiwi-Source": "ui", ..._extraHeaders },
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -976,6 +992,48 @@ export type AirbyteStream = {
 
 export type AirbyteDiscoverResponse = {
   streams: AirbyteStream[];
+};
+
+// --- Analytics types ---
+
+export type PageViewStat = {
+  path: string;
+  count: number;
+  first_seen: number;
+  last_seen: number;
+};
+
+export type FailedSearchStat = {
+  query: string;
+  search_type: string;
+  count: number;
+  first_seen: number;
+  last_seen: number;
+};
+
+export type AnalyticsEngagement = {
+  total_views: number;
+  top_viewed: PageViewStat[];
+  failed_searches: FailedSearchStat[];
+};
+
+export type AnalyticsResponse = {
+  total_pages: number;
+  total_words: number;
+  health: {
+    stale: { count: number; paths: string[] };
+    orphans: { count: number; paths: string[] };
+    broken_links: { count: number; paths: string[] };
+    empty: { count: number; paths: string[] };
+    no_frontmatter: { count: number; paths: string[] };
+  };
+  coverage: {
+    pages_with_links: number;
+    pages_without_links: number;
+    avg_links_per_page: number;
+  };
+  top_updated: { path: string; updated_at: string }[];
+  engagement: AnalyticsEngagement;
 };
 
 // --- Publish types ---

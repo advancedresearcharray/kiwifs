@@ -92,5 +92,22 @@ func runAnalytics(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	fmt.Println()
+	fmt.Println("Engagement")
+	fmt.Println("──────────")
+	fmt.Printf("Total page views:  %d\n", resp.Engagement.TotalViews)
+	if len(resp.Engagement.TopViewed) > 0 {
+		fmt.Println("Top viewed:")
+		for _, v := range resp.Engagement.TopViewed {
+			fmt.Printf("  %-40s  %d views\n", v.Path, v.Count)
+		}
+	}
+	if len(resp.Engagement.FailedSearches) > 0 {
+		fmt.Println("Failed searches:")
+		for _, f := range resp.Engagement.FailedSearches {
+			fmt.Printf("  %-40s  %d× (%s)\n", f.Query, f.Count, f.SearchType)
+		}
+	}
+
 	return nil
 }
