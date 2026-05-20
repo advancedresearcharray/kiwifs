@@ -3,7 +3,9 @@ package webhooks
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -28,13 +30,14 @@ type Event struct {
 }
 
 type Dispatcher struct {
-	store      *Store
-	workers    int
-	maxRetries int
-	queue      chan dispatchJob
-	wg         sync.WaitGroup
-	stopCh     chan struct{}
-	client     *http.Client
+	store       *Store
+	workers     int
+	maxRetries  int
+	queue       chan dispatchJob
+	wg          sync.WaitGroup
+	stopCh      chan struct{}
+	client      *http.Client
+	retryDelays []time.Duration
 }
 
 type dispatchJob struct {
@@ -44,9 +47,10 @@ type dispatchJob struct {
 }
 
 type Config struct {
-	Enabled    bool `toml:"enabled"`
-	MaxWorkers int  `toml:"max_workers"`
-	MaxRetries int  `toml:"max_retries"`
+	Enabled     bool            `toml:"enabled"`
+	MaxWorkers  int             `toml:"max_workers"`
+	MaxRetries  int             `toml:"max_retries"`
+	RetryDelays []time.Duration `toml:"-"`
 }
 
 func NewDispatcher(store *Store, cfg Config) *Dispatcher {
@@ -59,12 +63,16 @@ func NewDispatcher(store *Store, cfg Config) *Dispatcher {
 		maxRetries = 5
 	}
 	d := &Dispatcher{
-		store:      store,
-		workers:    workers,
-		maxRetries: maxRetries,
-		queue:      make(chan dispatchJob, 256),
-		stopCh:     make(chan struct{}),
-		client:     &http.Client{Timeout: 30 * time.Second},
+		store:       store,
+		workers:     workers,
+		maxRetries:  maxRetries,
+		queue:       make(chan dispatchJob, 256),
+		stopCh:      make(chan struct{}),
+		client:      &http.Client{Timeout: 30 * time.Second},
+		retryDelays: cfg.RetryDelays,
+	}
+	if len(d.retryDelays) == 0 {
+		d.retryDelays = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute, 15 * time.Minute, time.Hour}
 	}
 	for i := 0; i < workers; i++ {
 		d.wg.Add(1)
@@ -123,6 +131,21 @@ func (d *Dispatcher) deliver(job dispatchJob) {
 		log.Printf("webhooks: marshal event: %v", err)
 		return
 	}
+	deliveryID := ""
+	if d.store != nil {
+		delivery, derr := d.store.RecordDelivery(context.Background(), Delivery{
+			WebhookID: job.webhook.ID,
+			EventType: job.event.Type,
+			Path:      job.event.Path,
+			Attempt:   job.attempt + 1,
+			Status:    "pending",
+		})
+		if derr != nil {
+			log.Printf("webhooks: record delivery: %v", derr)
+		} else {
+			deliveryID = delivery.ID
+		}
+	}
 	msgID := generateMsgID()
 	now := time.Now().UTC()
 
@@ -141,17 +164,30 @@ func (d *Dispatcher) deliver(job dispatchJob) {
 	sig, err := signPayload(job.webhook.Secret, msgID, now, payload)
 	if err != nil {
 		log.Printf("webhooks: sign payload: %v", err)
+		d.updateDelivery(deliveryID, "failed", 0, err.Error())
 		return
 	}
 	req.Header.Set("webhook-signature", sig)
+	req.Header.Set("X-Kiwi-Signature-256", bodySignature(job.webhook.Secret, payload))
 
 	resp, err := d.client.Do(req)
-	if err != nil || (resp != nil && resp.StatusCode >= 500) {
+	statusCode := 0
+	if resp != nil {
+		statusCode = resp.StatusCode
+	}
+	if err != nil || statusCode < 200 || statusCode >= 300 {
 		if resp != nil {
 			resp.Body.Close()
 		}
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		} else {
+			errMsg = fmt.Sprintf("unexpected status %d", statusCode)
+		}
+		d.updateDelivery(deliveryID, "failed", statusCode, errMsg)
 		if job.attempt < d.maxRetries {
-			delay := retryDelay(job.attempt)
+			delay := d.retryDelay(job.attempt)
 			time.AfterFunc(delay, func() {
 				job.attempt++
 				select {
@@ -167,12 +203,21 @@ func (d *Dispatcher) deliver(job dispatchJob) {
 	if resp != nil {
 		resp.Body.Close()
 	}
+	d.updateDelivery(deliveryID, "delivered", statusCode, "")
 }
 
-func retryDelay(attempt int) time.Duration {
-	delays := []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute, 15 * time.Minute, time.Hour}
-	if attempt < len(delays) {
-		return delays[attempt]
+func (d *Dispatcher) updateDelivery(id, status string, statusCode int, errMsg string) {
+	if id == "" || d.store == nil {
+		return
+	}
+	if err := d.store.UpdateDelivery(context.Background(), id, status, statusCode, errMsg); err != nil {
+		log.Printf("webhooks: update delivery: %v", err)
+	}
+}
+
+func (d *Dispatcher) retryDelay(attempt int) time.Duration {
+	if attempt < len(d.retryDelays) {
+		return d.retryDelays[attempt]
 	}
 	return time.Hour
 }
@@ -193,4 +238,14 @@ func signPayload(secret, msgID string, timestamp time.Time, payload []byte) (str
 		return "", fmt.Errorf("create webhook signer: %w", err)
 	}
 	return wh.Sign(msgID, timestamp, payload)
+}
+
+func bodySignature(secret string, payload []byte) string {
+	key := []byte(secret)
+	if decoded, err := base64.StdEncoding.DecodeString(secret); err == nil {
+		key = decoded
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write(payload)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }

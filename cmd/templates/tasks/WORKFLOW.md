@@ -63,3 +63,7 @@ GET /api/kiwi/changes?feed=longpoll&since=<seq>&timeout=30s
 POST /api/kiwi/webhooks
 {"url": "https://orchestrator/hook", "path_glob": "tasks/**", "event_types": ["transition"]}
 ```
+
+Webhook deliveries include `X-Kiwi-Signature-256: sha256=<hex>` where the hex
+value is `HMAC-SHA256(secret, raw_request_body)`. Consumers should compare it
+with a constant-time equality check.
