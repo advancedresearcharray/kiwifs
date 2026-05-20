@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.19.2](https://github.com/kiwifs/kiwifs/compare/v0.19.1...v0.19.2) (2026-05-20)
+
+
+### Features
+
+* Airbyte Cloud API support + phase-1 source registry cleanup ([7a95eaf](https://github.com/kiwifs/kiwifs/commit/7a95eaf648eebddfa505fb25b6e2081a1668011d))
+* analytics v2 — time-bucketed storage, trends, content gaps, source breakdown ([66be9bd](https://github.com/kiwifs/kiwifs/commit/66be9bd7f63dd5200123a569927ed4d16a4a49f8))
+* auto-sync for live data sources ([cfb05b1](https://github.com/kiwifs/kiwifs/commit/cfb05b1c5f99dc21a26a3a57a7f7b7dbaceb6815))
+* complete page view analytics with UI and engagement dashboard ([f3e106c](https://github.com/kiwifs/kiwifs/commit/f3e106c726b56c2b60ab5ae7903e4ad77968ad84))
+* document export (PDF/HTML/slides/site) + importer full-sync ([c0cd7d8](https://github.com/kiwifs/kiwifs/commit/c0cd7d81c8285835482840c2325280a33c4af483))
+* document export, analytics, protocol health, webhook signing + community PRs ([f786c05](https://github.com/kiwifs/kiwifs/commit/f786c055a15d8fe1d3e285637290907984e307a3))
+* explode RTDB key/value records into individual documents ([2e8c5c9](https://github.com/kiwifs/kiwifs/commit/2e8c5c931853b8b038263b2259e2f7832c295827))
+* include protocol health in readiness ([bad8d44](https://github.com/kiwifs/kiwifs/commit/bad8d446baab8c91e12235da9e400decdabc8582))
+* page view analytics — engagement dashboard and UI ([c8e0f5c](https://github.com/kiwifs/kiwifs/commit/c8e0f5c848b9cd70f994665a7cb206b9cb0abd61))
+* paginate memory report ([3a81987](https://github.com/kiwifs/kiwifs/commit/3a81987e722c3783c5f9edbea5ccc93b84d89ef7))
+* proper dialog UI for data sources panel ([b9abd4b](https://github.com/kiwifs/kiwifs/commit/b9abd4ba693bab1a94e732cab286e4d74409eac4))
+* sign and record webhook deliveries ([248d3d8](https://github.com/kiwifs/kiwifs/commit/248d3d8259289da2eddadf085497ef9c5a205043))
+* track failed search analytics ([14123fa](https://github.com/kiwifs/kiwifs/commit/14123fade8a9cbaa25da0db5b261fe80347a622f))
+* track page view analytics ([58bba25](https://github.com/kiwifs/kiwifs/commit/58bba254c9ff657dd0101b627a02821c6c715da1))
+
+
+### Bug Fixes
+
+* add airbyte fields to previewRequest for Airbyte source imports ([905d0f4](https://github.com/kiwifs/kiwifs/commit/905d0f4832d28caa97fdfdb43d42beaf4db2296f))
+* harden docexport frontmatter parsing, add tests, remove duplication ([0091eee](https://github.com/kiwifs/kiwifs/commit/0091eeef2ce31fcf242a9047bc9480ce2a3d693a))
+* make airbyte config temp files world-readable for docker mounts ([ebd82d0](https://github.com/kiwifs/kiwifs/commit/ebd82d0304460dfdb374dd5522f3840d6de9d05e))
+* move firestore to native backend, add FirestoreForm UI ([c251539](https://github.com/kiwifs/kiwifs/commit/c2515390f9a46440349c9e3b22fe492bb4d6150c))
+* nil guard for PageViews in engagement stats ([c3cbfba](https://github.com/kiwifs/kiwifs/commit/c3cbfbabd45c77ff368e19e64520aac3ee4010c3))
+* **tests:** update registry tests to match phase-1 source changes ([06a2532](https://github.com/kiwifs/kiwifs/commit/06a253296714e58e2237a97789d9270b85053253))
+* UI bugs in import wizard ([d189f58](https://github.com/kiwifs/kiwifs/commit/d189f588a16a756c1237fbd15c6e64fde4a7995f))
+* update test assertion for new markdown table format ([e19ff38](https://github.com/kiwifs/kiwifs/commit/e19ff3826707494aec4d500d61fb225269c02f2f))
+* webhook retry test race condition ([dbe9ffd](https://github.com/kiwifs/kiwifs/commit/dbe9ffd0b9db72ed13049cb7ff4f2911adf76c75))
+
 ## [0.19.1](https://github.com/kiwifs/kiwifs/compare/v0.19.0...v0.19.1) (2026-05-18)
 
 
