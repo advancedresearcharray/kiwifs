@@ -11,6 +11,7 @@ import (
 
 	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
+	"github.com/kiwifs/kiwifs/internal/storage"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,18 +40,21 @@ type Options struct {
 	DryRun   bool
 	Limit    int
 	Actor    string
+	FullSync bool // when true, files not seen in this run are archived (tombstoned)
 }
 
 // Stats is returned by Run with import counts.
 type Stats struct {
 	Imported int
 	Skipped  int
+	Archived int
 	Errors   []string
 }
 
 // Run streams records from src, converts each to a markdown file, and writes
 // them through the pipeline. Idempotent: files with matching _source_id are
-// skipped if unchanged.
+// skipped if unchanged. Files previously imported but not seen in this sync
+// are archived (soft-deleted via frontmatter).
 func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options) (*Stats, error) {
 	records, errs := src.Stream(ctx)
 	stats := &Stats{}
@@ -63,6 +67,7 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 		prefix = src.Name()
 	}
 	count := 0
+	seenPaths := make(map[string]bool)
 
 	for {
 		select {
@@ -78,6 +83,9 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 			}
 		case rec, ok := <-records:
 			if !ok {
+				if opts.FullSync && !opts.DryRun {
+					archiveRemovedFiles(ctx, pipe, prefix, seenPaths, src.Name(), actor, stats)
+				}
 				return stats, nil
 			}
 			if opts.Limit > 0 && count >= opts.Limit {
@@ -100,6 +108,7 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 			}
 
 			path := fmt.Sprintf("%s/%s.md", prefix, sanitizePath(pk))
+			seenPaths[path] = true
 
 			fm := make(map[string]any, len(fields)+3)
 			for k, v := range fields {
@@ -128,7 +137,8 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 				existing, rerr := pipe.Store.Read(ctx, path)
 				if rerr == nil {
 					existingID := extractSourceID(existing)
-					if existingID == rec.SourceID && contentUnchanged(existing, fields) {
+					isArchived := bytes.Contains(existing, []byte("_archived_at:"))
+					if existingID == rec.SourceID && contentUnchanged(existing, fields) && !isArchived {
 						stats.Skipped++
 						count++
 						continue
@@ -144,6 +154,72 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 			count++
 		}
 	}
+}
+
+// archiveRemovedFiles finds files in the prefix folder that were not seen
+// during this sync run and marks them as archived by adding _archived_at
+// to their frontmatter. Only applies to full syncs (not limited previews).
+func archiveRemovedFiles(ctx context.Context, pipe *pipeline.Pipeline, prefix string, seenPaths map[string]bool, sourceName, actor string, stats *Stats) {
+	if len(seenPaths) == 0 {
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_ = storage.Walk(ctx, pipe.Store, prefix, func(entry storage.Entry) error {
+		path := entry.Path
+		if seenPaths[path] {
+			return nil
+		}
+
+		content, err := pipe.Store.Read(ctx, path)
+		if err != nil {
+			return nil
+		}
+
+		// Only archive files that were created by this source
+		existingSource := extractSourceName(content)
+		if existingSource != sourceName {
+			return nil
+		}
+
+		// Skip if already archived
+		if bytes.Contains(content, []byte("_archived_at:")) {
+			return nil
+		}
+
+		archived := addArchiveMarker(content, now)
+		if archived != nil {
+			if _, err := pipe.Write(ctx, path, archived, actor); err == nil {
+				stats.Archived++
+			}
+		}
+		return nil
+	})
+}
+
+func extractSourceName(content []byte) string {
+	for _, line := range bytes.Split(content, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if bytes.HasPrefix(line, []byte("_source:")) {
+			return strings.TrimSpace(string(line[len("_source:"):]))
+		}
+	}
+	return ""
+}
+
+func addArchiveMarker(content []byte, timestamp string) []byte {
+	// Insert _archived_at into the YAML frontmatter
+	endIdx := bytes.Index(content[4:], []byte("\n---"))
+	if endIdx < 0 {
+		return nil
+	}
+	endIdx += 4 // offset from the initial "---\n"
+
+	var buf bytes.Buffer
+	buf.Write(content[:endIdx])
+	buf.WriteString(fmt.Sprintf("\n_archived_at: \"%s\"", timestamp))
+	buf.Write(content[endIdx:])
+	return buf.Bytes()
 }
 
 func renderMarkdown(fm map[string]any, title, table, id string) []byte {

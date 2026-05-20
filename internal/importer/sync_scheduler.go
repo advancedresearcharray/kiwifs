@@ -120,6 +120,7 @@ func (s *SyncScheduler) runSync(ctx context.Context, conn *ConnectionMeta) {
 		IDColumn: conn.IDColumn,
 		Columns:  conn.Columns,
 		Actor:    "sync-scheduler",
+		FullSync: true,
 	}
 
 	stats, err := Run(ctx, src, s.pipe, opts)
@@ -134,6 +135,7 @@ func (s *SyncScheduler) runSync(ctx context.Context, conn *ConnectionMeta) {
 	connStats := &ConnectionStats{
 		Imported: stats.Imported,
 		Skipped:  stats.Skipped,
+		Archived: stats.Archived,
 		Errors:   stats.Errors,
 	}
 	_ = s.store.UpdateLastRun(conn.ID, connStats)

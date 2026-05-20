@@ -51,6 +51,7 @@ type ConnectionMeta struct {
 type ConnectionStats struct {
 	Imported int      `json:"imported"`
 	Skipped  int      `json:"skipped"`
+	Archived int      `json:"archived,omitempty"`
 	Errors   []string `json:"errors,omitempty"`
 }
 

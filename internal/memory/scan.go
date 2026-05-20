@@ -14,14 +14,16 @@ import (
 // Report summarizes episodic and consolidation coverage for a knowledge root.
 type Report struct {
 	EpisodicCount int `json:"episodic_count"`
+	TotalEpisodic int `json:"total_episodic"`
+	TotalUnmerged int `json:"total_unmerged"`
 	// Cumulative merged-from entries seen across the tree (duplicates count).
 	MergedFromRefs int `json:"merged_from_refs"`
 	// Distinct ref keys: type:id, or type:path:relpath for path-only entries.
 	// Omitted in JSON; use for debugging only.
-	MergedKeySet  map[string]struct{} `json:"-"`
-	Episodes      []EpisodicFile      `json:"episodic_files"`
-	Unmerged      []EpisodicFile      `json:"unmerged"`
-	Warnings      []string            `json:"warnings,omitempty"`
+	MergedKeySet map[string]struct{} `json:"-"`
+	Episodes     []EpisodicFile      `json:"episodic_files"`
+	Unmerged     []EpisodicFile      `json:"unmerged"`
+	Warnings     []string            `json:"warnings,omitempty"`
 }
 
 // EpisodicFile is one file classified as holding episodic memory.
@@ -37,6 +39,10 @@ type Options struct {
 	// compared against paths using ToSlash. When empty, DefaultEpisodesPathPrefix
 	// is used for prefix-based heuristics.
 	EpisodesPathPrefix string
+	// Limit, when greater than zero, paginates EpisodicFiles and Unmerged.
+	Limit int
+	// Offset skips this many entries before returning paginated slices.
+	Offset int
 }
 
 // Scan walks the knowledge base, classifies episodic files, and determines
@@ -73,7 +79,7 @@ func Scan(ctx context.Context, store storage.Storage, opt Options) (*Report, err
 	if err != nil {
 		return nil, err
 	}
-	return finishReport(rep), nil
+	return finishReport(rep, opt), nil
 }
 
 func processFile(path string, b []byte, prefix string, rep *Report) error {
@@ -117,14 +123,35 @@ func processFile(path string, b []byte, prefix string, rep *Report) error {
 	return nil
 }
 
-func finishReport(r *Report) *Report {
+func finishReport(r *Report, opt Options) *Report {
 	for _, e := range r.Episodes {
 		if isEpisodicMerged(e, r.MergedKeySet) {
 			continue
 		}
 		r.Unmerged = append(r.Unmerged, e)
 	}
+	r.TotalEpisodic = len(r.Episodes)
+	r.TotalUnmerged = len(r.Unmerged)
+	r.Episodes = paginateEpisodicFiles(r.Episodes, opt.Limit, opt.Offset)
+	r.Unmerged = paginateEpisodicFiles(r.Unmerged, opt.Limit, opt.Offset)
 	return r
+}
+
+func paginateEpisodicFiles(files []EpisodicFile, limit, offset int) []EpisodicFile {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = len(files)
+	}
+	if offset >= len(files) {
+		return []EpisodicFile{}
+	}
+	end := offset + limit
+	if end > len(files) {
+		end = len(files)
+	}
+	return files[offset:end]
 }
 
 func isEpisodic(path, memoryKind, prefix string) bool {

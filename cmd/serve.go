@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/api"
 	"github.com/kiwifs/kiwifs/internal/backup"
 	"github.com/kiwifs/kiwifs/internal/bootstrap"
 	"github.com/kiwifs/kiwifs/internal/config"
@@ -57,6 +58,18 @@ func init() {
 	serveCmd.Flags().Bool("s3", false, "enable the S3-compatible API (aws cli, boto3, rclone)")
 	serveCmd.Flags().Int("s3-port", 3334, "S3 API listen port (used when --s3 is set)")
 	serveCmd.Flags().StringSlice("space", nil, "register an additional space (repeatable, format: name=path). Enables multi-space routing at /api/kiwi/{name}/...")
+}
+
+func serveProtocolProbe(name string, enabled bool, host string, port int) api.ProtocolHealthProbe {
+	if !enabled {
+		return api.ProtocolHealthProbe{Name: name, Enabled: false}
+	}
+	probeHost := host
+	if probeHost == "" || probeHost == "0.0.0.0" || probeHost == "::" || probeHost == "[::]" {
+		probeHost = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(probeHost, fmt.Sprint(port))
+	return api.NewTCPProtocolHealthProbe(name, true, addr, port, 250*time.Millisecond)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -170,6 +183,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	wantWebDAV, _ := cmd.Flags().GetBool("webdav")
+	webdavPort, _ := cmd.Flags().GetInt("webdav-port")
+	wantNFS, _ := cmd.Flags().GetBool("nfs")
+	nfsPort, _ := cmd.Flags().GetInt("nfs-port")
+	wantS3, _ := cmd.Flags().GetBool("s3")
+	s3Port, _ := cmd.Flags().GetInt("s3-port")
+	stack.Server.SetProtocolHealth([]api.ProtocolHealthProbe{
+		serveProtocolProbe("s3", wantS3, cfg.Server.Host, s3Port),
+		serveProtocolProbe("webdav", wantWebDAV, cfg.Server.Host, webdavPort),
+		serveProtocolProbe("nfs", wantNFS, cfg.Server.Host, nfsPort),
+	})
+
 	// Root context wired to SIGINT / SIGTERM. All servers derive from this,
 	// so a single Ctrl-C fans out shutdown across REST, WebDAV, NFS, and S3
 	// instead of leaving any of them half-serving during process exit.
@@ -199,15 +224,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	if wantWebDAV, _ := cmd.Flags().GetBool("webdav"); wantWebDAV {
-		port, _ := cmd.Flags().GetInt("webdav-port")
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, port)
+	if wantWebDAV {
+		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, webdavPort)
 		handler := kiwidav.New(root, stack.Pipeline, "webdav", cfg.Auth.APIKey).Handler("")
 		runHTTP("KiwiFS WebDAV", &http.Server{Addr: addr, Handler: handler})
 	}
 
-	if wantNFS, _ := cmd.Flags().GetBool("nfs"); wantNFS {
-		port, _ := cmd.Flags().GetInt("nfs-port")
+	if wantNFS {
 		allowSpec, _ := cmd.Flags().GetString("nfs-allow")
 		allow, aerr := kiwinfs.ParseAllow(allowSpec)
 		if aerr != nil {
@@ -217,7 +240,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if nerr != nil {
 			log.Printf("warning: NFS server init failed (%v) — skipping NFS", nerr)
 		} else {
-			addr := fmt.Sprintf("%s:%d", cfg.Server.Host, port)
+			addr := fmt.Sprintf("%s:%d", cfg.Server.Host, nfsPort)
 			listener, nerr := net.Listen("tcp", addr)
 			if nerr != nil {
 				log.Printf("warning: NFS listener failed (%v) — skipping NFS", nerr)
@@ -302,9 +325,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	defer spaceMgr.Close()
 	mgrHandler := spaceMgr.Handler()
 
-	if wantS3, _ := cmd.Flags().GetBool("s3"); wantS3 {
-		port, _ := cmd.Flags().GetInt("s3-port")
-		s3Addr := fmt.Sprintf("%s:%d", cfg.Server.Host, port)
+	if wantS3 {
+		s3Addr := fmt.Sprintf("%s:%d", cfg.Server.Host, s3Port)
 		var s3Srv *kiwis3.Server
 		if len(spaceSpecs) > 0 {
 			// One bucket per space. Order matches Manager.ListSpaces so
@@ -323,12 +345,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 			}
 			s3Srv = kiwis3.NewMultiSpace(buckets, order, cfg.Auth.APIKey)
 			for _, name := range order {
-				log.Printf("  aws s3 ls s3://%s/ --endpoint-url http://%s:%d", name, cfg.Server.Host, port)
+				log.Printf("  aws s3 ls s3://%s/ --endpoint-url http://%s:%d", name, cfg.Server.Host, s3Port)
 			}
 		} else {
 			s3Srv = kiwis3.New(root, stack.Pipeline, stack.Store, cfg.Auth.APIKey)
-			log.Printf("  aws s3 ls s3://knowledge/ --endpoint-url http://%s:%d", cfg.Server.Host, port)
-			log.Printf("  aws s3 cp file.md s3://knowledge/path/ --endpoint-url http://%s:%d", cfg.Server.Host, port)
+			log.Printf("  aws s3 ls s3://knowledge/ --endpoint-url http://%s:%d", cfg.Server.Host, s3Port)
+			log.Printf("  aws s3 cp file.md s3://knowledge/path/ --endpoint-url http://%s:%d", cfg.Server.Host, s3Port)
 		}
 		runHTTP("KiwiFS S3 API", &http.Server{Addr: s3Addr, Handler: s3Srv.Handler()})
 	}

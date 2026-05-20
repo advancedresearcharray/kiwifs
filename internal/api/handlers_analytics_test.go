@@ -86,6 +86,130 @@ func TestAnalyticsEmptyKB(t *testing.T) {
 	}
 }
 
+func TestFailedSearchAnalyticsEndpoint(t *testing.T) {
+	s, _ := buildSQLiteTestServer(t)
+
+	mustPutFile(t, s, "guide.md", "# Guide\nA page about searchable kiwi notes.\n")
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/kiwi/search?q=missing-widget", nil)
+		rec := httptest.NewRecorder()
+		s.echo.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /search missing-widget: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/search?q=searchable", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /search searchable: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics/failed-searches?top=5", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics/failed-searches: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var resp FailedSearchesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Top != 5 {
+		t.Fatalf("expected top=5, got %d", resp.Top)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected one failed query, got %+v", resp.Results)
+	}
+	if got := resp.Results[0]; got.Query != "missing-widget" || got.Count != 2 || got.SearchType != "search" {
+		t.Fatalf("unexpected failed search stat: %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics/failed-searches?since=2999-01-01T00:00:00Z", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics/failed-searches since: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal since: %v", err)
+	}
+	if len(resp.Results) != 0 {
+		t.Fatalf("expected since filter to hide old rows, got %+v", resp.Results)
+	}
+}
+
+func TestPageViewAnalyticsEndpoint(t *testing.T) {
+	s, _ := buildSQLiteTestServer(t)
+
+	mustPutFile(t, s, "guide.md", "# Guide\nA page about kiwi notes.\n")
+	mustPutFile(t, s, "other.md", "# Other\nAnother page.\n")
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/kiwi/file?path=guide.md", nil)
+		rec := httptest.NewRecorder()
+		s.echo.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET guide.md: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/file?path=other.md&source=ui", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET other.md: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics/views?top=5", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics/views: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PageViewsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Top != 5 {
+		t.Fatalf("expected top=5, got %d", resp.Top)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected two page view rows, got %+v", resp.Results)
+	}
+	if got := resp.Results[0]; got.Path != "guide.md" || got.Count != 2 {
+		t.Fatalf("expected guide.md first with count 2, got %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics/views?path=other.md", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics/views path filter: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal path filter: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].Path != "other.md" || resp.Results[0].Count != 1 {
+		t.Fatalf("unexpected path-filtered results: %+v", resp.Results)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics/views?since=2999-01-01T00:00:00Z", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics/views since: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal since: %v", err)
+	}
+	if len(resp.Results) != 0 {
+		t.Fatalf("expected since filter to hide old rows, got %+v", resp.Results)
+	}
+}
+
 func TestHealthCheckEndpoint(t *testing.T) {
 	s, _ := buildSQLiteTestServer(t)
 

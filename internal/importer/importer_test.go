@@ -885,3 +885,72 @@ func TestMarkdownImportRejectsNonMarkdown(t *testing.T) {
 
 // Suppress lint for unused json import.
 var _ = json.Marshal
+
+func TestArchiveRemovedFiles(t *testing.T) {
+	csvData1 := "id,name,age\nalice,Alice,25\nbob,Bob,30\ncharlie,Charlie,35\n"
+	csvFile := filepath.Join(t.TempDir(), "people.csv")
+	os.WriteFile(csvFile, []byte(csvData1), 0644)
+
+	src1, _ := NewCSV(csvFile, true)
+	defer src1.Close()
+
+	pipe, store := testPipeline(t)
+	ctx := context.Background()
+
+	// First import: all 3 records
+	stats1, err := Run(ctx, src1, pipe, Options{Actor: "test", FullSync: true, IDColumn: "id"})
+	if err != nil {
+		t.Fatalf("run1: %v", err)
+	}
+	if stats1.Imported != 3 {
+		t.Fatalf("imported=%d, want 3", stats1.Imported)
+	}
+
+	// Second import: only 2 records (charlie removed)
+	csvData2 := "id,name,age\nalice,Alice,25\nbob,Bob,30\n"
+	os.WriteFile(csvFile, []byte(csvData2), 0644)
+
+	src2, _ := NewCSV(csvFile, true)
+	defer src2.Close()
+
+	stats2, err := Run(ctx, src2, pipe, Options{Actor: "test", FullSync: true, IDColumn: "id"})
+	if err != nil {
+		t.Fatalf("run2: %v", err)
+	}
+	if stats2.Archived != 1 {
+		t.Fatalf("archived=%d, want 1", stats2.Archived)
+	}
+
+	// Verify charlie's file has _archived_at
+	content, err := store.Read(ctx, "people/charlie.md")
+	if err != nil {
+		t.Fatalf("read charlie: %v", err)
+	}
+	if !strings.Contains(string(content), "_archived_at:") {
+		t.Fatalf("charlie not archived: %s", content)
+	}
+
+	// Third import: charlie comes back
+	csvData3 := "id,name,age\nalice,Alice,25\nbob,Bob,30\ncharlie,Charlie,36\n"
+	os.WriteFile(csvFile, []byte(csvData3), 0644)
+
+	src3, _ := NewCSV(csvFile, true)
+	defer src3.Close()
+
+	stats3, err := Run(ctx, src3, pipe, Options{Actor: "test", FullSync: true, IDColumn: "id"})
+	if err != nil {
+		t.Fatalf("run3: %v", err)
+	}
+	if stats3.Imported != 1 {
+		t.Fatalf("re-imported=%d, want 1 (charlie)", stats3.Imported)
+	}
+
+	// Verify charlie is no longer archived
+	content, err = store.Read(ctx, "people/charlie.md")
+	if err != nil {
+		t.Fatalf("read charlie after unarchive: %v", err)
+	}
+	if strings.Contains(string(content), "_archived_at:") {
+		t.Fatalf("charlie still archived after re-import: %s", content)
+	}
+}

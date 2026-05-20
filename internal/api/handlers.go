@@ -58,7 +58,7 @@ type Handlers struct {
 	claimStore   *claims.Store
 	draftMgr     *draft.Manager
 
-	auditLogger    *AuditLogger // B.3: audit log support
+	auditLogger    *AuditLogger   // B.3: audit log support
 	cfg            *config.Config // B.1: for space info/visibility
 	connStore      *importer.ConnectionStore
 	publishMetrics *rbac.PublishMetricsStore
@@ -66,6 +66,7 @@ type Handlers struct {
 	schemaReload func()
 
 	backupStatusFn func() any
+	protocolHealth []ProtocolHealthProbe
 
 	graphCache atomic.Pointer[graphResponse]
 	graphGroup singleflight.Group

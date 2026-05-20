@@ -106,7 +106,7 @@ type WizardState = {
   prefix: string;
   idColumn: string;
   previews: { path: string; frontmatter: Record<string, unknown>; body_preview: string }[];
-  importResult: { imported: number; skipped: number; errors: string[] } | null;
+  importResult: { imported: number; skipped: number; archived?: number; errors: string[] } | null;
 };
 
 const initialState: WizardState = {
@@ -301,7 +301,7 @@ export function KiwiImportWizard({ onClose, onComplete }: { onClose: () => void;
   const handleImport = async () => {
     setLoading(true); setError(null);
     try {
-      let result: { imported: number; skipped: number; errors: string[] };
+      let result: { imported: number; skipped: number; archived?: number; errors: string[] };
       if (isUploadable && state.uploadedFile) {
         result = (await api.importUpload({ file: state.uploadedFile, from: state.sourceType!, mode: "import", prefix: state.prefix || state.selectedTable || state.sourceType!, id_column: state.idColumn || undefined, table: state.sourceType === "sqlite" ? state.selectedTable : undefined })) as any;
       } else {
@@ -595,7 +595,7 @@ function PreviewStep({ state, onBack, onImport, loading }: { state: WizardState;
    Results Step
    ═══════════════════════════════════════════════════════════ */
 
-function ResultsStep({ result, sourceType, onComplete }: { result: { imported: number; skipped: number; errors: string[] }; sourceType: string | null; onComplete: () => void }) {
+function ResultsStep({ result, sourceType, onComplete }: { result: { imported: number; skipped: number; archived?: number; errors: string[] }; sourceType: string | null; onComplete: () => void }) {
   const errors = result.errors ?? [];
   const hasErrors = errors.length > 0;
   const syncable = sourceType != null && ["firebase-rtdb", "firestore", "postgres", "mysql", "mongodb", "notion", "airtable"].includes(sourceType);
@@ -608,6 +608,7 @@ function ResultsStep({ result, sourceType, onComplete }: { result: { imported: n
       <div className="text-sm text-muted-foreground space-y-0.5 mb-4">
         <div><strong>{result.imported}</strong> documents imported</div>
         {result.skipped > 0 && <div><strong>{result.skipped}</strong> unchanged (skipped)</div>}
+        {(result.archived ?? 0) > 0 && <div><strong>{result.archived}</strong> removed upstream (archived)</div>}
         {hasErrors && <div className="text-destructive"><strong>{errors.length}</strong> error{errors.length !== 1 ? "s" : ""}</div>}
       </div>
       {syncable && !hasErrors && (

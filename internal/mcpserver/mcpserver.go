@@ -19,6 +19,7 @@ import (
 
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/dataview"
+	"github.com/kiwifs/kiwifs/internal/docexport"
 	"github.com/kiwifs/kiwifs/internal/exporter"
 	"github.com/kiwifs/kiwifs/internal/importer"
 	"github.com/kiwifs/kiwifs/internal/markdown"
@@ -296,6 +297,23 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleExport(b, opts),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_export_document",
+				mcp.WithDescription("Render markdown documents to publication-ready formats: PDF, standalone HTML, slide decks (Marp), or static documentation sites (MkDocs). Supports themes, bibliography/citations, cross-references, and multi-file book compilation. Requires external tools (Pandoc, Marp, MkDocs) to be installed."),
+				mcp.WithString("format", mcp.Required(), mcp.Description(`Output format: "pdf" | "html" | "slides" | "site"`)),
+				mcp.WithString("path", mcp.Required(), mcp.Description("File or directory path to export (e.g. docs/report.md or docs/)")),
+				mcp.WithString("theme", mcp.Description(`Theme name: "paper" | "modern" | "minimal" | "dark" | "presentation"`)),
+				mcp.WithBoolean("self_contained", mcp.Description("Embed all resources (images, CSS, fonts) in output")),
+				mcp.WithString("bibliography", mcp.Description("Path to .bib or .json bibliography file")),
+				mcp.WithString("csl_style", mcp.Description(`Citation style: "apa" | "ieee" | "chicago" | "vancouver" | "harvard"`)),
+				mcp.WithBoolean("crossref", mcp.Description("Enable cross-references for figures, tables, equations")),
+				mcp.WithString("pdf_engine", mcp.Description(`PDF engine: "typst" | "xelatex" (default: auto-detect)`)),
+				mcp.WithString("slide_format", mcp.Description(`Slide output: "html" | "pdf" | "pptx" (default: "html")`)),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+			),
+			Handler: handleExportDocument(b),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_changes",
 				mcp.WithDescription("List files changed since a given checkpoint. Returns changes with paths, actions, actors, and timestamps. Store last_seq and pass it as since on next call to get incremental updates."),
 				mcp.WithString("since", mcp.Description("Commit hash to start from (exclusive). Omit to get recent changes.")),
@@ -351,6 +369,8 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Tool: mcp.NewTool("kiwi_memory_report",
 				mcp.WithDescription("Report episodic memory coverage: lists markdown files classified as episodic and whether any page cites them under merged-from (central/semantic consolidation). Use before or after merge jobs to find episodes not yet folded into concept pages."),
 				mcp.WithString("episodes_prefix", mcp.Description("Override path prefix for episodic files (default from [memory] episodes_path_prefix or episodes/)")),
+				mcp.WithNumber("limit", mcp.Description("Maximum episodic_files and unmerged entries to return. Omit or set 0 for all entries.")),
+				mcp.WithNumber("offset", mcp.Description("Number of episodic_files and unmerged entries to skip before returning results.")),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
@@ -1293,8 +1313,16 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		prefix, _ := args["episodes_prefix"].(string)
+		limit, err := optionalNonNegativeIntArg(args, "limit")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		offset, err := optionalNonNegativeIntArg(args, "offset")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
-		raw, err := b.MemoryReport(ctx, prefix)
+		raw, err := b.MemoryReport(ctx, prefix, limit, offset)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Memory report failed: %v", err)), nil
 		}
@@ -1307,7 +1335,10 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Episodic files:           %d\n", rep.EpisodicCount)
 		fmt.Fprintf(&sb, "merged-from references:   %d\n", rep.MergedFromRefs)
-		fmt.Fprintf(&sb, "Unmerged (no merged-from): %d\n", len(rep.Unmerged))
+		fmt.Fprintf(&sb, "Unmerged (no merged-from): %d\n", rep.TotalUnmerged)
+		if limit > 0 || offset > 0 {
+			fmt.Fprintf(&sb, "Showing unmerged:          %d (offset %d)\n", len(rep.Unmerged), offset)
+		}
 		for _, u := range rep.Unmerged {
 			fmt.Fprintf(&sb, "  - %s", u.Path)
 			if u.EpisodeID != "" {
@@ -1322,6 +1353,27 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 			sb.WriteString("All episodic files are referenced by at least one merged-from list.\n")
 		}
 		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func optionalNonNegativeIntArg(args map[string]any, name string) (int, error) {
+	raw, ok := args[name]
+	if !ok || raw == nil {
+		return 0, nil
+	}
+	switch v := raw.(type) {
+	case float64:
+		if v < 0 || v != float64(int(v)) {
+			return 0, fmt.Errorf("%s must be a non-negative integer", name)
+		}
+		return int(v), nil
+	case int:
+		if v < 0 {
+			return 0, fmt.Errorf("%s must be a non-negative integer", name)
+		}
+		return v, nil
+	default:
+		return 0, fmt.Errorf("%s must be a non-negative integer", name)
 	}
 }
 
@@ -2026,6 +2078,92 @@ func handleExport(b Backend, _ Options) server.ToolHandlerFunc {
 		fmt.Fprintf(&sb, "Exported %d files (%s format)\n\n", count, format)
 		sb.Write(buf.Bytes())
 		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleExportDocument(b Backend) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+
+		format, _ := args["format"].(string)
+		if format == "" {
+			return mcp.NewToolResultError("format is required (pdf, html, slides, site)"), nil
+		}
+
+		docFormat, err := docexport.ParseFormat(format)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		lb, ok := b.(*LocalBackend)
+		if !ok {
+			return mcp.NewToolResultError("document export is only supported in local mode"), nil
+		}
+		if err := lb.init(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("init: %v", err)), nil
+		}
+
+		path, _ := args["path"].(string)
+		if path == "" {
+			return mcp.NewToolResultError("path is required (file or directory to export)"), nil
+		}
+
+		theme, _ := args["theme"].(string)
+		selfContained, _ := args["self_contained"].(bool)
+		bibliography, _ := args["bibliography"].(string)
+		cslStyle, _ := args["csl_style"].(string)
+		crossref, _ := args["crossref"].(bool)
+		pdfEngine, _ := args["pdf_engine"].(string)
+		slideFormat, _ := args["slide_format"].(string)
+
+		provider := docexport.NewStorageProvider(lb.stack.Store, lb.root)
+		registry := docexport.NewRegistry()
+		registry.Register(docexport.NewPDFExporter(provider, lb.root))
+		registry.Register(docexport.NewHTMLExporter(provider, lb.root))
+		registry.Register(docexport.NewSlidesExporter(provider, lb.root))
+		registry.Register(docexport.NewSiteExporter(provider, lb.stack.Store, lb.root))
+
+		opts := docexport.ExportOpts{
+			Format:        docFormat,
+			InputPath:     path,
+			Theme:         theme,
+			SelfContained: selfContained,
+			Bibliography:  bibliography,
+			CSLStyle:      cslStyle,
+			CrossRef:      crossref,
+			PDFEngine:     pdfEngine,
+			SlideFormat:   slideFormat,
+		}
+
+		exportCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+
+		result, err := registry.Export(exportCtx, opts)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("export failed: %v", err)), nil
+		}
+
+		// For binary formats (PDF, PPTX, ZIP), save to a temp file and return the path.
+		// For text formats (HTML), return the content directly.
+		switch docFormat {
+		case docexport.FormatHTML:
+			if len(result.Data) > 100000 {
+				// Large HTML — save to temp file.
+				tmpPath := filepath.Join(os.TempDir(), result.Filename)
+				if werr := os.WriteFile(tmpPath, result.Data, 0644); werr != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("write temp: %v", werr)), nil
+				}
+				return mcp.NewToolResultText(fmt.Sprintf("Exported HTML document (%d bytes) saved to: %s", len(result.Data), tmpPath)), nil
+			}
+			return mcp.NewToolResultText(string(result.Data)), nil
+		default:
+			// Binary formats — always write to temp file.
+			tmpPath := filepath.Join(os.TempDir(), result.Filename)
+			if werr := os.WriteFile(tmpPath, result.Data, 0644); werr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("write temp: %v", werr)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("Exported %s document (%d bytes) saved to: %s\nContent-Type: %s", format, len(result.Data), tmpPath, result.ContentType)), nil
+		}
 	}
 }
 
