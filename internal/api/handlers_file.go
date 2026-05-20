@@ -14,6 +14,7 @@ import (
 
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
+	"github.com/kiwifs/kiwifs/internal/search"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/kiwifs/kiwifs/internal/tracing"
 	"github.com/labstack/echo/v4"
@@ -139,6 +140,12 @@ func (h *Handlers) ReadFile(c echo.Context) error {
 		c.Response().Header().Set("X-Permalink", pl)
 	}
 
+	if storage.IsKnowledgeFile(path) {
+		if recorder, ok := h.searcher.(search.PageViewRecorder); ok {
+			_ = recorder.RecordPageView(c.Request().Context(), path, pageViewSource(c))
+		}
+	}
+
 	if c.QueryParam("metadata_only") == "true" {
 		fm := extractFrontmatter(content)
 		return c.JSON(http.StatusOK, fm)
@@ -150,6 +157,17 @@ func (h *Handlers) ReadFile(c echo.Context) error {
 	}
 
 	return c.Blob(http.StatusOK, detectContentType(path, content), content)
+}
+
+func pageViewSource(c echo.Context) string {
+	source := c.QueryParam("source")
+	if source == "" {
+		source = c.Request().Header.Get("X-Kiwi-Source")
+	}
+	if source == "" {
+		source = "api"
+	}
+	return source
 }
 
 func (h *Handlers) Readlink(c echo.Context) error {

@@ -52,6 +52,13 @@ type FailedSearchesResponse struct {
 	Results []search.FailedSearchStat `json:"results"`
 }
 
+type PageViewsResponse struct {
+	Top     int                   `json:"top"`
+	Path    string                `json:"path,omitempty"`
+	Since   int64                 `json:"since,omitempty"`
+	Results []search.PageViewStat `json:"results"`
+}
+
 func (h *Handlers) Analytics(c echo.Context) error {
 	sq, ok := h.searcher.(*search.SQLite)
 	if !ok {
@@ -77,7 +84,7 @@ func (h *Handlers) FailedSearches(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotImplemented, "failed search analytics requires sqlite search backend")
 	}
 	top := search.NormalizeLimit(parseIntParam(c, "top", 20))
-	since, err := parseSinceParam(c.QueryParam("since"))
+	since, err := parseAnalyticsSince(c.QueryParam("since"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid since: expected unix timestamp or RFC3339 date")
 	}
@@ -96,7 +103,34 @@ func (h *Handlers) FailedSearches(c echo.Context) error {
 	})
 }
 
-func parseSinceParam(raw string) (int64, error) {
+func (h *Handlers) PageViews(c echo.Context) error {
+	recorder, ok := h.searcher.(search.PageViewRecorder)
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotImplemented, "page view analytics requires sqlite search backend")
+	}
+	top := search.NormalizeLimit(parseIntParam(c, "top", 20))
+	path := c.QueryParam("path")
+	since, err := parseAnalyticsSince(c.QueryParam("since"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid since: expected unix timestamp or RFC3339 date")
+	}
+
+	results, err := recorder.PageViews(c.Request().Context(), top, path, since)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if results == nil {
+		results = []search.PageViewStat{}
+	}
+	return c.JSON(http.StatusOK, PageViewsResponse{
+		Top:     top,
+		Path:    path,
+		Since:   since,
+		Results: results,
+	})
+}
+
+func parseAnalyticsSince(raw string) (int64, error) {
 	if raw == "" {
 		return 0, nil
 	}

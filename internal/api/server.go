@@ -487,6 +487,7 @@ func (s *Server) setupRoutes() {
 	api.POST("/export/document", h.ExportDocument)
 	api.GET("/analytics", h.Analytics)
 	api.GET("/analytics/failed-searches", h.FailedSearches)
+	api.GET("/analytics/views", h.PageViews)
 	api.POST("/lint", h.Lint)
 	api.GET("/health-check", h.HealthCheck)
 	api.GET("/context", h.Context)

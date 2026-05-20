@@ -250,7 +250,17 @@ CREATE TABLE IF NOT EXISTS failed_searches (
 	last_seen INTEGER NOT NULL,
 	PRIMARY KEY (query, search_type)
 );
-CREATE INDEX IF NOT EXISTS idx_failed_searches_last_seen ON failed_searches(last_seen);`
+CREATE INDEX IF NOT EXISTS idx_failed_searches_last_seen ON failed_searches(last_seen);
+CREATE TABLE IF NOT EXISTS page_views (
+	path TEXT NOT NULL,
+	source TEXT NOT NULL DEFAULT 'api',
+	count INTEGER NOT NULL DEFAULT 0,
+	first_seen INTEGER NOT NULL,
+	last_seen INTEGER NOT NULL,
+	PRIMARY KEY (path, source)
+);
+CREATE INDEX IF NOT EXISTS idx_page_views_last_seen ON page_views(last_seen);
+CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);`
 	_, err := s.writeDB.ExecContext(ctx, ddl)
 	if err != nil {
 		return fmt.Errorf("create schema: %w", err)
@@ -392,6 +402,66 @@ func (s *SQLite) FailedSearches(ctx context.Context, limit int, since int64) ([]
 	for rows.Next() {
 		var stat FailedSearchStat
 		if err := rows.Scan(&stat.Query, &stat.SearchType, &stat.Count, &stat.FirstSeen, &stat.LastSeen); err != nil {
+			return nil, err
+		}
+		stats = append(stats, stat)
+	}
+	return stats, rows.Err()
+}
+
+func (s *SQLite) RecordPageView(ctx context.Context, path, source string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "api"
+	}
+	now := time.Now().Unix()
+	_, err := s.writeDB.ExecContext(ctx, `
+INSERT INTO page_views(path, source, count, first_seen, last_seen)
+VALUES (?, ?, 1, ?, ?)
+ON CONFLICT(path, source) DO UPDATE SET
+	count = count + 1,
+	last_seen = excluded.last_seen
+`, path, source, now, now)
+	if err != nil {
+		return fmt.Errorf("record page view: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLite) PageViews(ctx context.Context, limit int, path string, since int64) ([]PageViewStat, error) {
+	limit = NormalizeLimit(limit)
+
+	sqlQ := `SELECT path, SUM(count) AS views, MIN(first_seen), MAX(last_seen) FROM page_views`
+	args := []any{}
+	where := []string{}
+	if path != "" {
+		where = append(where, `path = ?`)
+		args = append(args, path)
+	}
+	if since > 0 {
+		where = append(where, `last_seen >= ?`)
+		args = append(args, since)
+	}
+	if len(where) > 0 {
+		sqlQ += ` WHERE ` + strings.Join(where, ` AND `)
+	}
+	sqlQ += ` GROUP BY path ORDER BY views DESC, last_seen DESC, path ASC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.readDB.QueryContext(ctx, sqlQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query page views: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []PageViewStat
+	for rows.Next() {
+		var stat PageViewStat
+		if err := rows.Scan(&stat.Path, &stat.Count, &stat.FirstSeen, &stat.LastSeen); err != nil {
 			return nil, err
 		}
 		stats = append(stats, stat)

@@ -36,6 +36,14 @@ type FailedSearchStat struct {
 	LastSeen   int64  `json:"last_seen"`
 }
 
+// PageViewStat is an aggregate of successful page reads.
+type PageViewStat struct {
+	Path      string `json:"path"`
+	Count     int    `json:"count"`
+	FirstSeen int64  `json:"first_seen"`
+	LastSeen  int64  `json:"last_seen"`
+}
+
 const defaultSearchLimit = 50
 
 const maxSearchLimit = 200
@@ -124,6 +132,13 @@ type Resyncer interface {
 type FailedSearchRecorder interface {
 	RecordFailedSearch(ctx context.Context, query, searchType string) error
 	FailedSearches(ctx context.Context, limit int, since int64) ([]FailedSearchStat, error)
+}
+
+// PageViewRecorder is implemented by search backends that can persist read
+// analytics for knowledge pages.
+type PageViewRecorder interface {
+	RecordPageView(ctx context.Context, path, source string) error
+	PageViews(ctx context.Context, limit int, path string, since int64) ([]PageViewStat, error)
 }
 
 // NormalizeLimit clamps a caller-supplied limit into [1, maxSearchLimit].
