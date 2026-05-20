@@ -96,6 +96,11 @@ func (h *Handlers) Search(c echo.Context) error {
 			}
 		}
 	}
+	if len(results) == 0 {
+		if recorder, ok := h.searcher.(search.FailedSearchRecorder); ok {
+			_ = recorder.RecordFailedSearch(c.Request().Context(), q, "search")
+		}
+	}
 	tracing.Record(c.Request().Context(), tracing.Event{Kind: tracing.KindSearch, Query: q, HitCount: len(results)})
 	return c.JSON(http.StatusOK, searchResponse{
 		Query:   q,
@@ -123,6 +128,11 @@ func (h *Handlers) VerifiedSearch(c echo.Context) error {
 	}
 	if results == nil {
 		results = []search.Result{}
+	}
+	if len(results) == 0 {
+		if recorder, ok := h.searcher.(search.FailedSearchRecorder); ok {
+			_ = recorder.RecordFailedSearch(c.Request().Context(), q, "verified")
+		}
 	}
 	tracing.Record(c.Request().Context(), tracing.Event{Kind: tracing.KindSearch, Query: q, HitCount: len(results)})
 	return c.JSON(http.StatusOK, searchResponse{
@@ -335,4 +345,3 @@ func (h *Handlers) Meta(c echo.Context) error {
 		Results: entries,
 	})
 }
-

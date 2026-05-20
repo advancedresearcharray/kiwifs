@@ -99,24 +99,24 @@ func pathRowID(path string) int64 {
 //
 // Two pools share the same underlying DB file (WAL makes this safe):
 //
-//   writeDB — SetMaxOpenConns(1). Serialises every writer at the Go pool
-//             boundary, so there's never more than one writer in the SQLite
-//             engine at once. FTS5 and the regular tables see each DML/DDL
-//             run to completion before the next one starts, which is what
-//             the engine wants anyway, and we avoid the SQLITE_BUSY retries
-//             that crop up when two writers race for the WAL write lock.
+//	writeDB — SetMaxOpenConns(1). Serialises every writer at the Go pool
+//	          boundary, so there's never more than one writer in the SQLite
+//	          engine at once. FTS5 and the regular tables see each DML/DDL
+//	          run to completion before the next one starts, which is what
+//	          the engine wants anyway, and we avoid the SQLITE_BUSY retries
+//	          that crop up when two writers race for the WAL write lock.
 //
-//   readDB —  SetMaxOpenConns(N). WAL readers are MVCC-style: they see a
-//             consistent snapshot even while a writer is mid-transaction,
-//             so searches never wait on indexing to finish. Opened with
-//             `query_only=1` so a bug in this layer can't silently mutate
-//             through the read pool.
+//	readDB —  SetMaxOpenConns(N). WAL readers are MVCC-style: they see a
+//	          consistent snapshot even while a writer is mid-transaction,
+//	          so searches never wait on indexing to finish. Opened with
+//	          `query_only=1` so a bug in this layer can't silently mutate
+//	          through the read pool.
 type SQLite struct {
-	root               string
-	store              storage.Storage   // reindex source; keeps the search layer storage-agnostic
-	writeDB            *sql.DB           // MaxOpenConns=1 — every write/DDL
-	readDB             *sql.DB           // MaxOpenConns=N — read-only snapshot reads
-	computedFields     bool              // when true, _word_count etc. are injected into frontmatter
+	root                 string
+	store                storage.Storage   // reindex source; keeps the search layer storage-agnostic
+	writeDB              *sql.DB           // MaxOpenConns=1 — every write/DDL
+	readDB               *sql.DB           // MaxOpenConns=N — read-only snapshot reads
+	computedFields       bool              // when true, _word_count etc. are injected into frontmatter
 	customComputedFields map[string]string // user-defined computed fields: key → expression
 }
 
@@ -241,7 +241,16 @@ CREATE INDEX IF NOT EXISTS idx_meta_visibility ON file_meta(json_extract(frontma
 CREATE INDEX IF NOT EXISTS idx_meta_type ON file_meta(json_extract(frontmatter, '$.type'));
 CREATE INDEX IF NOT EXISTS idx_meta_priority ON file_meta(json_extract(frontmatter, '$.priority'));
 CREATE INDEX IF NOT EXISTS idx_meta_assignee ON file_meta(json_extract(frontmatter, '$.assignee'));
-CREATE INDEX IF NOT EXISTS idx_meta_claimed_by ON file_meta(json_extract(frontmatter, '$.claimed-by'));`
+CREATE INDEX IF NOT EXISTS idx_meta_claimed_by ON file_meta(json_extract(frontmatter, '$.claimed-by'));
+CREATE TABLE IF NOT EXISTS failed_searches (
+	query TEXT NOT NULL,
+	search_type TEXT NOT NULL DEFAULT 'search',
+	count INTEGER NOT NULL DEFAULT 0,
+	first_seen INTEGER NOT NULL,
+	last_seen INTEGER NOT NULL,
+	PRIMARY KEY (query, search_type)
+);
+CREATE INDEX IF NOT EXISTS idx_failed_searches_last_seen ON failed_searches(last_seen);`
 	_, err := s.writeDB.ExecContext(ctx, ddl)
 	if err != nil {
 		return fmt.Errorf("create schema: %w", err)
@@ -253,7 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_meta_claimed_by ON file_meta(json_extract(frontma
 }
 
 // migrateContentless detects a pre-contentless FTS5 docs table and drops it
-// so createSchema can recreate it with content=''. The reindex at startup
+// so createSchema can recreate it with content=”. The reindex at startup
 // will repopulate it.
 func (s *SQLite) migrateContentless(ctx context.Context) error {
 	var ddl string
@@ -336,6 +345,58 @@ WHERE docs MATCH ?`
 		})
 	}
 	return results, rows.Err()
+}
+
+func (s *SQLite) RecordFailedSearch(ctx context.Context, query, searchType string) error {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+	searchType = strings.TrimSpace(searchType)
+	if searchType == "" {
+		searchType = "search"
+	}
+	now := time.Now().Unix()
+	_, err := s.writeDB.ExecContext(ctx, `
+INSERT INTO failed_searches(query, search_type, count, first_seen, last_seen)
+VALUES (?, ?, 1, ?, ?)
+ON CONFLICT(query, search_type) DO UPDATE SET
+	count = count + 1,
+	last_seen = excluded.last_seen
+`, query, searchType, now, now)
+	if err != nil {
+		return fmt.Errorf("record failed search: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLite) FailedSearches(ctx context.Context, limit int, since int64) ([]FailedSearchStat, error) {
+	limit = NormalizeLimit(limit)
+
+	sqlQ := `SELECT query, search_type, count, first_seen, last_seen FROM failed_searches`
+	args := []any{}
+	if since > 0 {
+		sqlQ += ` WHERE last_seen >= ?`
+		args = append(args, since)
+	}
+	sqlQ += ` ORDER BY count DESC, last_seen DESC, query ASC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.readDB.QueryContext(ctx, sqlQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query failed searches: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []FailedSearchStat
+	for rows.Next() {
+		var stat FailedSearchStat
+		if err := rows.Scan(&stat.Query, &stat.SearchType, &stat.Count, &stat.FirstSeen, &stat.LastSeen); err != nil {
+			return nil, err
+		}
+		stats = append(stats, stat)
+	}
+	return stats, rows.Err()
 }
 
 func generateSnippet(content []byte, queryTerms []string, maxLen int) string {

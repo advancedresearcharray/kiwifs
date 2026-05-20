@@ -86,6 +86,61 @@ func TestAnalyticsEmptyKB(t *testing.T) {
 	}
 }
 
+func TestFailedSearchAnalyticsEndpoint(t *testing.T) {
+	s, _ := buildSQLiteTestServer(t)
+
+	mustPutFile(t, s, "guide.md", "# Guide\nA page about searchable kiwi notes.\n")
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/kiwi/search?q=missing-widget", nil)
+		rec := httptest.NewRecorder()
+		s.echo.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /search missing-widget: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/search?q=searchable", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /search searchable: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics/failed-searches?top=5", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics/failed-searches: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var resp FailedSearchesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Top != 5 {
+		t.Fatalf("expected top=5, got %d", resp.Top)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected one failed query, got %+v", resp.Results)
+	}
+	if got := resp.Results[0]; got.Query != "missing-widget" || got.Count != 2 || got.SearchType != "search" {
+		t.Fatalf("unexpected failed search stat: %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/analytics/failed-searches?since=2999-01-01T00:00:00Z", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /analytics/failed-searches since: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal since: %v", err)
+	}
+	if len(resp.Results) != 0 {
+		t.Fatalf("expected since filter to hide old rows, got %+v", resp.Results)
+	}
+}
+
 func TestHealthCheckEndpoint(t *testing.T) {
 	s, _ := buildSQLiteTestServer(t)
 
