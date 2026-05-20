@@ -106,9 +106,16 @@ func (e *SlidesExporter) Export(ctx context.Context, opts ExportOpts) (*ExportRe
 	// Allow local file access for images.
 	args = append(args, "--allow-local-files")
 
-	// Execute Marp.
+	// Execute Marp from the input file's directory so relative image paths work.
+	marpDir := e.root
+	if dir := filepath.Dir(opts.InputPath); dir != "." && dir != "" {
+		candidate := filepath.Join(e.root, dir)
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			marpDir = candidate
+		}
+	}
 	cmd := exec.CommandContext(ctx, "marp", args...)
-	cmd.Dir = filepath.Join(e.root, filepath.Dir(opts.InputPath))
+	cmd.Dir = marpDir
 	cmd.Env = append(os.Environ(), "HOME="+os.TempDir())
 
 	output, err := cmd.CombinedOutput()
@@ -133,19 +140,44 @@ func (e *SlidesExporter) Export(ctx context.Context, opts ExportOpts) (*ExportRe
 func ensureMarpFrontmatter(content []byte) []byte {
 	s := string(content)
 
-	if strings.HasPrefix(s, "---\n") || strings.HasPrefix(s, "---\r\n") {
-		// Check if marp: true is already in the frontmatter.
-		endIdx := strings.Index(s[3:], "\n---")
-		if endIdx >= 0 {
-			fm := s[3 : 3+endIdx]
-			if strings.Contains(fm, "marp:") {
-				return content // Already has marp directive.
+	// Check for existing frontmatter (exactly "---" + newline at start).
+	var hasFM bool
+	var fmStart int // index where frontmatter content begins (after opening ---)
+	if strings.HasPrefix(s, "---\r\n") {
+		hasFM = true
+		fmStart = 5
+	} else if strings.HasPrefix(s, "---\n") {
+		hasFM = true
+		fmStart = 4
+	}
+
+	if hasFM {
+		// Find the closing delimiter.
+		rest := s[fmStart:]
+		closerIdx := strings.Index(rest, "\n---")
+		if closerIdx < 0 {
+			closerIdx = strings.Index(rest, "\r\n---")
+		}
+		if closerIdx >= 0 {
+			fm := rest[:closerIdx]
+			// Check if any line starts with "marp:" (not just a substring match).
+			hasMarp := false
+			for _, line := range strings.Split(fm, "\n") {
+				line = strings.TrimRight(line, "\r")
+				if strings.HasPrefix(strings.TrimSpace(line), "marp:") {
+					hasMarp = true
+					break
+				}
 			}
-			// Insert marp: true at the beginning of frontmatter.
-			return []byte("---\nmarp: true\n" + fm + "\n---" + s[3+endIdx+4:])
+			if hasMarp {
+				return content
+			}
+			// Inject marp: true as the first key in existing frontmatter.
+			afterCloser := rest[closerIdx:]
+			return []byte("---\nmarp: true\n" + fm + afterCloser)
 		}
 	}
 
-	// No frontmatter — add one.
+	// No valid frontmatter — prepend one.
 	return []byte("---\nmarp: true\n---\n\n" + s)
 }

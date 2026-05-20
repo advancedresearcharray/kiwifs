@@ -51,7 +51,7 @@ func (e *PDFExporter) Export(ctx context.Context, opts ExportOpts) (*ExportResul
 	defer os.RemoveAll(tmpDir)
 
 	// Prepare input: single file or multi-file compilation.
-	inputPath, metadata, err := e.prepareInput(ctx, tmpDir, opts)
+	inputPath, metadata, err := prepareInputGeneric(ctx, e.provider, e.root, tmpDir, opts)
 	if err != nil {
 		return nil, fmt.Errorf("prepare input: %w", err)
 	}
@@ -117,91 +117,13 @@ func (e *PDFExporter) Export(ctx context.Context, opts ExportOpts) (*ExportResul
 	}, nil
 }
 
-// prepareInput handles both single-file and multi-file (directory/book) inputs.
-// It writes the processed markdown to tmpDir and returns the path to the input
-// file, along with any metadata extracted from frontmatter or manifests.
-func (e *PDFExporter) prepareInput(ctx context.Context, tmpDir string, opts ExportOpts) (string, map[string]string, error) {
-	inputPath := opts.InputPath
-
-	// Check if input is a directory (multi-file compilation).
-	absInput := filepath.Join(e.root, inputPath)
-	info, err := os.Stat(absInput)
-
-	if err == nil && info.IsDir() {
-		return e.prepareMultiFile(ctx, tmpDir, inputPath, opts)
-	}
-
-	// Single file.
-	content, err := e.provider.ReadFile(ctx, inputPath)
-	if err != nil {
-		return "", nil, fmt.Errorf("read %s: %w", inputPath, err)
-	}
-
-	// Copy assets referenced in the markdown to tmpDir.
-	content = e.resolveLocalAssets(ctx, inputPath, content, tmpDir)
-
-	mdPath := filepath.Join(tmpDir, "input.md")
-	if err := os.WriteFile(mdPath, content, 0644); err != nil {
-		return "", nil, fmt.Errorf("write input: %w", err)
-	}
-
-	return mdPath, nil, nil
-}
-
-// prepareMultiFile handles directory-based multi-file compilation.
-func (e *PDFExporter) prepareMultiFile(ctx context.Context, tmpDir, dirPath string, opts ExportOpts) (string, map[string]string, error) {
-	// Check for manifest.
-	absDir := filepath.Join(e.root, dirPath)
-	manifest, err := LoadManifest(absDir)
-	if err != nil {
-		return "", nil, err
-	}
-
-	var paths []string
-	if manifest != nil && len(manifest.Parts) > 0 {
-		paths = manifest.Parts
-	} else {
-		// Auto-discover and order files.
-		paths, err = e.provider.ListFiles(ctx, dirPath)
-		if err != nil {
-			return "", nil, err
-		}
-	}
-
-	if len(paths) == 0 {
-		return "", nil, fmt.Errorf("no markdown files found in %s", dirPath)
-	}
-
-	combined, metadata, err := StitchFiles(ctx, e.provider, paths, manifest)
-	if err != nil {
-		return "", nil, err
-	}
-
-	mdPath := filepath.Join(tmpDir, "input.md")
-	if err := os.WriteFile(mdPath, combined, 0644); err != nil {
-		return "", nil, fmt.Errorf("write combined: %w", err)
-	}
-
-	return mdPath, metadata, nil
-}
-
-// resolveLocalAssets copies referenced images to the temp directory and
-// rewrites paths in the markdown. This ensures Pandoc can find them.
-func (e *PDFExporter) resolveLocalAssets(ctx context.Context, sourcePath string, content []byte, tmpDir string) []byte {
-	// For now, we rely on Pandoc's --resource-path to find assets.
-	// This method is a hook for future enhancement where we could
-	// copy assets into tmpDir for truly isolated builds.
-	_ = ctx
-	_ = sourcePath
-	_ = tmpDir
-	return content
-}
 
 // appendMetadataArgs adds -M key=value flags for Pandoc metadata.
+// File-level metadata takes precedence over ExportOpts metadata.
+// A date is always injected if neither source provides one.
 func appendMetadataArgs(args []string, fromFile map[string]string, fromOpts map[string]string) []string {
 	seen := make(map[string]bool)
 
-	// File-level metadata takes precedence.
 	for k, v := range fromFile {
 		args = append(args, "-M", k+"="+v)
 		seen[k] = true
@@ -209,21 +131,12 @@ func appendMetadataArgs(args []string, fromFile map[string]string, fromOpts map[
 	for k, v := range fromOpts {
 		if !seen[k] {
 			args = append(args, "-M", k+"="+v)
+			seen[k] = true
 		}
 	}
 
-	// Ensure date is always set.
 	if !seen["date"] {
-		hasDate := false
-		for k := range fromOpts {
-			if k == "date" {
-				hasDate = true
-				break
-			}
-		}
-		if !hasDate {
-			args = append(args, "-M", "date="+time.Now().Format("2006-01-02"))
-		}
+		args = append(args, "-M", "date="+time.Now().Format("2006-01-02"))
 	}
 
 	return args

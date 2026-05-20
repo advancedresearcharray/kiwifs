@@ -52,9 +52,10 @@ func (e *HTMLExporter) Export(ctx context.Context, opts ExportOpts) (*ExportResu
 		"--katex", // client-side math rendering
 	}
 
-	// Self-contained: embed all resources.
+	// Self-contained: embed all resources into a single file.
+	// --embed-resources (Pandoc 2.19+) supersedes the deprecated --self-contained.
 	if opts.SelfContained {
-		args = append(args, "--embed-resources", "--self-contained")
+		args = append(args, "--embed-resources")
 	}
 
 	// Apply theme.
@@ -117,7 +118,7 @@ func prepareInputGeneric(ctx context.Context, provider FileProvider, root, tmpDi
 
 	if err == nil && info.IsDir() {
 		// Multi-file compilation.
-		manifest, merr := LoadManifest(absInput)
+		manifest, merr := LoadManifest(absInput, inputPath)
 		if merr != nil {
 			return "", nil, merr
 		}

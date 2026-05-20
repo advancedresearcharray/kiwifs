@@ -23,10 +23,13 @@ type BookManifest struct {
 }
 
 // LoadManifest looks for a _book.yaml or _book.yml in the given directory.
-// If not found, it returns nil (no error) — callers fall back to auto-ordering.
-func LoadManifest(dir string) (*BookManifest, error) {
+// absDir is the absolute filesystem path (for reading the file).
+// storageDir is the storage-relative path (for resolving part paths that will
+// be passed to the FileProvider). If not found, it returns nil (no error) —
+// callers fall back to auto-ordering.
+func LoadManifest(absDir, storageDir string) (*BookManifest, error) {
 	for _, name := range []string{"_book.yaml", "_book.yml"} {
-		path := filepath.Join(dir, name)
+		path := filepath.Join(absDir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -35,10 +38,10 @@ func LoadManifest(dir string) (*BookManifest, error) {
 		if err := yaml.Unmarshal(data, &m); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
-		// Resolve relative paths in parts list.
+		// Resolve relative paths in parts list to storage-relative paths.
 		for i, p := range m.Parts {
 			if !filepath.IsAbs(p) {
-				m.Parts[i] = filepath.Join(dir, p)
+				m.Parts[i] = filepath.Join(storageDir, p)
 			}
 		}
 		return &m, nil
@@ -91,22 +94,62 @@ func StitchFiles(ctx context.Context, provider FileProvider, paths []string, man
 }
 
 // stripFrontmatter removes YAML frontmatter from markdown content,
-// returning only the body.
+// returning only the body. Frontmatter must start at the very beginning
+// with exactly three dashes on the first line, followed by a newline.
 func stripFrontmatter(content []byte) []byte {
 	s := string(content)
+
+	// Must start with exactly "---" followed by a newline (LF or CRLF).
+	// Four or more dashes is a thematic break, not frontmatter.
 	if !strings.HasPrefix(s, "---") {
 		return content
 	}
-	// Find the closing ---
-	rest := s[3:]
-	idx := strings.Index(rest, "\n---")
-	if idx < 0 {
+	after := s[3:]
+	if len(after) == 0 {
 		return content
 	}
-	// Skip past the closing --- and any immediate newline.
-	body := rest[idx+4:]
-	if strings.HasPrefix(body, "\n") {
-		body = body[1:]
+	if after[0] == '\r' {
+		after = after[1:]
 	}
+	if len(after) == 0 || after[0] != '\n' {
+		return content // "----" or "---x" — not frontmatter
+	}
+	after = after[1:] // skip past the newline
+
+	// Find the closing "---" on its own line. It could be:
+	// - At the very start of `after` (empty frontmatter: "---\n---\n")
+	// - After a "\n" or "\r\n"
+	closerIdx := -1
+	if strings.HasPrefix(after, "---") {
+		closerIdx = 0
+	} else {
+		idx := strings.Index(after, "\n---")
+		if idx >= 0 {
+			closerIdx = idx + 1 // point to the first '-'
+		} else {
+			idx = strings.Index(after, "\r\n---")
+			if idx >= 0 {
+				closerIdx = idx + 2
+			}
+		}
+	}
+
+	if closerIdx < 0 {
+		return content // no closing delimiter
+	}
+
+	// Skip past "---" and any trailing newline.
+	body := after[closerIdx+3:]
+	if len(body) > 0 {
+		if body[0] == '\r' {
+			body = body[1:]
+		}
+		if len(body) > 0 && body[0] == '\n' {
+			body = body[1:]
+		} else if len(body) > 0 {
+			return content // "---x" — not a valid closer
+		}
+	}
+
 	return []byte(body)
 }

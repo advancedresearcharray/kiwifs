@@ -115,16 +115,18 @@ func writeEmbeddedTemp(name string) string {
 		return ""
 	}
 
-	// Use a deterministic path based on the name to avoid re-extraction.
 	tmpDir := filepath.Join(os.TempDir(), "kiwi-themes")
-	os.MkdirAll(tmpDir, 0755)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return ""
+	}
 
 	safeName := strings.ReplaceAll(name, "/", "_")
 	path := filepath.Join(tmpDir, safeName)
 
-	// Write only if not already present.
 	if _, err := os.Stat(path); err != nil {
-		os.WriteFile(path, data, 0644)
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			return ""
+		}
 	}
 
 	return path

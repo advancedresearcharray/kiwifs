@@ -17,6 +17,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/backup"
 	"github.com/kiwifs/kiwifs/internal/bootstrap"
 	"github.com/kiwifs/kiwifs/internal/config"
+	"github.com/kiwifs/kiwifs/internal/docexport"
 	"github.com/kiwifs/kiwifs/internal/lockdir"
 	kiwinfs "github.com/kiwifs/kiwifs/internal/nfs"
 	kiwis3 "github.com/kiwifs/kiwifs/internal/s3"
@@ -155,6 +156,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer stack.Close()
+
+	// Log availability of external document export tools (Pandoc, Marp,
+	// MkDocs, etc.) so operators know which export formats are usable.
+	docexport.LogDeps("")
 
 	// Recover any paths that were written to disk but not committed
 	// before a previous crash. Must run before the watcher starts so
