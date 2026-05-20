@@ -285,6 +285,9 @@ func buildEngagementStats(ctx context.Context, sq *search.SQLite, scope string) 
 		if err != nil {
 			return eng, err
 		}
+		if top == nil {
+			top = []search.PageViewStat{}
+		}
 		if scope != "" {
 			filtered := top[:0]
 			for _, v := range top {
