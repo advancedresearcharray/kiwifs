@@ -2,10 +2,16 @@ package webhooks
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -97,6 +103,117 @@ func TestSignPayloadVerifiesWithStandardWebhooks(t *testing.T) {
 	}
 }
 
+func TestDeliverAddsKiwiSignatureAndRecordsSuccess(t *testing.T) {
+	db := testDB(t)
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret := "plain-secret"
+	event := Event{Type: "write", Path: "pages/test.md", Actor: "alice", Timestamp: time.Now().UTC().Format(time.RFC3339)}
+	var gotSignature string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		gotSignature = r.Header.Get("X-Kiwi-Signature-256")
+		if gotSignature == "" {
+			t.Errorf("missing X-Kiwi-Signature-256")
+		}
+		want := expectedBodySignature(secret, body)
+		if gotSignature != want {
+			t.Errorf("signature = %q, want %q", gotSignature, want)
+		}
+		if r.Header.Get("webhook-signature") == "" {
+			t.Errorf("standard webhook-signature header missing")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	wh, err := store.RegisterWithSecret(context.Background(), ts.URL, "pages/**", secret, "write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := NewDispatcher(store, Config{MaxWorkers: 1, MaxRetries: 0})
+	defer d.Close()
+	d.deliver(dispatchJob{webhook: *wh, event: event})
+
+	deliveries, err := store.ListDeliveries(context.Background(), wh.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deliveries) != 1 {
+		t.Fatalf("deliveries = %d, want 1", len(deliveries))
+	}
+	if got := deliveries[0]; got.Status != "delivered" || got.StatusCode != http.StatusNoContent || got.Attempt != 1 {
+		t.Fatalf("delivery = %+v, want delivered 204 attempt 1", got)
+	}
+}
+
+func TestDeliverRetriesFailedNon2xxAndRecordsAttempts(t *testing.T) {
+	db := testDB(t)
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var attempts atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	wh, err := store.RegisterWithSecret(context.Background(), ts.URL, "pages/**", "retry-secret", "write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := NewDispatcher(store, Config{
+		MaxWorkers:  1,
+		MaxRetries:  1,
+		RetryDelays: []time.Duration{time.Millisecond},
+	})
+	defer d.Close()
+
+	d.deliver(dispatchJob{
+		webhook: *wh,
+		event:   Event{Type: "write", Path: "pages/retry.md", Actor: "alice", Timestamp: time.Now().UTC().Format(time.RFC3339)},
+	})
+	deadline := time.Now().Add(time.Second)
+	for attempts.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts.Load())
+	}
+
+	deliveries, err := store.ListDeliveries(context.Background(), wh.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deliveries) != 2 {
+		t.Fatalf("deliveries = %d, want 2: %+v", len(deliveries), deliveries)
+	}
+	var failed, delivered bool
+	for _, delivery := range deliveries {
+		if delivery.Status == "failed" && delivery.StatusCode == http.StatusInternalServerError && delivery.Attempt == 1 {
+			failed = true
+		}
+		if delivery.Status == "delivered" && delivery.StatusCode == http.StatusNoContent && delivery.Attempt == 2 {
+			delivered = true
+		}
+	}
+	if !failed || !delivered {
+		t.Fatalf("missing failed/delivered attempts: %+v", deliveries)
+	}
+}
+
 func TestGlobMatch(t *testing.T) {
 	tests := []struct {
 		pattern, path string
@@ -113,4 +230,10 @@ func TestGlobMatch(t *testing.T) {
 			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.path, got, tt.want)
 		}
 	}
+}
+
+func expectedBodySignature(secret string, payload []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }

@@ -20,6 +20,19 @@ type Webhook struct {
 	EventTypes []string `json:"event_types,omitempty"`
 }
 
+type Delivery struct {
+	ID         string `json:"id"`
+	WebhookID  string `json:"webhook_id"`
+	EventType  string `json:"event_type"`
+	Path       string `json:"path"`
+	Attempt    int    `json:"attempt"`
+	Status     string `json:"status"`
+	StatusCode int    `json:"status_code,omitempty"`
+	Error      string `json:"error,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
 type Store struct {
 	db *sql.DB
 }
@@ -48,6 +61,27 @@ func (s *Store) createSchema() error {
 		return err
 	}
 	s.db.Exec(`ALTER TABLE webhooks ADD COLUMN event_types TEXT`)
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS webhook_deliveries (
+			id          TEXT PRIMARY KEY,
+			webhook_id  TEXT NOT NULL,
+			event_type  TEXT NOT NULL,
+			path        TEXT NOT NULL,
+			attempt     INTEGER NOT NULL,
+			status      TEXT NOT NULL,
+			status_code INTEGER NOT NULL DEFAULT 0,
+			error       TEXT NOT NULL DEFAULT '',
+			created_at  TEXT NOT NULL,
+			updated_at  TEXT NOT NULL
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_created ON webhook_deliveries(webhook_id, created_at DESC)`)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -161,6 +195,68 @@ func (s *Store) GetSecret(ctx context.Context, id string) (string, error) {
 	return secret, err
 }
 
+func (s *Store) RecordDelivery(ctx context.Context, d Delivery) (*Delivery, error) {
+	if d.ID == "" {
+		d.ID = generateDeliveryID()
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if d.CreatedAt == "" {
+		d.CreatedAt = now
+	}
+	d.UpdatedAt = now
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO webhook_deliveries(id, webhook_id, event_type, path, attempt, status, status_code, error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, d.ID, d.WebhookID, d.EventType, d.Path, d.Attempt, d.Status, d.StatusCode, d.Error, d.CreatedAt, d.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("record webhook delivery: %w", err)
+	}
+	return &d, nil
+}
+
+func (s *Store) UpdateDelivery(ctx context.Context, id, status string, statusCode int, errMsg string) error {
+	updatedAt := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE webhook_deliveries
+		SET status = ?, status_code = ?, error = ?, updated_at = ?
+		WHERE id = ?
+	`, status, statusCode, errMsg, updatedAt, id)
+	if err != nil {
+		return fmt.Errorf("update webhook delivery: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListDeliveries(ctx context.Context, webhookID string, limit int) ([]Delivery, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, webhook_id, event_type, path, attempt, status, status_code, error, created_at, updated_at
+		FROM webhook_deliveries
+		WHERE webhook_id = ?
+		ORDER BY created_at DESC, attempt DESC
+		LIMIT ?
+	`, webhookID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Delivery
+	for rows.Next() {
+		var d Delivery
+		if err := rows.Scan(&d.ID, &d.WebhookID, &d.EventType, &d.Path, &d.Attempt, &d.Status, &d.StatusCode, &d.Error, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	if out == nil {
+		out = []Delivery{}
+	}
+	return out, rows.Err()
+}
+
 // RegisterWithSecret registers a webhook with a caller-provided secret.
 // Used by bootstrap to auto-register config-driven [[webhook_entries]].
 func (s *Store) RegisterWithSecret(ctx context.Context, url, pathGlob, secret string, eventTypes ...string) (*Webhook, error) {
@@ -218,6 +314,12 @@ func generateID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return "wh_" + hex.EncodeToString(b)
+}
+
+func generateDeliveryID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return "wd_" + hex.EncodeToString(b)
 }
 
 func generateSecret() string {
