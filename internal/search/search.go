@@ -27,6 +27,15 @@ type Result struct {
 	TrustScore float64 `json:"trustScore,omitempty"`
 }
 
+// FailedSearchStat is an aggregate of zero-result searches.
+type FailedSearchStat struct {
+	Query      string `json:"query"`
+	SearchType string `json:"search_type"`
+	Count      int    `json:"count"`
+	FirstSeen  int64  `json:"first_seen"`
+	LastSeen   int64  `json:"last_seen"`
+}
+
 const defaultSearchLimit = 50
 
 const maxSearchLimit = 200
@@ -108,6 +117,13 @@ type BatchIndexer interface {
 // out-of-band filesystem changes made while the server was down).
 type Resyncer interface {
 	Resync(ctx context.Context) (added, removed int, err error)
+}
+
+// FailedSearchRecorder is implemented by search backends that can persist
+// zero-result search analytics.
+type FailedSearchRecorder interface {
+	RecordFailedSearch(ctx context.Context, query, searchType string) error
+	FailedSearches(ctx context.Context, limit int, since int64) ([]FailedSearchStat, error)
 }
 
 // NormalizeLimit clamps a caller-supplied limit into [1, maxSearchLimit].
