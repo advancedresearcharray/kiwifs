@@ -12,6 +12,15 @@ Includes episodic memory with consolidation into durable pages.
     log.md           Append-only chronological record of all operations
     SCHEMA.md        This file — structure and conventions
 
+## Episodes
+
+Use `episodes/` for per-run or per-session raw notes that should be
+consolidated into durable `pages/` later. Files under this directory are
+classified as episodic automatically, and agents should still set
+`memory_kind: episodic` plus a unique `episode_id` in frontmatter.
+Run `kiwifs memory report` to see which episodes have not been
+consolidated. Full reference: [docs/MEMORY.md](https://github.com/kiwifs/kiwifs/blob/main/docs/MEMORY.md).
+
 ## Frontmatter Fields
 
 Every `.md` file should have YAML frontmatter. Required fields marked *.
