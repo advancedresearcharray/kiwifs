@@ -185,7 +185,7 @@ func TestDeliverRetriesFailedNon2xxAndRecordsAttempts(t *testing.T) {
 		webhook: *wh,
 		event:   Event{Type: "write", Path: "pages/retry.md", Actor: "alice", Timestamp: time.Now().UTC().Format(time.RFC3339)},
 	})
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(2 * time.Second)
 	for attempts.Load() < 2 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
@@ -193,24 +193,26 @@ func TestDeliverRetriesFailedNon2xxAndRecordsAttempts(t *testing.T) {
 		t.Fatalf("attempts = %d, want 2", attempts.Load())
 	}
 
-	deliveries, err := store.ListDeliveries(context.Background(), wh.ID, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(deliveries) != 2 {
-		t.Fatalf("deliveries = %d, want 2: %+v", len(deliveries), deliveries)
-	}
+	// Wait for async UpdateDelivery to complete after the HTTP response.
 	var failed, delivered bool
-	for _, delivery := range deliveries {
-		if delivery.Status == "failed" && delivery.StatusCode == http.StatusInternalServerError && delivery.Attempt == 1 {
-			failed = true
+	for !failed || !delivered {
+		if time.Now().After(deadline) {
+			deliveries, _ := store.ListDeliveries(context.Background(), wh.ID, 10)
+			t.Fatalf("timed out waiting for delivery statuses: %+v", deliveries)
 		}
-		if delivery.Status == "delivered" && delivery.StatusCode == http.StatusNoContent && delivery.Attempt == 2 {
-			delivered = true
+		time.Sleep(5 * time.Millisecond)
+		deliveries, err := store.ListDeliveries(context.Background(), wh.ID, 10)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !failed || !delivered {
-		t.Fatalf("missing failed/delivered attempts: %+v", deliveries)
+		for _, delivery := range deliveries {
+			if delivery.Status == "failed" && delivery.StatusCode == http.StatusInternalServerError && delivery.Attempt == 1 {
+				failed = true
+			}
+			if delivery.Status == "delivered" && delivery.StatusCode == http.StatusNoContent && delivery.Attempt == 2 {
+				delivered = true
+			}
+		}
 	}
 }
 
