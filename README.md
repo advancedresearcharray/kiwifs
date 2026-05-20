@@ -176,7 +176,15 @@ kiwifs mcp --root ~/knowledge --http   # Streamable HTTP transport on :8080
 kiwifs mcp --remote http://host:3333   # proxy to a running KiwiFS server
 ```
 
-29 tools including `kiwi_read`, `kiwi_write`, `kiwi_search`, `kiwi_tree`, `kiwi_query`, `kiwi_import`, `kiwi_export`, `kiwi_context`, `kiwi_bulk_write`, `kiwi_search_semantic`, `kiwi_backlinks`, `kiwi_analytics`, `kiwi_suggestions`, `kiwi_velocity`, and more. Plus resources (`kiwi://schema`, `kiwi://file/{path}`, `kiwi://tree/{path}`).
+62 registered tools, counted from `mcp.NewTool(...)` declarations in `internal/mcpserver/mcpserver.go`. Plus resources (`kiwi://schema`, `kiwi://file/{path}`, `kiwi://tree/{path}`).
+
+| Tool area | Included tools |
+|---|---|
+| Files and navigation | `kiwi_read`, `kiwi_write`, `kiwi_append`, `kiwi_delete`, `kiwi_rename`, `kiwi_bulk_write`, `kiwi_tree`, `kiwi_peek`, `kiwi_section`, `kiwi_context`, `kiwi_changes`, `kiwi_versions` |
+| Search, query, and analytics | `kiwi_search`, `kiwi_query_meta`, `kiwi_query`, `kiwi_aggregate`, `kiwi_search_semantic`, `kiwi_backlinks`, `kiwi_analytics`, `kiwi_health_check`, `kiwi_memory_report`, `kiwi_suggestions`, `kiwi_embeddings`, `kiwi_velocity`, `kiwi_timeline`, `kiwi_eval` |
+| Graph, workflow, and task coordination | `kiwi_graph_analytics`, `kiwi_graph_centrality`, `kiwi_graph_communities`, `kiwi_graph_path`, `kiwi_graph_walk`, `kiwi_eligible`, `kiwi_claim`, `kiwi_release`, `kiwi_claims_list`, `kiwi_workflow_list`, `kiwi_workflow_get`, `kiwi_workflow_save`, `kiwi_workflow_advance`, `kiwi_workflow_board` |
+| Import, export, and content quality | `kiwi_import`, `kiwi_ingest`, `kiwi_export`, `kiwi_lint`, `kiwi_clip`, `kiwi_feed` |
+| Drafts, canvases, and saved views | `kiwi_view_refresh`, `kiwi_draft_create`, `kiwi_draft_list`, `kiwi_draft_write`, `kiwi_draft_read`, `kiwi_draft_diff`, `kiwi_draft_merge`, `kiwi_draft_discard`, `kiwi_canvas_list`, `kiwi_canvas_read`, `kiwi_canvas_write`, `kiwi_views_list`, `kiwi_views_get`, `kiwi_views_save`, `kiwi_views_delete`, `kiwi_views_execute` |
 
 **Local (Claude Desktop / Cursor / any MCP client):**
 ```json
@@ -756,7 +764,7 @@ The question for your use case: **"My agents need persistent, searchable, struct
 |---|---|---|---|---|---|
 | **What it is** | Markdown filesystem | DIY files + git | Relational database | Local markdown editor | Vector store (OSS) |
 | **Agents can write** | MCP, REST, `cat` | `echo` + manual commit | SQL inserts | Local files only | Upsert embeddings |
-| **MCP support** | Native (29 tools) | No | No | No | No |
+| **MCP support** | Native (62 tools) | No | No | No | No |
 | **Human-readable UI** | Built-in web UI | Raw files / GitHub | Needs custom UI | Desktop app | No |
 | **Search** | FTS (BM25) + vector | `grep` | SQL `LIKE` / pg_trgm | Plugins | Vector similarity |
 | **Structured queries** | DQL over frontmatter | No | SQL (full power) | Plugin (Dataview) | Metadata filters |
