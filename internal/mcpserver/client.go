@@ -444,10 +444,16 @@ func (r *RemoteBackend) Analytics(ctx context.Context, scope string, staleThresh
 	return raw, nil
 }
 
-func (r *RemoteBackend) MemoryReport(ctx context.Context, episodesPrefix string) (json.RawMessage, error) {
+func (r *RemoteBackend) MemoryReport(ctx context.Context, episodesPrefix string, limit, offset int) (json.RawMessage, error) {
 	params := url.Values{}
 	if episodesPrefix != "" {
 		params.Set("episodes_prefix", episodesPrefix)
+	}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		params.Set("offset", strconv.Itoa(offset))
 	}
 	path := r.apiPrefix + "/memory/report"
 	if enc := params.Encode(); enc != "" {
@@ -745,7 +751,7 @@ func (r *RemoteBackend) ViewsSave(ctx context.Context, view ViewInfo) error {
 	if err != nil {
 		return err
 	}
-	resp, err := r.do(ctx, http.MethodPut, r.apiPrefix+"/views/"+url.PathEscape(view.Name), 
+	resp, err := r.do(ctx, http.MethodPut, r.apiPrefix+"/views/"+url.PathEscape(view.Name),
 		strings.NewReader(string(body)), "Content-Type", "application/json")
 	if err != nil {
 		return err

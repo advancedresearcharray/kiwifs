@@ -19,8 +19,8 @@ import (
 	"github.com/kiwifs/kiwifs/internal/claims"
 	"github.com/kiwifs/kiwifs/internal/clipper"
 	"github.com/kiwifs/kiwifs/internal/config"
-	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/dataview"
+	"github.com/kiwifs/kiwifs/internal/draft"
 	"github.com/kiwifs/kiwifs/internal/graphutil"
 	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/links"
@@ -28,10 +28,10 @@ import (
 	"github.com/kiwifs/kiwifs/internal/memory"
 	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/kiwifs/kiwifs/internal/search"
-	"github.com/kiwifs/kiwifs/internal/workflow"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/kiwifs/kiwifs/internal/tracing"
 	"github.com/kiwifs/kiwifs/internal/vectorstore"
+	"github.com/kiwifs/kiwifs/internal/workflow"
 )
 
 type LocalBackend struct {
@@ -669,7 +669,7 @@ func (b *LocalBackend) Analytics(ctx context.Context, scope string, staleThresho
 	return json.Marshal(resp)
 }
 
-func (b *LocalBackend) MemoryReport(ctx context.Context, episodesPrefix string) (json.RawMessage, error) {
+func (b *LocalBackend) MemoryReport(ctx context.Context, episodesPrefix string, limit, offset int) (json.RawMessage, error) {
 	if err := b.init(); err != nil {
 		return nil, err
 	}
@@ -679,6 +679,8 @@ func (b *LocalBackend) MemoryReport(ctx context.Context, episodesPrefix string) 
 	} else if b.stack.Config != nil && b.stack.Config.Memory.EpisodesPathPrefix != "" {
 		opt.EpisodesPathPrefix = b.stack.Config.Memory.EpisodesPathPrefix
 	}
+	opt.Limit = limit
+	opt.Offset = offset
 	rep, err := memory.Scan(ctx, b.stack.Store, opt)
 	if err != nil {
 		return nil, err
@@ -2040,7 +2042,7 @@ func (b *LocalBackend) ViewsList(ctx context.Context) ([]ViewInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read views dir: %w", err)
 	}
-	
+
 	var views []ViewInfo
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
@@ -2060,13 +2062,13 @@ func (b *LocalBackend) ViewsGet(ctx context.Context, name string) (*ViewInfo, er
 	if err := b.init(); err != nil {
 		return nil, err
 	}
-	
+
 	path := filepath.Join(b.root, ".kiwi", "views", name+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read view: %w", err)
 	}
-	
+
 	var view ViewInfo
 	if err := json.Unmarshal(data, &view); err != nil {
 		return nil, fmt.Errorf("parse view: %w", err)
@@ -2079,17 +2081,17 @@ func (b *LocalBackend) ViewsSave(ctx context.Context, view ViewInfo) error {
 	if err := b.init(); err != nil {
 		return err
 	}
-	
+
 	viewsDir := filepath.Join(b.root, ".kiwi", "views")
 	if err := os.MkdirAll(viewsDir, 0755); err != nil {
 		return fmt.Errorf("create views dir: %w", err)
 	}
-	
+
 	data, err := json.MarshalIndent(view, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal view: %w", err)
 	}
-	
+
 	path := filepath.Join(viewsDir, view.Name+".json")
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write view: %w", err)
@@ -2429,7 +2431,7 @@ func (b *LocalBackend) WorkflowBoard(ctx context.Context, workflowName string) (
 	wfDef := workflowToMCP(w)
 	return &WorkflowBoardResult{
 		Workflow: wfDef,
-		Board:   board,
+		Board:    board,
 	}, nil
 }
 

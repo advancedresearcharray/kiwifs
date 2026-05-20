@@ -883,12 +883,28 @@ episode_id: mcp-ep-1
 	if want := "Unmerged (no merged-from): 1"; !strings.Contains(out, want) {
 		t.Fatalf("want %q in:\n%s", want, out)
 	}
+	if err := os.WriteFile(filepath.Join(epDir, "run-2.md"), []byte(`---
+memory_kind: episodic
+episode_id: mcp-ep-2
+---
+# run 2
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outPage := mustCallTool(t, h, "kiwi_memory_report", map[string]any{"limit": float64(1), "offset": float64(1)})
+	for _, want := range []string{"Unmerged (no merged-from): 2", "Showing unmerged:          1 (offset 1)"} {
+		if !strings.Contains(outPage, want) {
+			t.Fatalf("want %q in:\n%s", want, outPage)
+		}
+	}
 
 	if err := os.WriteFile(filepath.Join(tmp, "concepts", "sum.md"), []byte(`---
 memory_kind: semantic
 merged-from:
   - type: episode
     id: mcp-ep-1
+  - type: episode
+    id: mcp-ep-2
 ---
 # Summary
 `), 0o644); err != nil {

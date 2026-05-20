@@ -102,3 +102,40 @@ episode_id: z1
 		t.Fatalf("want 1 episodic under raw/, got %d", rep.EpisodicCount)
 	}
 }
+
+func TestMemoryReportPagination(t *testing.T) {
+	s, dir := buildSQLiteTestServer(t)
+
+	epDir := filepath.Join(dir, "episodes")
+	if err := os.MkdirAll(epDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"ep-page-1", "ep-page-2", "ep-page-3"} {
+		body := `---
+memory_kind: episodic
+episode_id: ` + id + `
+---
+# Episode
+`
+		if err := os.WriteFile(filepath.Join(epDir, id+".md"), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/memory/report?limit=2&offset=1", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+	}
+	var rep memory.Report
+	if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.TotalEpisodic != 3 || rep.TotalUnmerged != 3 {
+		t.Fatalf("totals = episodic:%d unmerged:%d", rep.TotalEpisodic, rep.TotalUnmerged)
+	}
+	if len(rep.Episodes) != 2 || len(rep.Unmerged) != 2 {
+		t.Fatalf("paginated lengths = episodes:%d unmerged:%d", len(rep.Episodes), len(rep.Unmerged))
+	}
+}
