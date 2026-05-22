@@ -225,14 +225,22 @@ If you want to offer KiwiFS as a managed service or need a commercial license, [
 
 "KiwiFS" and the KiwiFS logo are trademarks of the KiwiFS Authors. See [LICENSE](LICENSE) for trademark usage guidelines.
 
-## Contributors
+## Star History
 
-<a href="https://github.com/kiwifs/kiwifs/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=kiwifs/kiwifs&columns=6&max=20&v=2" width="200" />
+<a href="https://star-history.com/#kiwifs/kiwifs&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=kiwifs/kiwifs&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=kiwifs/kiwifs&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=kiwifs/kiwifs&type=Date" />
+  </picture>
 </a>
 
-<p align="center">
-  <a href="https://star-history.com/#kiwifs/kiwifs&Date">
-    <img src="https://api.star-history.com/svg?repos=kiwifs/kiwifs&type=Date" alt="Star History" width="600" />
-  </a>
-</p>
+## Contributors
+
+Thanks to everyone who has contributed to KiwiFS.
+
+<a href="https://github.com/kiwifs/kiwifs/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=kiwifs/kiwifs" alt="Contributors" />
+</a>
+
+Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
