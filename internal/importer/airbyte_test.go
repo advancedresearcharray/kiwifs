@@ -451,7 +451,7 @@ func TestExplodeRTDBRecord(t *testing.T) {
 			},
 		},
 		{
-			name:     "non-object leaf values",
+			name:     "mixed scalars and nested objects",
 			key:      "metrics",
 			rawValue: `{"count":3,"last_seen":"today","enabled":false,"current":{"value":42}}`,
 			want: map[string]map[string]any{
