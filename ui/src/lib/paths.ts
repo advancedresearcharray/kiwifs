@@ -9,6 +9,10 @@ export function isMarkdown(p: string): boolean {
   return p.toLowerCase().endsWith(".md");
 }
 
+export function isCanvasFile(p: string): boolean {
+  return p.toLowerCase().endsWith(".canvas.json");
+}
+
 export function dirOf(p: string): string {
   const clean = stripTrailingSlash(p);
   const idx = clean.lastIndexOf("/");

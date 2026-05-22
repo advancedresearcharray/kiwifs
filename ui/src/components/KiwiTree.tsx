@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Tree, NodeApi, type NodeRendererProps } from "react-arborist";
 import { useDraggable } from "@dnd-kit/core";
 import { getCurrentSpace } from "../lib/api";
 import { TreeSkeleton } from "./TreeSkeleton";
@@ -17,10 +18,11 @@ import {
   Move,
   Plus,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { cn } from "@kw/lib/cn";
 import { api, type TreeEntry } from "@kw/lib/api";
-import { isMarkdown, stem, stripTrailingSlash } from "@kw/lib/paths";
+import { isMarkdown, isCanvasFile, stem, stripTrailingSlash, dirOf } from "@kw/lib/paths";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -40,8 +42,9 @@ import { Button } from "@kw/components/ui/button";
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
 import { type TreeRevealRequest } from "@kw/lib/treeReveal";
+import { parentPathsFor } from "@kw/lib/treeReveal";
 import { createTreePageDragData } from "@kw/lib/kanbanDnd";
-import { useTreeRevealExpansion, useTreeRevealTargetFocus } from "@kw/hooks/useTreeReveal";
+import { useFileOpsStore } from "@kw/stores/fileOpsStore";
 
 type Props = {
   activePath: string | null;
@@ -55,19 +58,20 @@ type Props = {
   enableKanbanDrag?: boolean;
 };
 
-type PromptDialog = {
-  title: string;
-  description: string;
-  value: string;
-  onConfirm: (value: string) => void;
+type FlatNode = {
+  id: string;
+  name: string;
+  isDir: boolean;
+  children?: FlatNode[];
 };
 
-type ConfirmDialog = {
-  title: string;
-  description: string;
-  destructive?: boolean;
-  onConfirm: () => void;
-};
+function treeEntryToFlat(entry: TreeEntry): FlatNode {
+  const path = stripTrailingSlash(entry.path);
+  const children = entry.children
+    ? sortChildren(entry.children).map(treeEntryToFlat)
+    : undefined;
+  return { id: path, name: entry.name, isDir: entry.isDir, children };
+}
 
 function isKiwiConfig(name: string): boolean {
   return name === ".kiwi";
@@ -83,37 +87,72 @@ function sortChildren(children: TreeEntry[]): TreeEntry[] {
 
 function treeErrorMessage(raw: string): string {
   const lower = raw.toLowerCase();
-  if (lower.includes("502") || lower.includes("bad gateway")) {
+  if (lower.includes("502") || lower.includes("bad gateway"))
     return "Cannot reach the workspace server";
-  }
-  if (lower.includes("404") || lower.includes("not found")) {
+  if (lower.includes("404") || lower.includes("not found"))
     return "This workspace could not be found. It may have been removed or the URL is incorrect.";
-  }
-  if (lower.includes("401") || lower.includes("unauthorized")) {
+  if (lower.includes("401") || lower.includes("unauthorized"))
     return "Your session has expired. Please refresh the page to sign in again.";
-  }
-  if (lower.includes("403") || lower.includes("forbidden")) {
+  if (lower.includes("403") || lower.includes("forbidden"))
     return "You don't have access to this workspace.";
-  }
-  if (lower.includes("503") || lower.includes("unavailable")) {
+  if (lower.includes("503") || lower.includes("unavailable"))
     return "The workspace server is temporarily unavailable. Please try again shortly.";
-  }
-  if (lower.includes("network") || lower.includes("fetch") || lower.includes("econnrefused") || lower.includes("failed to fetch")) {
+  if (lower.includes("network") || lower.includes("fetch") || lower.includes("econnrefused") || lower.includes("failed to fetch"))
     return "Unable to connect. Please check your internet connection.";
-  }
-  if (lower.includes("timeout")) {
+  if (lower.includes("timeout"))
     return "The request timed out. The server may be under heavy load.";
-  }
   return "Something went wrong loading the file tree. Please try again.";
 }
 
-export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCreateChild, onDeleted, onDuplicated, onMoved, enableKanbanDrag = false }: Props) {
+function collectFiles(entry: TreeEntry): string[] {
+  const out: string[] = [];
+  for (const c of entry.children || []) {
+    if (c.isDir) out.push(...collectFiles(c));
+    else out.push(c.path);
+  }
+  return out;
+}
+
+function findEntry(root: TreeEntry, path: string): TreeEntry | null {
+  const clean = stripTrailingSlash(root.path);
+  if (clean === path) return root;
+  for (const c of root.children || []) {
+    const found = findEntry(c, path);
+    if (found) return found;
+  }
+  return null;
+}
+
+type PromptDialog = {
+  title: string;
+  description: string;
+  value: string;
+  onConfirm: (value: string) => void;
+};
+
+type ConfirmDialog = {
+  title: string;
+  description: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+};
+
+export function KiwiTree({
+  activePath,
+  revealRequest,
+  onSelect,
+  refreshKey,
+  onCreateChild,
+  onDeleted,
+  onDuplicated,
+  onMoved,
+  enableKanbanDrag = false,
+}: Props) {
   const [root, setRoot] = useState<TreeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const dragPath = useRef<string | null>(null);
+  const treeRef = useRef<any>(null);
+
   const [dupOpen, setDupOpen] = useState(false);
   const [dupSource, setDupSource] = useState("");
   const [dupTarget, setDupTarget] = useState("");
@@ -123,6 +162,26 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
   const [promptValue, setPromptValue] = useState("");
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
+
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(400);
+
+  const pushOp = useFileOpsStore((s) => s.push);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        if (h > 0) setContainerHeight(h);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   function openPromptDialog(d: PromptDialog) {
     setPromptValue(d.value);
@@ -140,12 +199,16 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
     if (!target) return;
     if (!target.endsWith(".md")) target += ".md";
     setDupBusy(true);
-    api.readFile(dupSource).then(({ content }) =>
-      api.writeFile(target, content).then(() => {
-        setDupOpen(false);
-        onDuplicated?.(target);
-      })
-    ).catch(() => {}).finally(() => setDupBusy(false));
+    api
+      .readFile(dupSource)
+      .then(({ content }) =>
+        api.writeFile(target, content).then(() => {
+          setDupOpen(false);
+          onDuplicated?.(target);
+        }),
+      )
+      .catch(() => {})
+      .finally(() => setDupBusy(false));
   }
 
   useEffect(() => {
@@ -158,7 +221,161 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
       .catch((e) => setError(String(e)));
   }, [refreshKey, retryCount]);
 
-  useTreeRevealExpansion(revealRequest, setExpanded);
+  // Reveal support: open parents when reveal request comes in
+  useEffect(() => {
+    if (!revealRequest?.path || !treeRef.current) return;
+    const parents = parentPathsFor(revealRequest.path);
+    for (const p of ["", ...parents]) {
+      treeRef.current.open(p);
+    }
+    setTimeout(() => {
+      const node = treeRef.current?.get(revealRequest.path);
+      node?.focus();
+      node?.scrollTo();
+    }, 50);
+  }, [revealRequest]);
+
+  const data = useMemo(() => {
+    if (!root) return [];
+    return (root.children || []).map((c) => treeEntryToFlat(c));
+  }, [root]);
+
+  const initialOpenState = useMemo(() => {
+    const map: Record<string, boolean> = { "": true };
+    return map;
+  }, []);
+
+  const handleMove = useCallback(
+    async (args: {
+      dragIds: string[];
+      parentId: string | null;
+      index: number;
+    }) => {
+      const src = args.dragIds[0];
+      if (!src) return;
+      const fileName = src.split("/").pop()!;
+      const destDir = args.parentId || "";
+      const dest = destDir ? `${destDir}/${fileName}` : fileName;
+      if (src === dest) return;
+
+      try {
+        const { content } = await api.readFile(src);
+        await api.writeFile(dest, content);
+        await api.deleteFile(src);
+        pushOp({ type: "move", from: src, to: dest, content });
+        onMoved?.(dest);
+      } catch (e) {
+        console.error("Move failed:", e);
+      }
+    },
+    [onMoved, pushOp],
+  );
+
+  const handleRename = useCallback(
+    async (args: { id: string; name: string; node: NodeApi<FlatNode> }) => {
+      const oldPath = args.id;
+      const dir = dirOf(oldPath);
+      let newName = args.name;
+
+      if (args.node.data.isDir) {
+        const newPath = dir ? `${dir}/${newName}` : newName;
+        if (newPath === oldPath) return;
+        const entry = root ? findEntry(root, oldPath) : null;
+        if (!entry) return;
+        const files = collectFiles(entry);
+        await api.renameDir(oldPath, newPath, files);
+        onMoved?.(newPath);
+      } else {
+        if (isMarkdown(oldPath) && !newName.endsWith(".md")) newName += ".md";
+        const newPath = dir ? `${dir}/${newName}` : newName;
+        if (newPath === oldPath) return;
+        const { content } = await api.readFile(oldPath);
+        await api.writeFile(newPath, content);
+        await api.deleteFile(oldPath);
+        pushOp({ type: "move", from: oldPath, to: newPath, content });
+        onMoved?.(newPath);
+      }
+    },
+    [root, onMoved, pushOp],
+  );
+
+  const handleDelete = useCallback(
+    async (args: { ids: string[]; nodes: NodeApi<FlatNode>[] }) => {
+      const snapshots: { path: string; content: string }[] = [];
+      const filesToDelete: string[] = [];
+
+      for (const node of args.nodes) {
+        if (node.data.isDir) {
+          const entry = root ? findEntry(root, node.id) : null;
+          if (entry) {
+            const files = collectFiles(entry);
+            for (const f of files) {
+              try {
+                const { content } = await api.readFile(f);
+                snapshots.push({ path: f, content });
+                filesToDelete.push(f);
+              } catch {}
+            }
+          }
+        } else {
+          try {
+            const { content } = await api.readFile(node.id);
+            snapshots.push({ path: node.id, content });
+            filesToDelete.push(node.id);
+          } catch {}
+        }
+      }
+
+      for (const f of filesToDelete) {
+        await api.deleteFile(f).catch(() => {});
+      }
+
+      if (snapshots.length > 0) {
+        pushOp({ type: "delete", snapshots });
+      }
+      onDeleted?.();
+    },
+    [root, onDeleted, pushOp],
+  );
+
+  // OS file drop handler
+  const handleOsDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length === 0) return;
+
+      setUploadStatus(`Uploading ${files.length} file(s)...`);
+      try {
+        const paths = await api.uploadAssets(files, "");
+        for (const p of paths) {
+          pushOp({ type: "upload", path: p.replace(/^\/raw\//, "") });
+        }
+        setUploadStatus(`Uploaded ${files.length} file(s)`);
+        onMoved?.("");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setUploadStatus(`Upload failed: ${msg}`);
+      }
+      setTimeout(() => setUploadStatus(null), 3000);
+    },
+    [pushOp, onMoved],
+  );
+
+  const handleOsDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleOsDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  }, []);
 
   if (error) {
     const friendlyMsg = treeErrorMessage(error);
@@ -167,7 +384,10 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
         <p className="text-sm text-muted-foreground">{friendlyMsg}</p>
         <button
           type="button"
-          onClick={() => { setError(null); setRetryCount((c) => c + 1); }}
+          onClick={() => {
+            setError(null);
+            setRetryCount((c) => c + 1);
+          }}
           className="text-xs text-primary hover:underline"
         >
           Try again
@@ -179,68 +399,83 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
     return <TreeSkeleton />;
   }
 
-  const toggle = (p: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(p)) next.delete(p);
-      else next.add(p);
-      return next;
-    });
-  };
+  const ROW_HEIGHT = 30;
 
   return (
     <div
-      className="p-2 text-sm"
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDropTarget(null);
-        const src = dragPath.current;
-        if (!src || !src.includes("/")) return;
-        const fileName = src.split("/").pop()!;
-        const rootChildren = root?.children || [];
-        if (rootChildren.some((c) => c.name === fileName)) {
-          setAlertMessage(`A file named "${fileName}" already exists at root.`);
-          return;
-        }
-        api.readFile(src).then(({ content }) =>
-          api.writeFile(fileName, content).then(() =>
-            api.deleteFile(src).then(() => onMoved?.(fileName))
-          )
-        ).catch(() => {});
-      }}
+      ref={containerRef}
+      className={cn(
+        "relative p-2 text-sm min-h-[200px] flex-1",
+        isDragOver && "ring-2 ring-primary/50 rounded-md bg-primary/5",
+      )}
+      onDragOver={handleOsDragOver}
+      onDragLeave={handleOsDragLeave}
+      onDrop={handleOsDrop}
     >
-      {sortChildren(root.children || []).map((child) => (
-        <Node
-          key={child.path}
-          entry={child}
-          depth={0}
-          activePath={activePath}
-          revealRequest={revealRequest}
-          expanded={expanded}
-          onToggle={toggle}
-          onSelect={onSelect}
-          onCreateChild={onCreateChild}
-          onDeleted={onDeleted}
-          openDupDialog={openDupDialog}
-          onMoved={onMoved}
-          dragPath={dragPath}
-          dropTarget={dropTarget}
-          setDropTarget={setDropTarget}
-          openPromptDialog={openPromptDialog}
-          openConfirmDialog={setConfirmDialog}
-          enableKanbanDrag={enableKanbanDrag}
-        />
-      ))}
+      {isDragOver && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+          <div className="bg-primary/10 border-2 border-dashed border-primary rounded-lg px-6 py-4 text-sm font-medium text-primary">
+            <Upload className="h-5 w-5 inline mr-2" />
+            Drop files to upload
+          </div>
+        </div>
+      )}
 
+      {uploadStatus && (
+        <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-md mb-2">
+          {uploadStatus}
+        </div>
+      )}
+
+      <Tree<FlatNode>
+        ref={treeRef}
+        data={data}
+        idAccessor="id"
+        childrenAccessor="children"
+        openByDefault={false}
+        initialOpenState={initialOpenState}
+        width="100%"
+        height={containerHeight}
+        rowHeight={ROW_HEIGHT}
+        indent={14}
+        paddingTop={2}
+        paddingBottom={8}
+        selection={activePath || undefined}
+        selectionFollowsFocus
+        disableDrag={enableKanbanDrag}
+        disableEdit={(d) => isKiwiConfig(d.name)}
+        renderCursor={DropCursor}
+        onMove={handleMove}
+        onRename={handleRename}
+        onDelete={handleDelete}
+        onActivate={(node) => onSelect(node.id)}
+      >
+        {(props) => (
+          <TreeNode
+            {...props}
+            activePath={activePath}
+            onSelect={onSelect}
+            onCreateChild={onCreateChild}
+            openDupDialog={openDupDialog}
+            onMoved={onMoved}
+            onDeleted={onDeleted}
+            openPromptDialog={openPromptDialog}
+            openConfirmDialog={setConfirmDialog}
+            enableKanbanDrag={enableKanbanDrag}
+            pushOp={pushOp}
+            root={root}
+          />
+        )}
+      </Tree>
+
+      {/* Dialogs */}
       <Dialog open={dupOpen} onOpenChange={setDupOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Duplicate page</DialogTitle>
-            <DialogDescription>Enter the path for the new copy.</DialogDescription>
+            <DialogDescription>
+              Enter the path for the new copy.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
             <Label htmlFor="tree-dup-path">New path</Label>
@@ -250,19 +485,31 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
               value={dupTarget}
               onChange={(e) => setDupTarget(e.target.value)}
               className="font-mono"
-              onKeyDown={(e) => { if (e.key === "Enter") handleDuplicate(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleDuplicate();
+              }}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDupOpen(false)}>Cancel</Button>
-            <Button onClick={handleDuplicate} disabled={dupBusy || !dupTarget.trim()}>
+            <Button variant="outline" onClick={() => setDupOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDuplicate}
+              disabled={dupBusy || !dupTarget.trim()}
+            >
               {dupBusy ? "Duplicating..." : "Duplicate"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!promptDialog} onOpenChange={(open) => { if (!open) setPromptDialog(null); }}>
+      <Dialog
+        open={!!promptDialog}
+        onOpenChange={(open) => {
+          if (!open) setPromptDialog(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{promptDialog?.title}</DialogTitle>
@@ -283,7 +530,9 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPromptDialog(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPromptDialog(null)}>
+              Cancel
+            </Button>
             <Button
               onClick={() => {
                 if (promptValue.trim() && promptDialog) {
@@ -299,7 +548,12 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!alertMessage} onOpenChange={(open) => { if (!open) setAlertMessage(null); }}>
+      <Dialog
+        open={!!alertMessage}
+        onOpenChange={(open) => {
+          if (!open) setAlertMessage(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Conflict</DialogTitle>
@@ -311,14 +565,24 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!confirmDialog} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
+      <Dialog
+        open={!!confirmDialog}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDialog(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{confirmDialog?.title}</DialogTitle>
             <DialogDescription>{confirmDialog?.description}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDialog(null)}
+            >
+              Cancel
+            </Button>
             <Button
               variant={confirmDialog?.destructive ? "destructive" : "default"}
               onClick={() => {
@@ -335,307 +599,347 @@ export function KiwiTree({ activePath, revealRequest, onSelect, refreshKey, onCr
   );
 }
 
-function Node({
-  entry,
-  depth,
-  activePath,
-  revealRequest,
-  expanded,
-  onToggle,
-  onSelect,
-  onCreateChild,
-  onDeleted,
-  openDupDialog,
-  onMoved,
-  dragPath,
-  dropTarget,
-  setDropTarget,
-  openPromptDialog,
-  openConfirmDialog,
-  enableKanbanDrag,
-}: {
-  entry: TreeEntry;
-  depth: number;
+// ─── Node renderer ──────────────────────────────────────────────────────────
+
+type TreeNodeProps = NodeRendererProps<FlatNode> & {
   activePath: string | null;
-  revealRequest?: TreeRevealRequest | null;
-  expanded: Set<string>;
-  onToggle: (p: string) => void;
-  onSelect: (p: string) => void;
+  onSelect: (path: string) => void;
   onCreateChild?: (folder: string) => void;
-  onDeleted?: () => void;
-  openDupDialog?: (srcPath: string) => void;
+  openDupDialog: (srcPath: string) => void;
   onMoved?: (newPath: string) => void;
-  dragPath: React.MutableRefObject<string | null>;
-  dropTarget: string | null;
-  setDropTarget: (path: string | null) => void;
+  onDeleted?: () => void;
   openPromptDialog: (d: PromptDialog) => void;
   openConfirmDialog: (d: ConfirmDialog) => void;
   enableKanbanDrag: boolean;
-}) {
-  const path = stripTrailingSlash(entry.path);
-  const isOpen = expanded.has(path);
+  pushOp: (op: import("@kw/stores/fileOpsStore").FileOp) => void;
+  root: TreeEntry;
+};
+
+function TreeNode({
+  node,
+  style,
+  dragHandle,
+  activePath,
+  onSelect,
+  onCreateChild,
+  openDupDialog,
+  onMoved,
+  onDeleted,
+  openPromptDialog,
+  openConfirmDialog,
+  enableKanbanDrag,
+  pushOp,
+  root,
+}: TreeNodeProps) {
+  const path = node.id;
   const isActive = activePath === path;
-  const isKiwi = isKiwiConfig(entry.name);
-  const nodeRef = useRef<HTMLButtonElement | HTMLAnchorElement | null>(null);
-  const draggable = useDraggable({
+  const isKiwi = isKiwiConfig(node.data.name);
+
+  // kanban draggable (separate from tree DnD)
+  const kanbanDraggable = useDraggable({
     id: `tree-page:${path}`,
-    data: createTreePageDragData(path, stem(entry.name)),
-    disabled: !enableKanbanDrag || entry.isDir || !isMarkdown(path),
+    data: createTreePageDragData(path, stem(node.data.name)),
+    disabled: !enableKanbanDrag || node.data.isDir || !isMarkdown(path),
   });
-  const setMarkdownNodeRef = (node: HTMLButtonElement | null) => {
-    nodeRef.current = node;
-    draggable.setNodeRef(node);
-  };
 
-  useTreeRevealTargetFocus(revealRequest, path, nodeRef);
+  const handleUploadToFolder = useCallback(
+    (folder: string) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.onchange = async () => {
+        const files = Array.from(input.files || []);
+        if (files.length === 0) return;
+        try {
+          const paths = await api.uploadAssets(files, folder);
+          for (const p of paths) {
+            pushOp({ type: "upload", path: p.replace(/^\/raw\//, "") });
+          }
+          onMoved?.("");
+        } catch (e) {
+          console.error("Upload failed:", e);
+        }
+      };
+      input.click();
+    },
+    [pushOp, onMoved],
+  );
 
-  if (entry.isDir) {
+  if (node.data.isDir) {
     return (
-      <div>
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div ref={dragHandle} style={style}>
             <div
               className={cn(
-                "group flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors",
+                "group flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg transition-colors cursor-pointer h-full",
                 "text-foreground/90 hover:bg-accent hover:text-accent-foreground",
-                dropTarget === path && "ring-2 ring-primary bg-primary/10",
+                node.willReceiveDrop && "ring-2 ring-primary bg-primary/10",
               )}
-              style={{ paddingLeft: 8 + depth * 12 }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                setDropTarget(path);
-              }}
-              onDragLeave={() => {
-                if (dropTarget === path) setDropTarget(null);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDropTarget(null);
-                const src = dragPath.current;
-                if (!src || src === path) return;
-                const fileName = src.split("/").pop()!;
-                const dest = `${path}/${fileName}`;
-                if (src === dest) return;
-                api.readFile(src).then(({ content }) =>
-                  api.writeFile(dest, content).then(() =>
-                    api.deleteFile(src).then(() => onMoved?.(dest))
-                  )
-                ).catch(() => {});
+              onClick={(e) => {
+                e.stopPropagation();
+                node.toggle();
               }}
             >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggle(path);
-                }}
-                className="shrink-0 p-0.5"
-              >
-                <ChevronRight
+              <ChevronRight
+                className={cn(
+                  "h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0",
+                  node.isOpen && "rotate-90",
+                )}
+              />
+              {node.isOpen ? (
+                <FolderOpen
                   className={cn(
-                    "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                    isOpen && "rotate-90",
+                    "h-4 w-4 shrink-0",
+                    isKiwi ? "text-emerald-500" : "text-primary",
                   )}
                 />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isOpen) onToggle(path);
-                  onSelect(path);
-                }}
-                className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
-              >
-                {isOpen ? (
-                  <FolderOpen className={cn("h-4 w-4 shrink-0", isKiwi ? "text-emerald-500" : "text-primary")} />
-                ) : (
-                  <Folder className={cn("h-4 w-4 shrink-0", isKiwi ? "text-emerald-500/70" : "text-muted-foreground")} />
-                )}
-                <span className={cn("truncate", isKiwi && "text-emerald-600 dark:text-emerald-400 font-medium")}>{entry.name}</span>
-              </button>
-              {onCreateChild && (
+              ) : (
+                <Folder
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    isKiwi ? "text-emerald-500/70" : "text-muted-foreground",
+                  )}
+                />
+              )}
+              {node.isEditing ? (
+                <RenameInput node={node} />
+              ) : (
+                <span
+                  className={cn(
+                    "truncate text-sm",
+                    isKiwi && "text-emerald-600 dark:text-emerald-400 font-medium",
+                  )}
+                >
+                  {node.data.name}
+                </span>
+              )}
+              {onCreateChild && !node.isEditing && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onCreateChild(path);
                   }}
-                  className="opacity-0 group-hover:opacity-100 h-5 w-5 shrink-0 grid place-items-center rounded hover:bg-background/50 text-muted-foreground hover:text-foreground transition-opacity"
-                  title={`New page in ${entry.name}`}
+                  className="opacity-0 group-hover:opacity-100 h-5 w-5 shrink-0 grid place-items-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-all ml-auto"
+                  title={`New page in ${node.data.name}`}
                 >
                   <Plus className="h-3 w-3" />
                 </button>
               )}
             </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onClick={() => onCreateChild?.(path)}>
-              <Plus className="h-3.5 w-3.5" />
-              New page in {entry.name}
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => onSelect(path)}>
-              <File className="h-3.5 w-3.5" />
-              Open folder
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              onClick={() => {
-                openPromptDialog({
-                  title: "Rename folder",
-                  description: `Rename "${entry.name}" to:`,
-                  value: entry.name,
-                  onConfirm: (newName) => {
-                    if (newName === entry.name) return;
-                    const parentDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-                    const newFolder = parentDir ? `${parentDir}/${newName}` : newName;
-                    moveFolder(path, newFolder, entry).then(() => onMoved?.(newFolder)).catch(() => {});
-                  },
-                });
-              }}
-            >
-              <Move className="h-3.5 w-3.5" />
-              Rename
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => {
-                openPromptDialog({
-                  title: "Move folder",
-                  description: "Enter the new path for this folder:",
-                  value: path,
-                  onConfirm: (newPath) => {
-                    if (newPath === path) return;
-                    moveFolder(path, newPath.replace(/\/+$/, ""), entry).then(() => onMoved?.(newPath)).catch(() => {});
-                  },
-                });
-              }}
-            >
-              <Move className="h-3.5 w-3.5" />
-              Move
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => {
-                const files = collectFiles(entry);
-                if (files.length === 0) {
-                  openConfirmDialog({
-                    title: "Delete folder",
-                    description: `Folder "${entry.name}" is empty or contains only sub-folders. Nothing to delete.`,
-                    destructive: false,
-                    onConfirm: () => {},
-                  });
-                  return;
-                }
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => onCreateChild?.(path)}>
+            <Plus className="h-3.5 w-3.5" />
+            New page in {node.data.name}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => handleUploadToFolder(path)}>
+            <Upload className="h-3.5 w-3.5" />
+            Upload files to {node.data.name}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => onSelect(path)}>
+            <File className="h-3.5 w-3.5" />
+            Open folder
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => node.edit()}>
+            <Move className="h-3.5 w-3.5" />
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem
+            onClick={() => {
+              openPromptDialog({
+                title: "Move folder",
+                description: "Enter the new path for this folder:",
+                value: path,
+                onConfirm: async (newPath) => {
+                  if (newPath === path) return;
+                  const entry = findEntry(root, path);
+                  if (!entry) return;
+                  const files = collectFiles(entry);
+                  const cleanPath = newPath.replace(/\/+$/, "");
+                  await api.renameDir(path, cleanPath, files);
+                  onMoved?.(cleanPath);
+                },
+              });
+            }}
+          >
+            <Move className="h-3.5 w-3.5" />
+            Move
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={() => {
+              const entry = findEntry(root, path);
+              if (!entry) return;
+              const files = collectFiles(entry);
+              if (files.length === 0) {
                 openConfirmDialog({
                   title: "Delete folder",
-                  description: `Delete folder "${entry.name}" and its ${files.length} file(s)?`,
-                  destructive: true,
-                  onConfirm: async () => {
-                    const errors: string[] = [];
-                    for (const f of files) {
-                      try {
-                        await api.deleteFile(f);
-                      } catch (e) {
-                        errors.push(`${f}: ${e instanceof Error ? e.message : String(e)}`);
-                      }
-                    }
-                    if (errors.length > 0 && errors.length === files.length) {
-                      console.error("Failed to delete all files in folder:", errors);
-                    }
-                    onDeleted?.();
-                  },
+                  description: `Folder "${node.data.name}" is empty or contains only sub-folders. Nothing to delete.`,
+                  destructive: false,
+                  onConfirm: () => {},
                 });
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete folder
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-        {isOpen && entry.children && (
-          <div>
-            {sortChildren(entry.children).map((c) => (
-              <Node
-                key={c.path}
-                entry={c}
-                depth={depth + 1}
-                activePath={activePath}
-                revealRequest={revealRequest}
-                expanded={expanded}
-                onToggle={onToggle}
-                onSelect={onSelect}
-                onCreateChild={onCreateChild}
-                onDeleted={onDeleted}
-                openDupDialog={openDupDialog}
-                onMoved={onMoved}
-                dragPath={dragPath}
-                dropTarget={dropTarget}
-                setDropTarget={setDropTarget}
-                openPromptDialog={openPromptDialog}
-                openConfirmDialog={openConfirmDialog}
-                enableKanbanDrag={enableKanbanDrag}
-              />
-            ))}
-          </div>
-        )}
+                return;
+              }
+              openConfirmDialog({
+                title: "Delete folder",
+                description: `Delete folder "${node.data.name}" and its ${files.length} file(s)?`,
+                destructive: true,
+                onConfirm: async () => {
+                  const snapshots: { path: string; content: string }[] = [];
+                  for (const f of files) {
+                    try {
+                      const { content } = await api.readFile(f);
+                      snapshots.push({ path: f, content });
+                      await api.deleteFile(f);
+                    } catch {}
+                  }
+                  if (snapshots.length > 0) {
+                    pushOp({ type: "delete", snapshots });
+                  }
+                  onDeleted?.();
+                },
+              });
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete folder
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  }
+
+  // Canvas files open in the canvas view, not as raw downloads
+  if (isCanvasFile(path)) {
+    return (
+      <div ref={dragHandle} style={style}>
+        <div
+          onClick={() => onSelect(path)}
+          className={cn(
+            "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg text-left transition-colors cursor-pointer h-full",
+            "hover:bg-accent hover:text-accent-foreground",
+            isActive && "bg-accent text-accent-foreground font-medium",
+          )}
+        >
+          <FileAxis3D className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="truncate">
+            {node.data.name.replace(/\.canvas\.json$/i, "")}
+          </span>
+        </div>
       </div>
     );
   }
 
+  // Non-markdown asset
   if (!isMarkdown(path)) {
     return (
-      <a
-        ref={nodeRef as React.Ref<HTMLAnchorElement>}
-        href={`/api/kiwi${getCurrentSpace() && getCurrentSpace() !== "default" ? "/" + getCurrentSpace() : ""}/file?path=${encodeURIComponent(path)}`}
-        target="_blank"
-        rel="noreferrer"
-        className={cn(
-          "w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left transition-colors",
-          "hover:bg-accent hover:text-accent-foreground",
-        )}
-        style={{ paddingLeft: 8 + depth * 12 + 14 }}
-      >
-        <AssetIcon name={entry.name} />
-        <span className="truncate">{entry.name}</span>
-      </a>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div ref={dragHandle} style={style}>
+            <a
+              href={`/api/kiwi${getCurrentSpace() && getCurrentSpace() !== "default" ? "/" + getCurrentSpace() : ""}/file?path=${encodeURIComponent(path)}`}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(
+                "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg text-left transition-colors h-full",
+                "hover:bg-accent hover:text-accent-foreground",
+              )}
+            >
+              <AssetIcon name={node.data.name} />
+              <span className="truncate">{node.data.name}</span>
+            </a>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => node.edit()}>
+            <Move className="h-3.5 w-3.5" />
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem
+            onClick={() => {
+              openPromptDialog({
+                title: "Move file",
+                description: "Enter the new path:",
+                value: path,
+                onConfirm: async (newPath) => {
+                  if (newPath === path) return;
+                  try {
+                    const { content } = await api.readFile(path);
+                    await api.writeFile(newPath, content);
+                    await api.deleteFile(path);
+                    pushOp({ type: "move", from: path, to: newPath, content });
+                    onMoved?.(newPath);
+                  } catch {}
+                },
+              });
+            }}
+          >
+            <Move className="h-3.5 w-3.5" />
+            Move
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={async () => {
+              openConfirmDialog({
+                title: "Delete file",
+                description: `Delete "${node.data.name}"?`,
+                destructive: true,
+                onConfirm: async () => {
+                  try {
+                    const { content } = await api.readFile(path);
+                    await api.deleteFile(path);
+                    pushOp({ type: "delete", snapshots: [{ path, content }] });
+                    onDeleted?.();
+                  } catch (e) {
+                    console.error("Failed to delete file:", e);
+                  }
+                },
+              });
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   }
 
+  // Markdown page
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <button
-          ref={setMarkdownNodeRef}
-          type="button"
-          onClick={() => onSelect(path)}
-          draggable={!enableKanbanDrag}
-          {...draggable.attributes}
-          {...draggable.listeners}
-          onDragStart={(e) => {
-            if (enableKanbanDrag) {
-              e.preventDefault();
-              return;
-            }
-            dragPath.current = path;
-            e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("text/plain", path);
+        <div
+          ref={(el) => {
+            if (dragHandle) dragHandle(el);
+            if (enableKanbanDrag) kanbanDraggable.setNodeRef(el);
           }}
-          onDragEnd={() => {
-            dragPath.current = null;
-            setDropTarget(null);
-          }}
-          className={cn(
-            "w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left transition-colors",
-            "hover:bg-accent hover:text-accent-foreground",
-            isActive && "bg-accent text-accent-foreground font-medium",
-            draggable.isDragging && "opacity-50",
-          )}
-          style={{ paddingLeft: 8 + depth * 12 + 14 }}
+          style={style}
+          {...(enableKanbanDrag ? { ...kanbanDraggable.attributes, ...kanbanDraggable.listeners } : {})}
         >
-          <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="truncate">{stem(entry.name)}</span>
-        </button>
+          <div
+            onClick={() => onSelect(path)}
+            className={cn(
+              "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg text-left transition-colors cursor-pointer h-full",
+              "hover:bg-accent hover:text-accent-foreground",
+              isActive && "bg-accent text-accent-foreground font-medium",
+              node.isDragging && "opacity-50",
+            )}
+          >
+            <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            {node.isEditing ? (
+              <RenameInput node={node} />
+            ) : (
+              <span className="truncate">{stem(node.data.name)}</span>
+            )}
+          </div>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onSelect(path)}>
@@ -643,9 +947,13 @@ function Node({
           Open
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => openDupDialog?.(path)}>
+        <ContextMenuItem onClick={() => openDupDialog(path)}>
           <Copy className="h-3.5 w-3.5" />
           Duplicate
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => node.edit()}>
+          <Move className="h-3.5 w-3.5" />
+          Rename
         </ContextMenuItem>
         <ContextMenuItem
           onClick={() => {
@@ -653,20 +961,22 @@ function Node({
               title: "Move / Rename",
               description: "Enter the new path:",
               value: path,
-              onConfirm: (newPath) => {
+              onConfirm: async (newPath) => {
                 if (newPath === path) return;
                 const finalPath = newPath.endsWith(".md") ? newPath : newPath + ".md";
-                api.readFile(path).then(({ content }) =>
-                  api.writeFile(finalPath, content).then(() =>
-                    api.deleteFile(path).then(() => onMoved?.(finalPath))
-                  )
-                ).catch(() => {});
+                try {
+                  const { content } = await api.readFile(path);
+                  await api.writeFile(finalPath, content);
+                  await api.deleteFile(path);
+                  pushOp({ type: "move", from: path, to: finalPath, content });
+                  onMoved?.(finalPath);
+                } catch {}
               },
             });
           }}
         >
           <Move className="h-3.5 w-3.5" />
-          Move / Rename
+          Move
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
@@ -674,13 +984,17 @@ function Node({
           onClick={() => {
             openConfirmDialog({
               title: "Delete page",
-              description: `Delete "${stem(entry.name)}"?`,
+              description: `Delete "${stem(node.data.name)}"?`,
               destructive: true,
-              onConfirm: () => {
-                api
-                  .deleteFile(path)
-                  .then(() => onDeleted?.())
-                  .catch((e) => console.error("Failed to delete file:", e));
+              onConfirm: async () => {
+                try {
+                  const { content } = await api.readFile(path);
+                  await api.deleteFile(path);
+                  pushOp({ type: "delete", snapshots: [{ path, content }] });
+                  onDeleted?.();
+                } catch (e) {
+                  console.error("Failed to delete file:", e);
+                }
               },
             });
           }}
@@ -693,37 +1007,64 @@ function Node({
   );
 }
 
-function collectFiles(entry: TreeEntry): string[] {
-  const out: string[] = [];
-  for (const c of entry.children || []) {
-    if (c.isDir) out.push(...collectFiles(c));
-    else out.push(c.path);
-  }
-  return out;
+// ─── Drop cursor (drag indicator line) ──────────────────────────────────────
+
+function DropCursor({ top, left, indent }: { top: number; left: number; indent: number }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        pointerEvents: "none",
+        top: top - 2,
+        left,
+        right: indent,
+        display: "flex",
+        alignItems: "center",
+        zIndex: 1,
+      }}
+    >
+      <div
+        className="bg-primary"
+        style={{ width: 6, height: 6, borderRadius: "50%" }}
+      />
+      <div
+        className="bg-primary flex-1"
+        style={{ height: 2, borderRadius: 1 }}
+      />
+    </div>
+  );
 }
 
-async function moveFolder(oldPath: string, newPath: string, entry: TreeEntry): Promise<void> {
-  const files = collectFiles(entry);
-  const written: { src: string; dest: string }[] = [];
-  for (const f of files) {
-    const rel = f.slice(oldPath.length);
-    const target = newPath + rel;
-    const { content } = await api.readFile(f);
-    await api.writeFile(target, content);
-    written.push({ src: f, dest: target });
-  }
-  const deleteErrors: string[] = [];
-  for (const { src } of written) {
-    try {
-      await api.deleteFile(src);
-    } catch (e) {
-      deleteErrors.push(`${src}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-  if (deleteErrors.length > 0) {
-    console.error("Some source files could not be deleted after move:", deleteErrors);
-  }
+// ─── Inline rename input ────────────────────────────────────────────────────
+
+function RenameInput({ node }: { node: NodeApi<FlatNode> }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    const dotIdx = el.value.lastIndexOf(".");
+    el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      defaultValue={node.data.name}
+      className="flex-1 min-w-0 bg-background border border-input rounded px-1 py-0 text-sm outline-none focus:ring-1 focus:ring-ring"
+      onBlur={() => node.reset()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") node.reset();
+        if (e.key === "Enter") node.submit(e.currentTarget.value);
+      }}
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
 }
+
+// ─── Asset icon helper ──────────────────────────────────────────────────────
 
 function AssetIcon({ name }: { name: string }) {
   const ext = name.toLowerCase().split(".").pop() || "";
@@ -736,7 +1077,9 @@ function AssetIcon({ name }: { name: string }) {
     return <FileAudio className={cls} />;
   if (["zip", "tar", "gz", "tgz", "7z", "rar"].includes(ext))
     return <FileArchive className={cls} />;
-  if (["js", "ts", "tsx", "jsx", "py", "go", "rs", "json", "yaml", "yml", "toml"].includes(ext))
+  if (
+    ["js", "ts", "tsx", "jsx", "py", "go", "rs", "json", "yaml", "yml", "toml"].includes(ext)
+  )
     return <FileCode className={cls} />;
   return <FileAxis3D className={cls} />;
 }

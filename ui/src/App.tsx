@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  BarChart3,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -17,12 +16,11 @@ import {
   Pin,
   Plus,
   Presentation,
-  Scissors,
   Search as SearchIcon,
   Star,
   Sun,
 } from "lucide-react";
-import { KiwiAnalytics } from "./components/KiwiAnalytics";
+import { undoFileOp } from "@kw/stores/fileOpsStore";
 import { KiwiTree } from "./components/KiwiTree";
 import { KiwiPage } from "./components/KiwiPage";
 import { KiwiEditor } from "./components/KiwiEditor";
@@ -31,11 +29,10 @@ import { KiwiGraph } from "./components/KiwiGraph";
 import { KiwiHistory } from "./components/KiwiHistory";
 import { KiwiData } from "./components/KiwiData";
 import { KiwiBases } from "./components/KiwiBases";
-import { KiwiCanvas } from "./components/KiwiCanvas";
+import { KiwiCanvasScreen } from "./components/KiwiCanvasScreen";
 import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
-import { KiwiClipDialog } from "./components/KiwiClipDialog";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { SpaceSelector } from "./components/SpaceSelector";
@@ -52,7 +49,7 @@ import {
 } from "./components/ui/tooltip";
 import { api, getCurrentSpace, setCurrentSpace, sseUrl, type TreeEntry } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
-import { isMarkdown } from "./lib/paths";
+import { isMarkdown, isCanvasFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
 
@@ -82,11 +79,8 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [basesOpen, setBasesOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
-  const [canvasPath, setCanvasPath] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
-  const [clipOpen, setClipOpen] = useState(false);
-  const [engagementOpen, setEngagementOpen] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
 
   // Close all full-screen views. Called before opening a new one so only one
@@ -100,7 +94,6 @@ export default function App() {
     setDataOpen(false);
     setGraphOpen(false);
     setHistoryOpen(false);
-    setEngagementOpen(false);
   }, []);
 
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
@@ -177,6 +170,14 @@ export default function App() {
       } else if (mod && (key === "/" || key === "?")) {
         e.preventDefault();
         setShortcutsOpen((v) => !v);
+      } else if (mod && key === "z" && !e.shiftKey) {
+        if (stateRef.current.editing) return;
+        e.preventDefault();
+        undoFileOp()
+          .then((msg) => {
+            if (msg) setRefreshKey((k) => k + 1);
+          })
+          .catch(() => {});
       } else if (e.key === "Escape") {
         setSearchOpen(false);
       }
@@ -304,6 +305,12 @@ const handleSpaceSwitch = useCallback(() => {
       if (isMobile) setSidebarOpen(false);
       return;
     }
+    if (isCanvasFile(path)) {
+      closeAllViews();
+      setCanvasOpen(true);
+      if (isMobile) setSidebarOpen(false);
+      return;
+    }
     if (!isMarkdown(path)) {
       const folder = findFolder(tree, path);
       const target = folder ? firstMarkdown(folder) : `${path}/index.md`;
@@ -324,7 +331,6 @@ const handleSpaceSwitch = useCallback(() => {
     setCanvasOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
-    setEngagementOpen(false);
     recordVisit(path);
     if (isMobile) setSidebarOpen(false);
   }
@@ -388,7 +394,7 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { const next = !basesOpen; closeAllViews(); setBasesOpen(next); }} label="Bases">
               <LayoutGrid className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasPath("canvas.canvas.json"); setCanvasOpen(next); }} label="Canvas">
+            <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasOpen(next); }} label="Canvas">
               <Presentation className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !timelineOpen; closeAllViews(); setTimelineOpen(next); }} label="Timeline">
@@ -397,14 +403,8 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { const next = !kanbanOpen; closeAllViews(); setKanbanOpen(next); }} label="Kanban">
               <Columns3 className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => setClipOpen(true)} label="Clip URL">
-              <Scissors className="h-4 w-4" />
-            </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
               <Database className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !engagementOpen; closeAllViews(); setEngagementOpen(next); }} label="Engagement analytics">
-              <BarChart3 className="h-4 w-4" />
             </ToolbarButton>
             <HostToolbarActions />
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
@@ -554,23 +554,14 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen || engagementOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
-            {engagementOpen ? (
-              <KiwiAnalytics
-                onClose={() => setEngagementOpen(false)}
-                onNavigate={(p) => {
-                  setEngagementOpen(false);
-                  navigate(p);
-                }}
-              />
-            ) : basesOpen ? (
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+            {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
                 onNavigate={(p) => { setBasesOpen(false); navigate(p); }}
               />
             ) : canvasOpen ? (
-              <KiwiCanvas
-                path={canvasPath}
+              <KiwiCanvasScreen
                 onClose={() => setCanvasOpen(false)}
                 onNavigate={(p) => { setCanvasOpen(false); navigate(p); }}
               />
@@ -688,15 +679,6 @@ const handleSpaceSwitch = useCallback(() => {
       <KeyboardShortcuts
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
-      />
-      <KiwiClipDialog
-        open={clipOpen}
-        onOpenChange={setClipOpen}
-        onClipped={(p) => {
-          setClipOpen(false);
-          setRefreshKey((k) => k + 1);
-          navigate(p);
-        }}
       />
     </TooltipProvider>
   );

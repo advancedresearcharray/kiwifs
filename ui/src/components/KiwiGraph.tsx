@@ -1,4 +1,4 @@
-// Knowledge graph — react-force-graph 3D + d3-force, inspired by Obsidian's graph.
+// Knowledge graph — react-force-graph 3D + d3-force.
 // Nodes = markdown pages, edges = [[wiki-link]] references.
 // Features: community coloring, PageRank sizing, hover glow, search highlight,
 // directory/tag filtering, shortest-path finder, zoom-adaptive labels.

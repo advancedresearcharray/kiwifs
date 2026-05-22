@@ -1,7 +1,7 @@
-// Converts between JSON Canvas documents and Excalidraw scenes.
+// Converts between JSON Canvas 1.0 documents and Excalidraw scenes.
 //
-// The KiwiFS canvas API stores Obsidian JSON Canvas-like data. The UI renders it
-// with Excalidraw while keeping save/load compatibility with the API format.
+// The KiwiFS canvas API stores JSON Canvas data. The UI renders it with
+// Excalidraw while keeping save/load compatibility with the API format.
 
 export type JSONCanvasNode = {
   id: string;

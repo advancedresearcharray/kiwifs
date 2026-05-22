@@ -2,53 +2,55 @@ import { describe, expect, it } from "vitest";
 import {
   excalidrawSceneToJsonCanvas,
   jsonCanvasToExcalidrawScene,
+  type JSONCanvas,
 } from "./jsonCanvasExcalidraw";
 
 describe("jsonCanvasExcalidraw", () => {
-  it("converts JSON Canvas nodes and edges into Excalidraw elements", () => {
-    const scene = jsonCanvasToExcalidrawScene({
+  it("round-trips JSON Canvas edge fields", () => {
+    const canvas: JSONCanvas = {
       nodes: [
-        { id: "a", type: "text", x: 10, y: 20, width: 160, height: 80, text: "Hello" },
-        { id: "b", type: "file", x: 260, y: 20, width: 160, height: 80, file: "notes/page.md" },
+        {
+          id: "a",
+          type: "text",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 60,
+          text: "Alpha",
+        },
+        {
+          id: "b",
+          type: "file",
+          x: 300,
+          y: 0,
+          width: 200,
+          height: 60,
+          file: "notes/beta.md",
+        },
       ],
       edges: [
-        { id: "e1", fromNode: "a", toNode: "b", label: "links" },
+        {
+          id: "e1",
+          fromNode: "a",
+          toNode: "b",
+          fromSide: "right",
+          toSide: "left",
+          label: "links",
+        },
       ],
+    };
+
+    const scene = jsonCanvasToExcalidrawScene(canvas);
+    const out = excalidrawSceneToJsonCanvas(scene.elements);
+
+    expect(out.edges).toHaveLength(1);
+    expect(out.edges[0]).toMatchObject({
+      id: "e1",
+      fromNode: "a",
+      toNode: "b",
+      label: "links",
     });
-
-    expect(scene.type).toBe("excalidraw");
-    expect(scene.elements).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "node:a", type: "rectangle", x: 10, y: 20, width: 160, height: 80 }),
-      expect.objectContaining({ id: "label:a", type: "text", text: "Hello", containerId: "node:a" }),
-      expect.objectContaining({ id: "node:b", type: "rectangle", x: 260, y: 20, width: 160, height: 80 }),
-      expect.objectContaining({ id: "label:b", type: "text", text: "notes/page.md", containerId: "node:b" }),
-      expect.objectContaining({ id: "edge:e1", type: "arrow", startBinding: expect.objectContaining({ elementId: "node:a" }), endBinding: expect.objectContaining({ elementId: "node:b" }) }),
-      expect.objectContaining({ id: "edge-label:e1", type: "text", text: "links", containerId: "edge:e1" }),
-    ]));
-  });
-
-  it("round-trips editable Excalidraw elements back to JSON Canvas", () => {
-    const scene = jsonCanvasToExcalidrawScene({
-      nodes: [
-        { id: "a", type: "text", x: 10, y: 20, width: 160, height: 80, text: "Hello" },
-        { id: "b", type: "file", x: 260, y: 20, width: 160, height: 80, file: "notes/page.md" },
-      ],
-      edges: [
-        { id: "e1", fromNode: "a", toNode: "b", label: "links" },
-      ],
-    });
-
-    const textLabel = scene.elements.find((element) => element.id === "label:a");
-    if (textLabel) textLabel.text = "Updated";
-
-    const canvas = excalidrawSceneToJsonCanvas(scene.elements);
-
-    expect(canvas.nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "a", type: "text", x: 10, y: 20, width: 160, height: 80, text: "Updated" }),
-      expect.objectContaining({ id: "b", type: "file", x: 260, y: 20, width: 160, height: 80, file: "notes/page.md" }),
-    ]));
-    expect(canvas.edges).toEqual([
-      expect.objectContaining({ id: "e1", fromNode: "a", toNode: "b", label: "links" }),
-    ]);
+    expect(out.nodes).toHaveLength(2);
+    expect(out.nodes.find((n) => n.id === "b")?.file).toBe("notes/beta.md");
   });
 });

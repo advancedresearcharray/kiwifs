@@ -9,6 +9,11 @@ export type TreeEntry = {
   children?: TreeEntry[];
 };
 
+export type CanvasEntry = {
+  path: string;
+  name: string;
+};
+
 export type SearchMatch = { line: number; text: string };
 export type SearchResult = {
   path: string;
@@ -555,10 +560,55 @@ export const api = {
     return request(`${kiwiBase()}/views/${encodeURIComponent(name)}/execute`);
   },
 
+  async renameFile(
+    oldPath: string,
+    newPath: string,
+  ): Promise<{ path: string; etag: string }> {
+    const { content } = await this.readFile(oldPath);
+    const result = await this.writeFile(newPath, content);
+    await this.deleteFile(oldPath);
+    return result;
+  },
+
+  async renameDir(
+    oldDir: string,
+    newDir: string,
+    files: string[],
+  ): Promise<void> {
+    for (const f of files) {
+      const rel = f.slice(oldDir.length);
+      const target = newDir + rel;
+      const { content } = await this.readFile(f);
+      await this.writeFile(target, content);
+    }
+    for (const f of files) {
+      await this.deleteFile(f).catch(() => {});
+    }
+  },
+
+  async uploadAssets(files: File[], dir: string): Promise<string[]> {
+    const results: string[] = [];
+    for (const file of files) {
+      const path = await this.uploadAsset(file, dir);
+      results.push(path);
+    }
+    return results;
+  },
+
   // --- Canvas ---
 
-  async listCanvases(): Promise<{ canvases: { path: string; name: string }[] }> {
-    return request(`${kiwiBase()}/canvases`);
+  async listCanvases(): Promise<{ canvases: CanvasEntry[] }> {
+    const res = await request<{ canvases: CanvasEntry[] | string[] }>(`${kiwiBase()}/canvases`);
+    const raw = res.canvases ?? [];
+    const canvases: CanvasEntry[] = raw.map((item) => {
+      if (typeof item === "string") {
+        const base = item.split("/").pop() ?? item;
+        const name = base.replace(/\.canvas\.json$/i, "") || base;
+        return { path: item, name };
+      }
+      return item;
+    });
+    return { canvases };
   },
 
   async getCanvas(path: string): Promise<Record<string, unknown>> {

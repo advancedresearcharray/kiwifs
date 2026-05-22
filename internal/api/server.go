@@ -602,10 +602,15 @@ func (s *Server) setupRoutes() {
 	api.DELETE("/views/:name", h.DeleteView)
 	api.GET("/views/:name/execute", h.ExecuteView)
 
-	// Canvas endpoints — list uses /canvases (plural), read/write use /canvas?path=
+	// Canvas endpoints
 	api.GET("/canvases", h.ListCanvas)
 	api.GET("/canvas", h.ReadCanvas)
 	api.PUT("/canvas", h.WriteCanvas)
+	api.DELETE("/canvas", h.DeleteCanvas)
+	api.PATCH("/canvas", h.PatchCanvas)
+	api.GET("/canvas/query", h.QueryCanvas)
+	api.POST("/canvas/auto-layout", h.AutoLayoutCanvas)
+	api.POST("/canvas/generate", h.GenerateCanvas)
 
 	// Workflow endpoints
 	api.GET("/workflows", h.ListWorkflows)
