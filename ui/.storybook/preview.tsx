@@ -1,4 +1,6 @@
+import React from "react";
 import type { Preview } from "@storybook/react";
+import { TooltipProvider } from "../src/components/ui/tooltip";
 import "../src/index.css";
 
 const preview: Preview = {
@@ -32,12 +34,15 @@ const preview: Preview = {
     (Story, context) => {
       const theme = context.globals.theme || "light";
 
-      // Toggle .dark class on the document element so CSS variables switch
       document.documentElement.classList.toggle("dark", theme === "dark");
       document.body.style.backgroundColor =
         theme === "dark" ? "hsl(0 0% 5%)" : "hsl(0 0% 100%)";
 
-      return Story();
+      return (
+        <TooltipProvider delayDuration={200}>
+          <Story />
+        </TooltipProvider>
+      );
     },
   ],
 };
