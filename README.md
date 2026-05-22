@@ -827,6 +827,16 @@ The question for your use case: **"My agents need persistent, searchable, struct
 
 ---
 
+## Community Integrations
+
+Built something on KiwiFS? [Open a discussion](https://github.com/kiwifs/kiwifs/discussions) and we'll list it here.
+
+| Project | Description | Author |
+|---------|-------------|--------|
+| [pi-kiwifs-extension](https://github.com/jontstaz/pi-kiwifs-extension) | Full KiwiFS integration for the Pi coding agent | [@jontstaz](https://github.com/jontstaz) |
+
+---
+
 ## Inspired by
 
 - **[PocketBase](https://pocketbase.io)** — single Go binary, zero config, just works. KiwiFS brings the same philosophy to markdown infrastructure.
