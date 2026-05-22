@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="../README.md">README</a> · <a href="FAQ.md">FAQ</a> · <a href="ARCHITECTURE.md">Architecture</a> · <a href="API.md">API</a> · <a href="EXAMPLES.md">Examples</a>
+</p>
+
 # Roadmap
 
 Where KiwiFS is headed. Updated as priorities shift.
