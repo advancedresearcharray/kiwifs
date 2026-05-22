@@ -64,16 +64,21 @@ echo "# Report" > /kiwi/r.md      Cmd+K search, backlinks, TOC
 
 | | |
 |---|---|
-| **62 MCP tools** | Native integration with Claude, Cursor, and any MCP client. [Docs](https://docs.kiwifs.com/core-concepts/mcp) |
+| **62 MCP tools** | Native integration with Claude, Cursor, and any MCP client. [Docs](https://docs.kiwifs.com/concepts/mcp) |
 | **Web UI** | Wiki links, backlinks, graph view, block editor, dark mode. Embedded via `go:embed`. [Demo](https://demo.kiwifs.com) |
-| **Full-text + vector search** | BM25 via SQLite FTS5. Pluggable vector: OpenAI, Ollama, Cohere + sqlite-vec, Qdrant, pgvector, Pinecone. [Docs](https://docs.kiwifs.com/core-concepts/search) |
-| **Git versioning** | Every write is an atomic commit. Blame, diff, point-in-time restore. [Docs](https://docs.kiwifs.com/core-concepts/versioning) |
-| **DQL queries** | SQL-like queries over frontmatter. `TABLE`, `LIST`, `COUNT`, `WHERE`, `SORT`, `GROUP BY`. [Docs](https://docs.kiwifs.com/core-concepts/dql) |
-| **6 access protocols** | REST, MCP, NFS, S3, WebDAV, FUSE. All flow through one storage layer. [Docs](https://docs.kiwifs.com/core-concepts/agent-interface) |
-| **19 data importers** | Postgres, MySQL, MongoDB, Notion, CSV, Obsidian, and more. [Docs](https://docs.kiwifs.com/data-import) |
-| **Content health** | Stale page detection, broken links, orphans, contradiction finder, trust-ranked search. |
+| **Full-text + vector search** | BM25 via SQLite FTS5. Pluggable vector: OpenAI, Ollama, Cohere + sqlite-vec, Qdrant, pgvector, Pinecone. [Docs](https://docs.kiwifs.com/concepts/search) |
+| **Git versioning** | Every write is an atomic commit. Blame, diff, point-in-time restore. [Docs](https://docs.kiwifs.com/concepts/versioning) |
+| **DQL queries** | SQL-like queries over frontmatter. `TABLE`, `LIST`, `COUNT`, `WHERE`, `SORT`, `GROUP BY`. [Docs](https://docs.kiwifs.com/concepts/dql) |
+| **6 access protocols** | REST, MCP, NFS, S3, WebDAV, FUSE. All flow through one storage layer. [Docs](https://docs.kiwifs.com/concepts/agent-interface) |
+| **19 data importers** | Postgres, MySQL, MongoDB, Notion, CSV, Obsidian, and more. [Docs](https://docs.kiwifs.com/import/overview) |
+| **Content health** | Stale page detection, broken links, orphans, contradiction finder, trust-ranked search. [Docs](https://docs.kiwifs.com/api/analytics) |
 | **Multi-space** | One server, multiple isolated workspaces. Each with its own git repo and search index. |
-| **Embeddable** | Use as a Go library (`pkg/kiwi`) in your own app. [Docs](https://docs.kiwifs.com/deployment/go-embed) |
+| **Webhooks** | POST to Slack/CI/custom URLs on write/delete events. HMAC signing, retry with backoff. [Docs](https://docs.kiwifs.com/concepts/webhooks) |
+| **Schema validation** | Enforce structure with JSON Schema on writes. [Docs](https://docs.kiwifs.com/concepts/schemas) |
+| **Wiki links** | `[[page]]` syntax with backlinks, knowledge graph visualization. [Docs](https://docs.kiwifs.com/concepts/wiki-links) |
+| **Data export** | JSONL/CSV with optional embeddings, link graph, and content. [Docs](https://docs.kiwifs.com/export/overview) |
+| **CLI** | 25+ commands: `serve`, `mcp`, `query`, `import`, `export`, `lint`, `connect`, and more. [Docs](https://docs.kiwifs.com/cli/commands) |
+| **Embeddable** | Use as a Go library (`pkg/kiwi`) in your own app. [Docs](https://docs.kiwifs.com/deploy/go-embed) |
 
 [See all features and configuration](https://docs.kiwifs.com)
 

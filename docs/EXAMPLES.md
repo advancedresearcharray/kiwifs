@@ -379,4 +379,4 @@ spec:
     path: /
 ```
 
-For full deployment documentation, see [docs.kiwifs.com/deployment](https://docs.kiwifs.com/deployment).
+For full deployment documentation, see [docs.kiwifs.com/deploy/docker](https://docs.kiwifs.com/deploy/docker).
