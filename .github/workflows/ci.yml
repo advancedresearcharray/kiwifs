@@ -19,8 +19,16 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
+      - name: install frontend deps
+        run: npm ci
+        working-directory: ui
+
       - name: build frontend
-        run: npm ci && npm run build
+        run: npm run build
+        working-directory: ui
+
+      - name: build storybook
+        run: npm run build-storybook
         working-directory: ui
 
       - uses: actions/setup-go@v5
