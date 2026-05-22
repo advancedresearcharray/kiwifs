@@ -167,6 +167,8 @@ export function KiwiTree({
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerHeight, setContainerHeight] = useState(400);
+  const [dragTargetFolder, setDragTargetFolder] = useState<string | null>(null);
+  const dragExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pushOp = useFileOpsStore((s) => s.push);
 
@@ -338,18 +340,19 @@ export function KiwiTree({
     [root, onDeleted, pushOp],
   );
 
-  // OS file drop handler
-  const handleOsDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(false);
+  const clearDragExpandTimer = useCallback(() => {
+    if (dragExpandTimerRef.current) {
+      clearTimeout(dragExpandTimerRef.current);
+      dragExpandTimerRef.current = null;
+    }
+  }, []);
 
-      const files = Array.from(e.dataTransfer.files);
+  const uploadFiles = useCallback(
+    async (files: File[], targetDir: string) => {
       if (files.length === 0) return;
-
       setUploadStatus(`Uploading ${files.length} file(s)...`);
       try {
-        const paths = await api.uploadAssets(files, "");
+        const paths = await api.uploadAssets(files, targetDir);
         for (const p of paths) {
           pushOp({ type: "upload", path: p.replace(/^\/raw\//, "") });
         }
@@ -364,6 +367,17 @@ export function KiwiTree({
     [pushOp, onMoved],
   );
 
+  const handleOsDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      setDragTargetFolder(null);
+      clearDragExpandTimer();
+      await uploadFiles(Array.from(e.dataTransfer.files), "");
+    },
+    [uploadFiles, clearDragExpandTimer],
+  );
+
   const handleOsDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes("Files")) {
       e.preventDefault();
@@ -375,7 +389,50 @@ export function KiwiTree({
   const handleOsDragLeave = useCallback((e: React.DragEvent) => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsDragOver(false);
-  }, []);
+    setDragTargetFolder(null);
+    clearDragExpandTimer();
+  }, [clearDragExpandTimer]);
+
+  const handleFolderDragOver = useCallback(
+    (e: React.DragEvent, folderPath: string) => {
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "copy";
+      setIsDragOver(true);
+      setDragTargetFolder((prev) => {
+        if (prev !== folderPath) {
+          clearDragExpandTimer();
+          dragExpandTimerRef.current = setTimeout(() => {
+            treeRef.current?.open(folderPath);
+          }, 800);
+        }
+        return folderPath;
+      });
+    },
+    [clearDragExpandTimer],
+  );
+
+  const handleFolderDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+      setDragTargetFolder(null);
+      clearDragExpandTimer();
+    },
+    [clearDragExpandTimer],
+  );
+
+  const handleFolderDrop = useCallback(
+    async (e: React.DragEvent, folderPath: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      setDragTargetFolder(null);
+      clearDragExpandTimer();
+      await uploadFiles(Array.from(e.dataTransfer.files), folderPath);
+    },
+    [uploadFiles, clearDragExpandTimer],
+  );
 
   if (error) {
     const friendlyMsg = treeErrorMessage(error);
@@ -412,15 +469,6 @@ export function KiwiTree({
       onDragLeave={handleOsDragLeave}
       onDrop={handleOsDrop}
     >
-      {isDragOver && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-          <div className="bg-primary/10 border-2 border-dashed border-primary rounded-lg px-6 py-4 text-sm font-medium text-primary">
-            <Upload className="h-5 w-5 inline mr-2" />
-            Drop files to upload
-          </div>
-        </div>
-      )}
-
       {uploadStatus && (
         <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-md mb-2">
           {uploadStatus}
@@ -464,6 +512,10 @@ export function KiwiTree({
             enableKanbanDrag={enableKanbanDrag}
             pushOp={pushOp}
             root={root}
+            dragTargetFolder={dragTargetFolder}
+            onFolderDragOver={handleFolderDragOver}
+            onFolderDragLeave={handleFolderDragLeave}
+            onFolderDrop={handleFolderDrop}
           />
         )}
       </Tree>
@@ -613,6 +665,10 @@ type TreeNodeProps = NodeRendererProps<FlatNode> & {
   enableKanbanDrag: boolean;
   pushOp: (op: import("@kw/stores/fileOpsStore").FileOp) => void;
   root: TreeEntry;
+  dragTargetFolder: string | null;
+  onFolderDragOver: (e: React.DragEvent, folderPath: string) => void;
+  onFolderDragLeave: (e: React.DragEvent) => void;
+  onFolderDrop: (e: React.DragEvent, folderPath: string) => void;
 };
 
 function TreeNode({
@@ -630,6 +686,10 @@ function TreeNode({
   enableKanbanDrag,
   pushOp,
   root,
+  dragTargetFolder,
+  onFolderDragOver,
+  onFolderDragLeave,
+  onFolderDrop,
 }: TreeNodeProps) {
   const path = node.id;
   const isActive = activePath === path;
@@ -674,12 +734,15 @@ function TreeNode({
               className={cn(
                 "group flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg transition-colors cursor-pointer h-full",
                 "text-foreground/90 hover:bg-accent hover:text-accent-foreground",
-                node.willReceiveDrop && "ring-2 ring-primary bg-primary/10",
+                (node.willReceiveDrop || dragTargetFolder === path) && "ring-2 ring-primary bg-primary/10",
               )}
               onClick={(e) => {
                 e.stopPropagation();
                 node.toggle();
               }}
+              onDragOver={(e) => onFolderDragOver(e, path)}
+              onDragLeave={onFolderDragLeave}
+              onDrop={(e) => onFolderDrop(e, path)}
             >
               <ChevronRight
                 className={cn(

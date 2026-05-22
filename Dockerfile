@@ -1,15 +1,17 @@
-# Stage 1: Build the web UI with Node.
-FROM node:22-alpine AS ui
+# Stage 1: Build the web UI on the build host (arch-independent output).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS ui
 
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json* ui/.npmrc* ./
-RUN npm install --no-audit --no-fund --loglevel=error
+RUN npm ci --no-audit --no-fund --loglevel=error
 COPY ui ./
 ENV NODE_OPTIONS=--max-old-space-size=3072
 RUN npm run build
 
-# Stage 2: Build the Go binary with the UI assets embedded.
-FROM golang:1.26-alpine AS builder
+# Stage 2: Cross-compile Go binary on the build host for the target arch.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+
+ARG TARGETARCH
 
 RUN apk add --no-cache git
 
@@ -18,10 +20,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# Drop whatever dist shipped in the repo and copy in the freshly-built UI.
 RUN rm -rf ui/dist
 COPY --from=ui /ui/dist ./ui/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /kiwifs .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /kiwifs .
 
 # Stage 3: Minimal runtime with document export dependencies.
 FROM alpine:3.20

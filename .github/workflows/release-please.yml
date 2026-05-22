@@ -98,12 +98,33 @@ jobs:
               target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
-  # ── Phase B: Build release binaries ───────────────────────────────
-  # When the release PR is merged, release-please creates the tag and
-  # GitHub Release. GITHUB_TOKEN tag pushes don't trigger release.yml,
-  # so we build binaries here and attach them to the release.
-  build:
+  # ── Phase B1: Build UI once (arch-independent) ───────────────────
+  build-ui:
     needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build UI
+        run: npm ci --no-audit --no-fund && npm run build
+        working-directory: ui
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
+          retention-days: 1
+
+  # ── Phase B2: Build release binaries (downloads shared UI) ──────
+  build:
+    needs: [release-please, build-ui]
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     strategy:
@@ -128,19 +149,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: '22'
+          name: ui-dist
+          path: ui/dist
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
-      - name: Build UI
-        run: |
-          cd ui
-          npm install
-          npm run build
+          cache: true
 
       - name: Build binary
         env:
@@ -182,7 +199,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   docker:
-    needs: [release-please, build]
+    needs: [release-please]
     if: ${{ needs.release-please.outputs.release_created && vars.ENABLE_DOCKER_PUSH == 'true' }}
     runs-on: ubuntu-latest
     steps:
@@ -201,7 +218,7 @@ jobs:
           TAG=${{ needs.release-please.outputs.tag_name }}
           echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
