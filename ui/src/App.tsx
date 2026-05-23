@@ -139,6 +139,31 @@ export default function App() {
   const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, timelineOpen, kanbanOpen });
   stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, timelineOpen, kanbanOpen };
 
+  // Prevent browser from navigating to a file:// URL when OS files are
+  // dropped anywhere on the page.  react-dnd's HTML5Backend (inside
+  // react-arborist) may set dropEffect='none' for unrecognised drag types
+  // which suppresses the drop event; re-asserting 'copy' here (after
+  // react-dnd's bubble-phase handler) restores the expected behaviour.
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types?.includes("Files")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      if (e.dataTransfer?.types?.includes("Files")) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, []);
+
   useEffect(() => {
     api
       .tree("/")

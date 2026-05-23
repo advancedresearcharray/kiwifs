@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 import { Tree, NodeApi, type NodeRendererProps } from "react-arborist";
 import { useDraggable } from "@dnd-kit/core";
 import { getCurrentSpace } from "../lib/api";
@@ -94,7 +94,9 @@ function isKiwiConfig(name: string): boolean {
 const FOLDER_EXPAND_DELAY_MS = 600;
 
 type OsDragTarget = {
+  /** Path of the row to visually highlight (always a folder, or "" for root). */
   rowPath: string;
+  /** Directory path that files will actually be uploaded to. */
   dropDir: string;
 };
 
@@ -117,11 +119,12 @@ function osDropDirForNode(path: string, isDir: boolean): string | null {
 }
 
 function osDropRowClass(
-  isTarget: boolean,
   willReceiveInternal: boolean,
   fileDragActive: boolean,
 ): string {
-  if (isTarget) return "bg-accent";
+  // OS file drop highlight is handled via CSS injection (dynamic <style>)
+  // to bypass react-arborist's row memoization. This function only handles
+  // react-arborist's internal tree DnD highlight (willReceiveDrop).
   if (willReceiveInternal && !fileDragActive) return "bg-accent/70";
   return "";
 }
@@ -224,12 +227,12 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
 
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerHeight, setContainerHeight] = useState(400);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [dragTarget, setDragTarget] = useState<OsDragTarget | null>(null);
   const [fileDragActive, setFileDragActive] = useState(false);
   const fileDragDepthRef = useRef(0);
   const dragExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
 
   const pushOp = useFileOpsStore((s) => s.push);
 
@@ -237,8 +240,14 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     collapseAll: () => treeRef.current?.closeAll(),
   }));
 
-  useLayoutEffect(() => {
-    const el = containerRef.current;
+  // Callback ref: attach ResizeObserver whenever the container div mounts.
+  // This solves the race where the first render shows TreeSkeleton (root=null)
+  // and the container div doesn't exist yet for a useLayoutEffect([]) to observe.
+  const containerRef = useCallback((el: HTMLDivElement | null) => {
+    if (roRef.current) {
+      roRef.current.disconnect();
+      roRef.current = null;
+    }
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -247,7 +256,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
       }
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    roRef.current = ro;
   }, []);
 
   function openPromptDialog(d: PromptDialog) {
@@ -441,24 +450,63 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     };
   }, [resetFileDrag, clearDragExpandTimer]);
 
+  const importCanvasFile = useCallback(
+    async (file: File, targetDir: string) => {
+      const text = await file.text();
+      const data = JSON.parse(text) as Record<string, unknown>;
+      const canvasPath = targetDir
+        ? `${targetDir}/${file.name}`
+        : file.name;
+      await api.saveCanvas(canvasPath, data);
+      pushOp({ type: "upload", path: canvasPath });
+      try {
+        localStorage.setItem("kiwifs-last-canvas", canvasPath);
+      } catch {}
+      onMoved?.("");
+      onSelect(canvasPath);
+    },
+    [pushOp, onMoved, onSelect],
+  );
+
   const uploadFiles = useCallback(
     async (files: File[], targetDir: string) => {
       if (files.length === 0) return;
-      setUploadStatus(`Uploading ${files.length} file(s)...`);
-      try {
-        const paths = await api.uploadAssets(files, targetDir);
-        for (const p of paths) {
-          pushOp({ type: "upload", path: p.replace(/^\/raw\//, "") });
+
+      const canvasFiles = files.filter((f) =>
+        f.name.toLowerCase().endsWith(".canvas.json"),
+      );
+      const regularFiles = files.filter(
+        (f) => !f.name.toLowerCase().endsWith(".canvas.json"),
+      );
+
+      for (const cf of canvasFiles) {
+        try {
+          await importCanvasFile(cf, targetDir);
+          setUploadStatus(`Imported canvas "${cf.name.replace(/\.canvas\.json$/i, "")}"`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setUploadStatus(`Canvas import failed: ${msg}`);
         }
-        setUploadStatus(`Uploaded ${files.length} file(s)`);
-        onMoved?.("");
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setUploadStatus(`Upload failed: ${msg}`);
       }
+
+      if (regularFiles.length > 0) {
+        setUploadStatus(`Uploading ${regularFiles.length} file(s)...`);
+        try {
+          const paths = await api.uploadAssets(regularFiles, targetDir);
+          for (const p of paths) {
+            pushOp({ type: "upload", path: p.replace(/^\/raw\//, "") });
+          }
+          setUploadStatus(`Uploaded ${regularFiles.length} file(s)`);
+          onMoved?.("");
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setUploadStatus(`Upload failed: ${msg}`);
+        }
+      }
+
       setTimeout(() => setUploadStatus(null), 3000);
     },
-    [pushOp, onMoved],
+    [pushOp, onMoved, importCanvasFile],
   );
 
   const handleContainerDrop = useCallback(
@@ -494,6 +542,8 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     if (!isOsFileDrag(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
+    // Dragging over empty area below items → drop into root
+    setDragTarget({ rowPath: "", dropDir: "" });
   }, []);
 
   const scheduleFolderExpand = useCallback(
@@ -524,12 +574,16 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "copy";
+      // VS Code pattern: highlight the *folder* that will receive the drop,
+      // not individual files. For files, that's their parent folder row.
+      // For root-level files (dropDir=""), rowPath="" triggers the container highlight.
+      const highlightRow = isDir ? nodePath : dropDir;
       setDragTarget((prev) => {
-        if (prev?.rowPath !== nodePath) {
+        if (prev?.rowPath !== highlightRow) {
           if (isDir) scheduleFolderExpand(nodePath, isOpen);
           else clearDragExpandTimer();
         }
-        return { rowPath: nodePath, dropDir };
+        return { rowPath: highlightRow, dropDir };
       });
     },
     [scheduleFolderExpand, clearDragExpandTimer],
@@ -650,16 +704,29 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   }
 
   const ROW_HEIGHT = 30;
+  // VS Code pattern: highlight the folder that will receive the drop.
+  // We use a CSS-injected approach because react-arborist memoizes rows,
+  // so React state changes won't cause the *parent folder* row to re-render.
+  // Instead, we inject a <style> targeting `[data-row-path="..."]` which
+  // the browser applies immediately without needing React re-renders.
+  const dropTargetPath = fileDragActive ? dragTarget?.rowPath ?? null : null;
+  const isRootDropTarget = dropTargetPath === "";
 
   return (
     <div
       ref={containerRef}
-      className="relative px-0 py-1 text-sm flex-1 min-h-0 kiwi-tree-panel"
+      className={cn(
+        "relative text-sm flex-1 min-h-0 kiwi-tree-panel transition-colors",
+        isRootDropTarget && "bg-accent/40",
+      )}
       onDragEnter={handleFileDragEnter}
       onDragLeave={handleFileDragLeave}
       onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
     >
+      {dropTargetPath != null && dropTargetPath !== "" && (
+        <style>{`.kiwi-tree-panel [data-row-path="${CSS.escape(dropTargetPath)}"] > [aria-hidden] { background-color: var(--accent) !important; }`}</style>
+      )}
       {uploadStatus && (
         <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-md mb-2">
           {uploadStatus}
@@ -674,7 +741,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
         openByDefault={false}
         initialOpenState={initialOpenState}
         width="100%"
-        height={containerHeight}
+        height={containerHeight || 400}
         rowHeight={ROW_HEIGHT}
         rowClassName="kiwi-tree-item"
         indent={TREE_INDENT}
@@ -899,9 +966,7 @@ function TreeNode({
   const path = node.id;
   const isActive = activePath === path;
   const isKiwi = isKiwiConfig(node.data.name);
-  const isOsDropTarget = dragTarget?.rowPath === path;
   const osDropHighlight = osDropRowClass(
-    isOsDropTarget,
     node.willReceiveDrop,
     fileDragActive,
   );

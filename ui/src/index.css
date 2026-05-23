@@ -521,14 +521,20 @@
   pre, table, figure { break-inside: avoid; }
 }
 
-/* Explorer tree: VS Code-style full-width row hit targets and highlights */
+/* Explorer tree: VS Code-style full-width row hit targets and highlights.
+   react-arborist + react-window renders each row as position:absolute with
+   a fixed height. Every wrapper in the chain down to .kiwi-tree-row must
+   fill 100% so that the absolute-inset-0 bg highlight layer goes edge-to-edge. */
 .kiwi-tree-panel [role="treeitem"] {
-  width: 100%;
+  overflow: visible;
 }
-
 .kiwi-tree-panel [role="treeitem"] > * {
   width: 100%;
   height: 100%;
+}
+.kiwi-tree-panel .kiwi-tree-row {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* Sidebar tree: pulse when "Show in sidebar" locates a page */

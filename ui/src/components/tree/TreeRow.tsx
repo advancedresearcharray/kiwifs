@@ -92,6 +92,7 @@ export function TreeRowShell({
         <div
           ref={rowRef}
           data-level={node.level}
+          data-row-path={node.id}
           className={cn(
             "kiwi-tree-row group relative h-full w-full min-w-0 cursor-pointer",
             node.isFocused && "ring-1 ring-inset ring-ring z-[1]",
