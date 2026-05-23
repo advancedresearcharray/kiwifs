@@ -55,6 +55,11 @@ jobs:
         run: npm ci
         working-directory: ui
 
+      - name: run UI tests
+        if: ${{ needs.changes.outputs.ui == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.infra == 'true' }}
+        run: npm test
+        working-directory: ui
+
       - name: build frontend
         if: ${{ needs.changes.outputs.ui == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.infra == 'true' }}
         run: npm run build
