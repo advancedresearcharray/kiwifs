@@ -48,10 +48,14 @@ jobs:
             exit 0
           fi
 
-          # Verify PR body contains Cursor agent marker
+          # Verify PR was created by Cursor (API marker or automation links)
           PR_BODY=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json body --jq '.body')
-          if ! echo "$PR_BODY" | grep -q "CURSOR_AGENT_PR_BODY_BEGIN"; then
-            echo "PR #$PR_NUMBER does not have Cursor agent marker in body"
+          if echo "$PR_BODY" | grep -q "CURSOR_AGENT_PR_BODY_BEGIN"; then
+            echo "Cursor agent marker found (API)"
+          elif echo "$PR_BODY" | grep -q "cursor.com/agents/"; then
+            echo "Cursor agent link found (automation)"
+          else
+            echo "PR #$PR_NUMBER is not a Cursor agent PR"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
