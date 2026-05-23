@@ -19,9 +19,12 @@ import {
   Search as SearchIcon,
   Star,
   Sun,
+  ChevronsDownUp,
+  ArrowDownAZ,
 } from "lucide-react";
 import { undoFileOp } from "@kw/stores/fileOpsStore";
-import { KiwiTree } from "./components/KiwiTree";
+import { KiwiTree, type KiwiTreeHandle } from "./components/KiwiTree";
+import type { TreeSortMode } from "./lib/treeTransform";
 import { KiwiPage } from "./components/KiwiPage";
 import { KiwiEditor } from "./components/KiwiEditor";
 import { KiwiSearch } from "./components/KiwiSearch";
@@ -41,6 +44,7 @@ import { useStarredPages } from "./hooks/useStarredPages";
 import { usePinnedPages } from "./hooks/usePinnedPages";
 import { titleize } from "./lib/paths";
 import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 import {
   Tooltip,
   TooltipContent,
@@ -82,6 +86,17 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
+  const treeRef = useRef<KiwiTreeHandle>(null);
+  const treeFilterRef = useRef<HTMLInputElement>(null);
+  const [treeFilter, setTreeFilter] = useState("");
+  const [treeSortMode, setTreeSortMode] = useState<TreeSortMode>(() => {
+    try {
+      const v = localStorage.getItem("kiwifs-tree-sort");
+      return v === "type" ? "type" : "name";
+    } catch {
+      return "name";
+    }
+  });
 
   // Close all full-screen views. Called before opening a new one so only one
   // view is ever active — the ternary render chain in <main> checks them in
@@ -178,6 +193,10 @@ export default function App() {
             if (msg) setRefreshKey((k) => k + 1);
           })
           .catch(() => {});
+      } else if (mod && e.altKey && key === "f") {
+        e.preventDefault();
+        treeFilterRef.current?.focus();
+        treeFilterRef.current?.select();
       } else if (e.key === "Escape") {
         setSearchOpen(false);
       }
@@ -432,12 +451,14 @@ const handleSpaceSwitch = useCallback(() => {
             }
             style={isMobile ? { width: Math.min(sidebarWidth, 300) } : { width: sidebarOpen ? sidebarWidth : 0 }}
           >
-            <div className="flex flex-col h-full" style={{ minWidth: isMobile ? Math.min(sidebarWidth, 300) : sidebarWidth }}>
+            <div className="flex flex-col h-full min-h-0" style={{ minWidth: isMobile ? Math.min(sidebarWidth, 300) : sidebarWidth }}>
               {/* Space selector */}
               <SpaceSelector onSwitch={handleSpaceSwitch} />
 
               {/* Sidebar sections */}
-              <div className="flex-1 overflow-auto kiwi-scroll">
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {(starred.length > 0 || pinned.length > 0 || recent.length > 0) && (
+                  <div className="shrink-0 overflow-auto kiwi-scroll max-h-[40vh]">
                 {starred.length > 0 && (
                   <SidebarSection icon={<Star className="h-3.5 w-3.5" />} title="Starred" storageKey="starred">
                     {starred.map((p) => (
@@ -492,18 +513,69 @@ const handleSpaceSwitch = useCallback(() => {
                     ))}
                   </SidebarSection>
                 )}
+                  </div>
+                )}
                 <SidebarSection
                   icon={<FileAxis3D className="h-3.5 w-3.5" />}
                   title="Pages"
                   storageKey="pages"
                   defaultOpen
+                  fill
                   expandSignal={treeRevealRequest?.nonce}
+                  headerActions={
+                    <>
+                      <SidebarIconButton
+                        label="New page"
+                        onClick={() => {
+                          setNewFolder(undefined);
+                          setNewOpen(true);
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </SidebarIconButton>
+                      <SidebarIconButton
+                        label="Collapse all folders"
+                        onClick={() => treeRef.current?.collapseAll()}
+                      >
+                        <ChevronsDownUp className="h-3.5 w-3.5" />
+                      </SidebarIconButton>
+                      <SidebarIconButton
+                        label={`Sort: ${treeSortMode === "type" ? "type" : "name"}`}
+                        onClick={() => {
+                          setTreeSortMode((m) => {
+                            const next = m === "name" ? "type" : "name";
+                            try {
+                              localStorage.setItem("kiwifs-tree-sort", next);
+                            } catch {}
+                            return next;
+                          });
+                        }}
+                      >
+                        <ArrowDownAZ className="h-3.5 w-3.5" />
+                      </SidebarIconButton>
+                    </>
+                  }
                 >
+                  <div className="shrink-0 px-2 pb-1.5">
+                    <Input
+                      ref={treeFilterRef}
+                      value={treeFilter}
+                      onChange={(e) => setTreeFilter(e.target.value)}
+                      placeholder="Filter pages…"
+                      className="h-7 text-xs font-normal normal-case tracking-normal"
+                      aria-label="Filter file tree"
+                    />
+                  </div>
                   <KiwiTree
+                    ref={treeRef}
                     activePath={activePath}
                     revealRequest={treeRevealRequest}
                     onSelect={navigate}
                     refreshKey={refreshKey}
+                    filterQuery={treeFilter}
+                    sortMode={treeSortMode}
+                    compactFolders
+                    enableFileNesting
                     onCreateChild={(folder) => {
                       setNewFolder(folder);
                       setNewOpen(true);
@@ -518,7 +590,7 @@ const handleSpaceSwitch = useCallback(() => {
                     }}
                     onMoved={(p) => {
                       setRefreshKey((k) => k + 1);
-                      navigate(p);
+                      if (p) navigate(p);
                     }}
                     enableKanbanDrag={kanbanOpen}
                   />
@@ -776,6 +848,8 @@ function SidebarSection({
   storageKey,
   defaultOpen,
   expandSignal,
+  headerActions,
+  fill,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -783,6 +857,8 @@ function SidebarSection({
   storageKey?: string;
   defaultOpen?: boolean;
   expandSignal?: number;
+  headerActions?: React.ReactNode;
+  fill?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(() => {
     if (!storageKey) return false;
@@ -799,26 +875,64 @@ function SidebarSection({
   }, [expandSignal]);
 
   return (
-    <div className="border-b border-border/50 last:border-b-0">
-      <button
-        type="button"
-        onClick={() => {
-          const next = !collapsed;
-          setCollapsed(next);
-          if (storageKey) {
-            try { localStorage.setItem(`kiwifs-section-${storageKey}`, next ? "1" : "0"); } catch {}
-          }
-        }}
-        className="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground uppercase tracking-wider w-full text-left hover:text-foreground hover:bg-accent/50 transition-colors"
-      >
-        {icon}
-        <span className="flex-1">{title}</span>
-        {collapsed
-          ? <ChevronRight className="h-3 w-3" />
-          : <ChevronDown className="h-3 w-3" />}
-      </button>
-      {!collapsed && <div className="pb-2">{children}</div>}
+    <div className={`border-b border-border/50 last:border-b-0${fill ? " flex-1 min-h-0 flex flex-col" : ""}`}>
+      <div className="flex items-center gap-0.5 px-1 py-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => {
+            const next = !collapsed;
+            setCollapsed(next);
+            if (storageKey) {
+              try { localStorage.setItem(`kiwifs-section-${storageKey}`, next ? "1" : "0"); } catch {}
+            }
+          }}
+          className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs text-muted-foreground uppercase tracking-wider text-left hover:text-foreground hover:bg-accent/50 transition-colors rounded-sm"
+        >
+          {icon}
+          <span className="flex-1 truncate">{title}</span>
+          {collapsed
+            ? <ChevronRight className="h-3 w-3 shrink-0" />
+            : <ChevronDown className="h-3 w-3 shrink-0" />}
+        </button>
+        {headerActions && !collapsed && (
+          <div className="flex items-center shrink-0">{headerActions}</div>
+        )}
+      </div>
+      {!collapsed && (
+        <div className={fill ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "pb-2"}>
+          {children}
+        </div>
+      )}
     </div>
+  );
+}
+
+function SidebarIconButton({
+  children,
+  label,
+  onClick,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+          className="h-6 w-6 grid place-items-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

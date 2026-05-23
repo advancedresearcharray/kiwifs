@@ -1,8 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import { Tree, NodeApi, type NodeRendererProps } from "react-arborist";
 import { useDraggable } from "@dnd-kit/core";
 import { getCurrentSpace } from "../lib/api";
 import { TreeSkeleton } from "./TreeSkeleton";
+import { TreeRowShell, TREE_INDENT } from "./tree/TreeRow";
+import {
+  buildFlatTree,
+  openFolderRecursive,
+  type FlatNode,
+  type TreeSortMode,
+  DEFAULT_TREE_EXCLUDE_PATTERNS,
+} from "@kw/lib/treeTransform";
+import {
+  clearTreeClipboard,
+  getTreeClipboard,
+  setTreeClipboard,
+} from "@kw/lib/treeClipboard";
 import {
   ChevronRight,
   Copy,
@@ -42,7 +55,6 @@ import { Button } from "@kw/components/ui/button";
 import { Input } from "@kw/components/ui/input";
 import { Label } from "@kw/components/ui/label";
 import { type TreeRevealRequest } from "@kw/lib/treeReveal";
-import { parentPathsFor } from "@kw/lib/treeReveal";
 import { createTreePageDragData } from "@kw/lib/kanbanDnd";
 import { useFileOpsStore } from "@kw/stores/fileOpsStore";
 
@@ -56,21 +68,23 @@ type Props = {
   onDuplicated?: (newPath: string) => void;
   onMoved?: (newPath: string) => void;
   enableKanbanDrag?: boolean;
+  filterQuery?: string;
+  compactFolders?: boolean;
+  sortMode?: TreeSortMode;
+  enableFileNesting?: boolean;
+  excludePatterns?: string[];
+  autoReveal?: boolean;
 };
 
-type FlatNode = {
-  id: string;
-  name: string;
-  isDir: boolean;
-  children?: FlatNode[];
+export type KiwiTreeHandle = {
+  collapseAll: () => void;
 };
 
-function treeEntryToFlat(entry: TreeEntry): FlatNode {
-  const path = stripTrailingSlash(entry.path);
-  const children = entry.children
-    ? sortChildren(entry.children).map(treeEntryToFlat)
-    : undefined;
-  return { id: path, name: entry.name, isDir: entry.isDir, children };
+function nodeLabel(data: FlatNode): string {
+  if (data.displayName) return data.displayName;
+  if (isCanvasFile(data.id)) return data.name.replace(/\.canvas\.json$/i, "");
+  if (isMarkdown(data.id)) return stem(data.name);
+  return data.name;
 }
 
 function isKiwiConfig(name: string): boolean {
@@ -107,17 +121,19 @@ function osDropRowClass(
   willReceiveInternal: boolean,
   fileDragActive: boolean,
 ): string {
-  if (isTarget) return "bg-accent text-accent-foreground";
+  if (isTarget) return "bg-accent";
   if (willReceiveInternal && !fileDragActive) return "bg-accent/70";
   return "";
 }
 
-function sortChildren(children: TreeEntry[]): TreeEntry[] {
-  return [...children].sort((a, b) => {
-    const aKiwi = isKiwiConfig(a.name) ? 0 : 1;
-    const bKiwi = isKiwiConfig(b.name) ? 0 : 1;
-    return aKiwi - bKiwi;
-  });
+function treeSearchMatch(node: NodeApi<FlatNode>, term: string): boolean {
+  const q = term.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    node.id.toLowerCase().includes(q) ||
+    node.data.name.toLowerCase().includes(q) ||
+    (node.data.displayName?.toLowerCase().includes(q) ?? false)
+  );
 }
 
 function treeErrorMessage(raw: string): string {
@@ -172,17 +188,26 @@ type ConfirmDialog = {
   onConfirm: () => void;
 };
 
-export function KiwiTree({
-  activePath,
-  revealRequest,
-  onSelect,
-  refreshKey,
-  onCreateChild,
-  onDeleted,
-  onDuplicated,
-  onMoved,
-  enableKanbanDrag = false,
-}: Props) {
+export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
+  {
+    activePath,
+    revealRequest,
+    onSelect,
+    refreshKey,
+    onCreateChild,
+    onDeleted,
+    onDuplicated,
+    onMoved,
+    enableKanbanDrag = false,
+    filterQuery = "",
+    compactFolders = true,
+    sortMode = "name",
+    enableFileNesting = true,
+    excludePatterns = DEFAULT_TREE_EXCLUDE_PATTERNS,
+    autoReveal = true,
+  },
+  ref,
+) {
   const [root, setRoot] = useState<TreeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -207,6 +232,10 @@ export function KiwiTree({
   const dragExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pushOp = useFileOpsStore((s) => s.push);
+
+  useImperativeHandle(ref, () => ({
+    collapseAll: () => treeRef.current?.closeAll(),
+  }));
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -262,10 +291,7 @@ export function KiwiTree({
   // Reveal support: open parents when reveal request comes in
   useEffect(() => {
     if (!revealRequest?.path || !treeRef.current) return;
-    const parents = parentPathsFor(revealRequest.path);
-    for (const p of ["", ...parents]) {
-      treeRef.current.open(p);
-    }
+    treeRef.current.openParents(revealRequest.path);
     setTimeout(() => {
       const node = treeRef.current?.get(revealRequest.path);
       node?.focus();
@@ -273,10 +299,26 @@ export function KiwiTree({
     }, 50);
   }, [revealRequest]);
 
+  // Auto-reveal active file in tree (VS Code explorer.autoReveal)
+  useEffect(() => {
+    if (!autoReveal || !activePath || !treeRef.current) return;
+    treeRef.current.openParents(activePath);
+    const t = setTimeout(() => {
+      treeRef.current?.scrollTo(activePath);
+    }, 30);
+    return () => clearTimeout(t);
+  }, [activePath, autoReveal, refreshKey]);
+
   const data = useMemo(() => {
     if (!root) return [];
-    return (root.children || []).map((c) => treeEntryToFlat(c));
-  }, [root]);
+    const built = buildFlatTree(root, {
+      compactFolders,
+      sortMode,
+      enableFileNesting,
+      excludePatterns,
+    });
+    return built;
+  }, [root, compactFolders, sortMode, enableFileNesting, excludePatterns]);
 
   const initialOpenState = useMemo(() => {
     const map: Record<string, boolean> = { "": true };
@@ -507,6 +549,84 @@ export function KiwiTree({
     [uploadFiles, resetFileDrag],
   );
 
+  // Copy / cut / paste (VS Code-style) when tree has focus
+  useEffect(() => {
+    const onKeyDown = async (e: KeyboardEvent) => {
+      const tree = treeRef.current;
+      if (!tree?.hasFocus) return;
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === "c") {
+        const paths = tree.selectedNodes
+          .filter((n: NodeApi<FlatNode>) => !n.data.isDir && !isProtectedDropPath(n.id))
+          .map((n: NodeApi<FlatNode>) => n.id);
+        if (paths.length === 0) return;
+        e.preventDefault();
+        const entries = await Promise.all(
+          paths.map(async (path: string) => {
+            const { content } = await api.readFile(path);
+            return { path, content };
+          }),
+        );
+        setTreeClipboard({ mode: "copy", entries });
+      } else if (mod && key === "x") {
+        const paths = tree.selectedNodes
+          .filter((n: NodeApi<FlatNode>) => !n.data.isDir && !isProtectedDropPath(n.id))
+          .map((n: NodeApi<FlatNode>) => n.id);
+        if (paths.length === 0) return;
+        e.preventDefault();
+        const entries = await Promise.all(
+          paths.map(async (path: string) => {
+            const { content } = await api.readFile(path);
+            return { path, content };
+          }),
+        );
+        setTreeClipboard({ mode: "cut", entries });
+      } else if (mod && key === "v") {
+        const clip = getTreeClipboard();
+        if (!clip || clip.entries.length === 0) return;
+        e.preventDefault();
+        const focus = tree.focusedNode;
+        let targetDir = "";
+        if (focus) {
+          targetDir = focus.data.isDir && !focus.data.virtualDir
+            ? focus.id
+            : dirOf(focus.id);
+        }
+        if (isProtectedDropPath(targetDir)) return;
+        for (const entry of clip.entries) {
+          const base = entry.path.split("/").pop() || entry.path;
+          let dest = targetDir ? `${targetDir}/${base}` : base;
+          if (entry.content != null) {
+            try {
+              await api.readFile(dest);
+              const dot = base.lastIndexOf(".");
+              const stamped =
+                dot > 0
+                  ? `${base.slice(0, dot)}-copy${base.slice(dot)}`
+                  : `${base}-copy`;
+              dest = targetDir ? `${targetDir}/${stamped}` : stamped;
+            } catch {
+              /* destination free */
+            }
+            await api.writeFile(dest, entry.content);
+            if (clip.mode === "cut") {
+              await api.deleteFile(entry.path).catch(() => {});
+            }
+          }
+        }
+        if (clip.mode === "cut") clearTreeClipboard();
+        onMoved?.("");
+      } else if (mod && key === "a") {
+        e.preventDefault();
+        tree.selectAll();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onMoved, root]);
+
   if (error) {
     const friendlyMsg = treeErrorMessage(error);
     return (
@@ -534,7 +654,7 @@ export function KiwiTree({
   return (
     <div
       ref={containerRef}
-      className="relative p-2 text-sm min-h-[200px] flex-1"
+      className="relative px-0 py-1 text-sm flex-1 min-h-0 kiwi-tree-panel"
       onDragEnter={handleFileDragEnter}
       onDragLeave={handleFileDragLeave}
       onDragOver={handleContainerDragOver}
@@ -556,23 +676,30 @@ export function KiwiTree({
         width="100%"
         height={containerHeight}
         rowHeight={ROW_HEIGHT}
-        indent={14}
+        rowClassName="kiwi-tree-item"
+        indent={TREE_INDENT}
         paddingTop={2}
         paddingBottom={8}
         selection={activePath || undefined}
         selectionFollowsFocus
+        searchTerm={filterQuery.trim()}
+        searchMatch={treeSearchMatch}
         disableDrag={enableKanbanDrag}
-        disableEdit={(d) => isKiwiConfig(d.name)}
+        disableEdit={(d) => isKiwiConfig(d.name) || !!d.virtualDir}
         renderCursor={DropCursor}
         onMove={handleMove}
         onRename={handleRename}
         onDelete={handleDelete}
-        onActivate={(node) => onSelect(node.id)}
+        onActivate={(node) => {
+          if (node.data.virtualDir || isMarkdown(node.id)) onSelect(node.id);
+          else if (!node.data.isDir) onSelect(node.id);
+        }}
       >
         {(props) => (
           <TreeNode
             {...props}
             activePath={activePath}
+            revealRequest={revealRequest}
             onSelect={onSelect}
             onCreateChild={onCreateChild}
             openDupDialog={openDupDialog}
@@ -587,6 +714,7 @@ export function KiwiTree({
             fileDragActive={fileDragActive}
             onNodeDragOver={handleNodeDragOver}
             onNodeDrop={handleNodeDrop}
+            onFolderAltClick={(data) => openFolderRecursive(treeRef.current, data)}
           />
         )}
       </Tree>
@@ -720,12 +848,11 @@ export function KiwiTree({
       </Dialog>
     </div>
   );
-}
-
-// ─── Node renderer ──────────────────────────────────────────────────────────
+});
 
 type TreeNodeProps = NodeRendererProps<FlatNode> & {
   activePath: string | null;
+  revealRequest?: TreeRevealRequest | null;
   onSelect: (path: string) => void;
   onCreateChild?: (folder: string) => void;
   openDupDialog: (srcPath: string) => void;
@@ -745,13 +872,14 @@ type TreeNodeProps = NodeRendererProps<FlatNode> & {
     isOpen: boolean,
   ) => void;
   onNodeDrop: (e: React.DragEvent, nodePath: string, isDir: boolean) => void;
+  onFolderAltClick: (data: FlatNode) => void;
 };
 
 function TreeNode({
   node,
-  style,
   dragHandle,
   activePath,
+  revealRequest,
   onSelect,
   onCreateChild,
   openDupDialog,
@@ -766,6 +894,7 @@ function TreeNode({
   fileDragActive,
   onNodeDragOver,
   onNodeDrop,
+  onFolderAltClick,
 }: TreeNodeProps) {
   const path = node.id;
   const isActive = activePath === path;
@@ -781,6 +910,8 @@ function TreeNode({
       onNodeDragOver(e, path, node.data.isDir, node.isOpen),
     onDrop: (e: React.DragEvent) => onNodeDrop(e, path, node.data.isDir),
   };
+  const label = nodeLabel(node.data);
+  const showChevron = node.data.isDir && (node.data.children?.length ?? 0) > 0;
 
   // kanban draggable (separate from tree DnD)
   const kanbanDraggable = useDraggable({
@@ -814,29 +945,47 @@ function TreeNode({
   );
 
   if (node.data.isDir) {
+    const isVirtual = !!node.data.virtualDir;
     return (
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div ref={dragHandle} style={style}>
-            <div
-              className={cn(
-                "group flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md transition-colors cursor-pointer h-full",
-                "text-foreground/90 hover:bg-accent hover:text-accent-foreground",
-                osDropHighlight,
-              )}
+          <div ref={dragHandle} className="h-full w-full">
+            <TreeRowShell
+              node={node}
+              revealRequest={revealRequest}
+              isActive={isActive}
+              osDropHighlight={osDropHighlight}
+              {...osDropHandlers}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isVirtual) {
+                  onSelect(path);
+                  return;
+                }
+                if (e.altKey) {
+                  onFolderAltClick(node.data);
+                  return;
+                }
                 node.toggle();
               }}
-              {...osDropHandlers}
             >
-              <ChevronRight
-                className={cn(
-                  "h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0",
-                  node.isOpen && "rotate-90",
-                )}
-              />
-              {node.isOpen ? (
+              {showChevron ? (
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0",
+                    node.isOpen && "rotate-90",
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    node.toggle();
+                  }}
+                />
+              ) : (
+                <span className="w-3.5 shrink-0" />
+              )}
+              {isVirtual ? (
+                <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : node.isOpen ? (
                 <FolderOpen
                   className={cn(
                     "h-4 w-4 shrink-0",
@@ -860,23 +1009,23 @@ function TreeNode({
                     isKiwi && "text-emerald-600 dark:text-emerald-400 font-medium",
                   )}
                 >
-                  {node.data.name}
+                  {label}
                 </span>
               )}
-              {onCreateChild && !node.isEditing && (
+              {onCreateChild && !node.isEditing && !isVirtual && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onCreateChild(path);
                   }}
-                  className="opacity-0 group-hover:opacity-100 h-5 w-5 shrink-0 grid place-items-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-all ml-auto"
+                  className="opacity-0 group-hover:opacity-100 h-5 w-5 shrink-0 grid place-items-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-all ml-auto"
                   title={`New page in ${node.data.name}`}
                 >
                   <Plus className="h-3 w-3" />
                 </button>
               )}
-            </div>
+            </TreeRowShell>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -968,22 +1117,19 @@ function TreeNode({
   // Canvas files open in the canvas view, not as raw downloads
   if (isCanvasFile(path)) {
     return (
-      <div ref={dragHandle} style={style}>
-        <div
+      <div ref={dragHandle} className="h-full w-full">
+        <TreeRowShell
+          node={node}
+          revealRequest={revealRequest}
+          isActive={isActive}
+          osDropHighlight={osDropHighlight}
           onClick={() => onSelect(path)}
-          className={cn(
-            "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md text-left transition-colors cursor-pointer h-full",
-            "hover:bg-accent hover:text-accent-foreground",
-            isActive && "bg-accent text-accent-foreground font-medium",
-            osDropHighlight,
-          )}
           {...osDropHandlers}
         >
+          <span className="w-3.5 shrink-0" />
           <FileAxis3D className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="truncate">
-            {node.data.name.replace(/\.canvas\.json$/i, "")}
-          </span>
-        </div>
+          <span className="truncate">{label}</span>
+        </TreeRowShell>
       </div>
     );
   }
@@ -993,15 +1139,15 @@ function TreeNode({
     return (
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div ref={dragHandle} style={style}>
-            <div
-              className={cn(
-                "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md text-left transition-colors h-full",
-                "hover:bg-accent hover:text-accent-foreground",
-                osDropHighlight,
-              )}
+          <div ref={dragHandle} className="h-full w-full">
+            <TreeRowShell
+              node={node}
+              revealRequest={revealRequest}
+              isActive={false}
+              osDropHighlight={osDropHighlight}
               {...osDropHandlers}
             >
+              <span className="w-3.5 shrink-0" />
               <a
                 href={`/api/kiwi${getCurrentSpace() && getCurrentSpace() !== "default" ? "/" + getCurrentSpace() : ""}/file?path=${encodeURIComponent(path)}`}
                 target="_blank"
@@ -1010,9 +1156,9 @@ function TreeNode({
                 onClick={(e) => e.stopPropagation()}
               >
                 <AssetIcon name={node.data.name} />
-                <span className="truncate">{node.data.name}</span>
+                <span className="truncate">{label}</span>
               </a>
-            </div>
+            </TreeRowShell>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -1080,27 +1226,25 @@ function TreeNode({
             if (dragHandle) dragHandle(el);
             if (enableKanbanDrag) kanbanDraggable.setNodeRef(el);
           }}
-          style={style}
+          className="h-full w-full"
           {...(enableKanbanDrag ? { ...kanbanDraggable.attributes, ...kanbanDraggable.listeners } : {})}
         >
-          <div
+          <TreeRowShell
+            node={node}
+            revealRequest={revealRequest}
+            isActive={isActive}
+            osDropHighlight={osDropHighlight}
             onClick={() => onSelect(path)}
-            className={cn(
-              "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md text-left transition-colors cursor-pointer h-full",
-              "hover:bg-accent hover:text-accent-foreground",
-              isActive && "bg-accent text-accent-foreground font-medium",
-              node.isDragging && "opacity-50",
-              osDropHighlight,
-            )}
             {...osDropHandlers}
           >
+            <span className="w-3.5 shrink-0" />
             <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             {node.isEditing ? (
               <RenameInput node={node} />
             ) : (
-              <span className="truncate">{stem(node.data.name)}</span>
+              <span className="truncate">{label}</span>
             )}
-          </div>
+          </TreeRowShell>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
