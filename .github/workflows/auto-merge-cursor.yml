@@ -2,7 +2,7 @@ name: Auto-merge Cursor agent PRs
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, ready_for_review]
   check_suite:
     types: [completed]
 
@@ -59,6 +59,17 @@ jobs:
           echo "Cursor agent PR #$PR_NUMBER confirmed (branch: $HEAD_REF)"
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Mark ready if draft
+        if: steps.find-pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IS_DRAFT=$(gh pr view "${{ steps.find-pr.outputs.pr_number }}" --repo "${{ github.repository }}" --json isDraft --jq '.isDraft')
+          if [ "$IS_DRAFT" = "true" ]; then
+            gh pr ready "${{ steps.find-pr.outputs.pr_number }}" --repo "${{ github.repository }}"
+            echo "Marked PR #${{ steps.find-pr.outputs.pr_number }} as ready for review"
+          fi
 
       - name: Enable auto-merge
         if: steps.find-pr.outputs.skip != 'true'
