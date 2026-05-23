@@ -77,6 +77,41 @@ function isKiwiConfig(name: string): boolean {
   return name === ".kiwi";
 }
 
+const FOLDER_EXPAND_DELAY_MS = 600;
+
+type OsDragTarget = {
+  rowPath: string;
+  dropDir: string;
+};
+
+function isOsFileDrag(e: React.DragEvent): boolean {
+  return e.dataTransfer.types.includes("Files");
+}
+
+function isProtectedDropPath(path: string): boolean {
+  const clean = stripTrailingSlash(path);
+  return clean === ".kiwi" || clean.startsWith(".kiwi/");
+}
+
+/** Resolve upload folder for a tree row; null = drop not allowed (e.g. `.kiwi`). */
+function osDropDirForNode(path: string, isDir: boolean): string | null {
+  if (isDir) {
+    return isProtectedDropPath(path) ? null : path;
+  }
+  const parent = dirOf(path);
+  return isProtectedDropPath(parent) ? null : parent;
+}
+
+function osDropRowClass(
+  isTarget: boolean,
+  willReceiveInternal: boolean,
+  fileDragActive: boolean,
+): string {
+  if (isTarget) return "bg-accent text-accent-foreground";
+  if (willReceiveInternal && !fileDragActive) return "bg-accent/70";
+  return "";
+}
+
 function sortChildren(children: TreeEntry[]): TreeEntry[] {
   return [...children].sort((a, b) => {
     const aKiwi = isKiwiConfig(a.name) ? 0 : 1;
@@ -163,11 +198,12 @@ export function KiwiTree({
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
 
-  const [isDragOver, setIsDragOver] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerHeight, setContainerHeight] = useState(400);
-  const [dragTargetFolder, setDragTargetFolder] = useState<string | null>(null);
+  const [dragTarget, setDragTarget] = useState<OsDragTarget | null>(null);
+  const [fileDragActive, setFileDragActive] = useState(false);
+  const fileDragDepthRef = useRef(0);
   const dragExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pushOp = useFileOpsStore((s) => s.push);
@@ -347,6 +383,22 @@ export function KiwiTree({
     }
   }, []);
 
+  const resetFileDrag = useCallback(() => {
+    fileDragDepthRef.current = 0;
+    setFileDragActive(false);
+    setDragTarget(null);
+    clearDragExpandTimer();
+  }, [clearDragExpandTimer]);
+
+  useEffect(() => {
+    const onDragEnd = () => resetFileDrag();
+    window.addEventListener("dragend", onDragEnd);
+    return () => {
+      window.removeEventListener("dragend", onDragEnd);
+      clearDragExpandTimer();
+    };
+  }, [resetFileDrag, clearDragExpandTimer]);
+
   const uploadFiles = useCallback(
     async (files: File[], targetDir: string) => {
       if (files.length === 0) return;
@@ -367,71 +419,92 @@ export function KiwiTree({
     [pushOp, onMoved],
   );
 
-  const handleOsDrop = useCallback(
+  const handleContainerDrop = useCallback(
     async (e: React.DragEvent) => {
+      if (!isOsFileDrag(e)) return;
       e.preventDefault();
-      setIsDragOver(false);
-      setDragTargetFolder(null);
-      clearDragExpandTimer();
-      await uploadFiles(Array.from(e.dataTransfer.files), "");
+      const files = Array.from(e.dataTransfer.files);
+      const targetDir = dragTarget?.dropDir ?? "";
+      resetFileDrag();
+      await uploadFiles(files, targetDir);
     },
-    [uploadFiles, clearDragExpandTimer],
+    [dragTarget, uploadFiles, resetFileDrag],
   );
 
-  const handleOsDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes("Files")) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-      setIsDragOver(true);
-    }
+  const handleFileDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isOsFileDrag(e)) return;
+    e.preventDefault();
+    fileDragDepthRef.current += 1;
+    setFileDragActive(true);
   }, []);
 
-  const handleOsDragLeave = useCallback((e: React.DragEvent) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setIsDragOver(false);
-    setDragTargetFolder(null);
-    clearDragExpandTimer();
-  }, [clearDragExpandTimer]);
+  const handleFileDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (!isOsFileDrag(e)) return;
+      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+      fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+      if (fileDragDepthRef.current === 0) resetFileDrag();
+    },
+    [resetFileDrag],
+  );
 
-  const handleFolderDragOver = useCallback(
-    (e: React.DragEvent, folderPath: string) => {
-      if (!e.dataTransfer.types.includes("Files")) return;
+  const handleContainerDragOver = useCallback((e: React.DragEvent) => {
+    if (!isOsFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const scheduleFolderExpand = useCallback(
+    (folderPath: string, isOpen: boolean) => {
+      if (isOpen) return;
+      clearDragExpandTimer();
+      dragExpandTimerRef.current = setTimeout(() => {
+        treeRef.current?.open(folderPath);
+      }, FOLDER_EXPAND_DELAY_MS);
+    },
+    [clearDragExpandTimer],
+  );
+
+  const handleNodeDragOver = useCallback(
+    (
+      e: React.DragEvent,
+      nodePath: string,
+      isDir: boolean,
+      isOpen: boolean,
+    ) => {
+      if (!isOsFileDrag(e)) return;
+      const dropDir = osDropDirForNode(nodePath, isDir);
+      if (dropDir === null) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "none";
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "copy";
-      setIsDragOver(true);
-      setDragTargetFolder((prev) => {
-        if (prev !== folderPath) {
-          clearDragExpandTimer();
-          dragExpandTimerRef.current = setTimeout(() => {
-            treeRef.current?.open(folderPath);
-          }, 800);
+      setDragTarget((prev) => {
+        if (prev?.rowPath !== nodePath) {
+          if (isDir) scheduleFolderExpand(nodePath, isOpen);
+          else clearDragExpandTimer();
         }
-        return folderPath;
+        return { rowPath: nodePath, dropDir };
       });
     },
-    [clearDragExpandTimer],
+    [scheduleFolderExpand, clearDragExpandTimer],
   );
 
-  const handleFolderDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-      setDragTargetFolder(null);
-      clearDragExpandTimer();
-    },
-    [clearDragExpandTimer],
-  );
-
-  const handleFolderDrop = useCallback(
-    async (e: React.DragEvent, folderPath: string) => {
+  const handleNodeDrop = useCallback(
+    async (e: React.DragEvent, nodePath: string, isDir: boolean) => {
+      if (!isOsFileDrag(e)) return;
+      const dropDir = osDropDirForNode(nodePath, isDir);
+      if (dropDir === null) return;
       e.preventDefault();
       e.stopPropagation();
-      setIsDragOver(false);
-      setDragTargetFolder(null);
-      clearDragExpandTimer();
-      await uploadFiles(Array.from(e.dataTransfer.files), folderPath);
+      const files = Array.from(e.dataTransfer.files);
+      resetFileDrag();
+      await uploadFiles(files, dropDir);
     },
-    [uploadFiles, clearDragExpandTimer],
+    [uploadFiles, resetFileDrag],
   );
 
   if (error) {
@@ -461,13 +534,11 @@ export function KiwiTree({
   return (
     <div
       ref={containerRef}
-      className={cn(
-        "relative p-2 text-sm min-h-[200px] flex-1",
-        isDragOver && "ring-2 ring-primary/50 rounded-md bg-primary/5",
-      )}
-      onDragOver={handleOsDragOver}
-      onDragLeave={handleOsDragLeave}
-      onDrop={handleOsDrop}
+      className="relative p-2 text-sm min-h-[200px] flex-1"
+      onDragEnter={handleFileDragEnter}
+      onDragLeave={handleFileDragLeave}
+      onDragOver={handleContainerDragOver}
+      onDrop={handleContainerDrop}
     >
       {uploadStatus && (
         <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-md mb-2">
@@ -512,10 +583,10 @@ export function KiwiTree({
             enableKanbanDrag={enableKanbanDrag}
             pushOp={pushOp}
             root={root}
-            dragTargetFolder={dragTargetFolder}
-            onFolderDragOver={handleFolderDragOver}
-            onFolderDragLeave={handleFolderDragLeave}
-            onFolderDrop={handleFolderDrop}
+            dragTarget={dragTarget}
+            fileDragActive={fileDragActive}
+            onNodeDragOver={handleNodeDragOver}
+            onNodeDrop={handleNodeDrop}
           />
         )}
       </Tree>
@@ -665,10 +736,15 @@ type TreeNodeProps = NodeRendererProps<FlatNode> & {
   enableKanbanDrag: boolean;
   pushOp: (op: import("@kw/stores/fileOpsStore").FileOp) => void;
   root: TreeEntry;
-  dragTargetFolder: string | null;
-  onFolderDragOver: (e: React.DragEvent, folderPath: string) => void;
-  onFolderDragLeave: (e: React.DragEvent) => void;
-  onFolderDrop: (e: React.DragEvent, folderPath: string) => void;
+  dragTarget: OsDragTarget | null;
+  fileDragActive: boolean;
+  onNodeDragOver: (
+    e: React.DragEvent,
+    nodePath: string,
+    isDir: boolean,
+    isOpen: boolean,
+  ) => void;
+  onNodeDrop: (e: React.DragEvent, nodePath: string, isDir: boolean) => void;
 };
 
 function TreeNode({
@@ -686,14 +762,25 @@ function TreeNode({
   enableKanbanDrag,
   pushOp,
   root,
-  dragTargetFolder,
-  onFolderDragOver,
-  onFolderDragLeave,
-  onFolderDrop,
+  dragTarget,
+  fileDragActive,
+  onNodeDragOver,
+  onNodeDrop,
 }: TreeNodeProps) {
   const path = node.id;
   const isActive = activePath === path;
   const isKiwi = isKiwiConfig(node.data.name);
+  const isOsDropTarget = dragTarget?.rowPath === path;
+  const osDropHighlight = osDropRowClass(
+    isOsDropTarget,
+    node.willReceiveDrop,
+    fileDragActive,
+  );
+  const osDropHandlers = {
+    onDragOver: (e: React.DragEvent) =>
+      onNodeDragOver(e, path, node.data.isDir, node.isOpen),
+    onDrop: (e: React.DragEvent) => onNodeDrop(e, path, node.data.isDir),
+  };
 
   // kanban draggable (separate from tree DnD)
   const kanbanDraggable = useDraggable({
@@ -704,6 +791,7 @@ function TreeNode({
 
   const handleUploadToFolder = useCallback(
     (folder: string) => {
+      if (isProtectedDropPath(folder)) return;
       const input = document.createElement("input");
       input.type = "file";
       input.multiple = true;
@@ -732,17 +820,15 @@ function TreeNode({
           <div ref={dragHandle} style={style}>
             <div
               className={cn(
-                "group flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg transition-colors cursor-pointer h-full",
+                "group flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md transition-colors cursor-pointer h-full",
                 "text-foreground/90 hover:bg-accent hover:text-accent-foreground",
-                (node.willReceiveDrop || dragTargetFolder === path) && "ring-2 ring-primary bg-primary/10",
+                osDropHighlight,
               )}
               onClick={(e) => {
                 e.stopPropagation();
                 node.toggle();
               }}
-              onDragOver={(e) => onFolderDragOver(e, path)}
-              onDragLeave={onFolderDragLeave}
-              onDrop={(e) => onFolderDrop(e, path)}
+              {...osDropHandlers}
             >
               <ChevronRight
                 className={cn(
@@ -798,10 +884,12 @@ function TreeNode({
             <Plus className="h-3.5 w-3.5" />
             New page in {node.data.name}
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => handleUploadToFolder(path)}>
-            <Upload className="h-3.5 w-3.5" />
-            Upload files to {node.data.name}
-          </ContextMenuItem>
+          {!isKiwi && (
+            <ContextMenuItem onClick={() => handleUploadToFolder(path)}>
+              <Upload className="h-3.5 w-3.5" />
+              Upload files to {node.data.name}
+            </ContextMenuItem>
+          )}
           <ContextMenuItem onClick={() => onSelect(path)}>
             <File className="h-3.5 w-3.5" />
             Open folder
@@ -884,10 +972,12 @@ function TreeNode({
         <div
           onClick={() => onSelect(path)}
           className={cn(
-            "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg text-left transition-colors cursor-pointer h-full",
+            "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md text-left transition-colors cursor-pointer h-full",
             "hover:bg-accent hover:text-accent-foreground",
             isActive && "bg-accent text-accent-foreground font-medium",
+            osDropHighlight,
           )}
+          {...osDropHandlers}
         >
           <FileAxis3D className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <span className="truncate">
@@ -904,18 +994,25 @@ function TreeNode({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div ref={dragHandle} style={style}>
-            <a
-              href={`/api/kiwi${getCurrentSpace() && getCurrentSpace() !== "default" ? "/" + getCurrentSpace() : ""}/file?path=${encodeURIComponent(path)}`}
-              target="_blank"
-              rel="noreferrer"
+            <div
               className={cn(
-                "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg text-left transition-colors h-full",
+                "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md text-left transition-colors h-full",
                 "hover:bg-accent hover:text-accent-foreground",
+                osDropHighlight,
               )}
+              {...osDropHandlers}
             >
-              <AssetIcon name={node.data.name} />
-              <span className="truncate">{node.data.name}</span>
-            </a>
+              <a
+                href={`/api/kiwi${getCurrentSpace() && getCurrentSpace() !== "default" ? "/" + getCurrentSpace() : ""}/file?path=${encodeURIComponent(path)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 min-w-0 flex-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <AssetIcon name={node.data.name} />
+                <span className="truncate">{node.data.name}</span>
+              </a>
+            </div>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -989,11 +1086,13 @@ function TreeNode({
           <div
             onClick={() => onSelect(path)}
             className={cn(
-              "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-lg text-left transition-colors cursor-pointer h-full",
+              "flex items-center gap-1.5 mx-1 px-2.5 py-1 rounded-md text-left transition-colors cursor-pointer h-full",
               "hover:bg-accent hover:text-accent-foreground",
               isActive && "bg-accent text-accent-foreground font-medium",
               node.isDragging && "opacity-50",
+              osDropHighlight,
             )}
+            {...osDropHandlers}
           >
             <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             {node.isEditing ? (
