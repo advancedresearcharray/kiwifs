@@ -250,6 +250,16 @@ func (h *Handlers) publishBulk(c echo.Context, publish bool) error {
 				kept = append(kept, f)
 			}
 			files = kept
+
+			// Remove failed paths from responses so clients don't see
+			// a path reported as both successful and errored.
+			cleaned := responses[:0]
+			for _, r := range responses {
+				if _, ok := failed[r.Path]; !ok {
+					cleaned = append(cleaned, r)
+				}
+			}
+			responses = cleaned
 		}
 	}
 

@@ -992,9 +992,10 @@ function TreeNode({
   };
   const label = nodeLabel(node.data);
   const showChevron = node.data.isDir && (node.data.children?.length ?? 0) > 0;
-  const isPublished = !node.data.isDir && isMarkdown(path) && (publishedPaths?.has(path) ?? false);
-  const folderMarkdownFiles = node.data.isDir ? collectFlatMarkdownFiles(node.data) : [];
-  const folderPublishedCount = node.data.isDir ? folderMarkdownFiles.filter((p) => publishedPaths?.has(p)).length : 0;
+  const isVirtualDir = node.data.isDir && !!node.data.virtualDir;
+  const isPublished = (isVirtualDir || (!node.data.isDir && isMarkdown(path))) && (publishedPaths?.has(path) ?? false);
+  const folderMarkdownFiles = node.data.isDir && !isVirtualDir ? collectFlatMarkdownFiles(node.data) : [];
+  const folderPublishedCount = node.data.isDir && !isVirtualDir ? folderMarkdownFiles.filter((p) => publishedPaths?.has(p)).length : 0;
 
   // kanban draggable (separate from tree DnD)
   const kanbanDraggable = useDraggable({
@@ -1038,6 +1039,7 @@ function TreeNode({
               revealRequest={revealRequest}
               isActive={isActive}
               osDropHighlight={osDropHighlight}
+              isPublished={isVirtual && isPublished}
               {...osDropHandlers}
               onClick={(e) => {
                 e.stopPropagation();
@@ -1067,7 +1069,11 @@ function TreeNode({
                 <span className="w-3.5 shrink-0" />
               )}
               {isVirtual ? (
-                <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                isPublished ? (
+                  <Rss className="h-4 w-4 shrink-0 text-primary" />
+                ) : (
+                  <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )
               ) : node.isOpen ? (
                 <FolderOpen
                   className={cn(
@@ -1088,11 +1094,17 @@ function TreeNode({
               ) : (
                 <span
                   className={cn(
-                    "truncate text-sm",
+                    "truncate text-sm flex-1",
                     isKiwi && "text-emerald-600 dark:text-emerald-400 font-medium",
                   )}
                 >
                   {label}
+                </span>
+              )}
+              {isVirtual && isPublished && !node.isEditing && (
+                <span className="ml-auto relative flex h-1.5 w-1.5 shrink-0" title="Published">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-40" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
                 </span>
               )}
               {onCreateChild && !node.isEditing && !isVirtual && (
@@ -1112,43 +1124,92 @@ function TreeNode({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onClick={() => onCreateChild?.(path)}>
-            <Plus className="h-3.5 w-3.5" />
-            New page in {node.data.name}
-          </ContextMenuItem>
-          {!isKiwi && (
-            <ContextMenuItem onClick={() => handleUploadToFolder(path)}>
-              <Upload className="h-3.5 w-3.5" />
-              Upload files to {node.data.name}
-            </ContextMenuItem>
+          {!isVirtual && (
+            <>
+              <ContextMenuItem onClick={() => onCreateChild?.(path)}>
+                <Plus className="h-3.5 w-3.5" />
+                New page in {node.data.name}
+              </ContextMenuItem>
+              {!isKiwi && (
+                <ContextMenuItem onClick={() => handleUploadToFolder(path)}>
+                  <Upload className="h-3.5 w-3.5" />
+                  Upload files to {node.data.name}
+                </ContextMenuItem>
+              )}
+            </>
           )}
           <ContextMenuItem onClick={() => onSelect(path)}>
             <File className="h-3.5 w-3.5" />
-            Open folder
+            {isVirtual ? "Open" : "Open folder"}
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem
-            disabled={folderMarkdownFiles.length === 0 || folderPublishedCount === folderMarkdownFiles.length}
-            onClick={() => {
-              publishMany(folderMarkdownFiles, true)
-                .then(() => onPublishedChanged?.())
-                .catch((e) => console.error("Failed to publish folder:", e));
-            }}
-          >
-            <Rss className="h-3.5 w-3.5" />
-            Publish folder ({folderMarkdownFiles.length})
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={folderPublishedCount === 0}
-            onClick={() => {
-              publishMany(folderMarkdownFiles.filter((p) => publishedPaths?.has(p)), false)
-                .then(() => onPublishedChanged?.())
-                .catch((e) => console.error("Failed to unpublish folder:", e));
-            }}
-          >
-            <Rss className="h-3.5 w-3.5" />
-            Unpublish folder ({folderPublishedCount})
-          </ContextMenuItem>
+          {isVirtual ? (
+            isPublished ? (
+              <>
+                <ContextMenuItem
+                  onClick={() => {
+                    navigator.clipboard
+                      .writeText(window.location.origin + "/p/" + path)
+                      .catch((e) => console.error("Failed to copy public link:", e));
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy public link
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => window.open("/p/" + path, "_blank")}>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  View published page
+                </ContextMenuItem>
+                <ContextMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {
+                    api.unpublish(path)
+                      .then(() => onPublishedChanged?.())
+                      .catch((e) => console.error("Failed to unpublish page:", e));
+                  }}
+                >
+                  <Rss className="h-3.5 w-3.5" />
+                  Unpublish
+                </ContextMenuItem>
+              </>
+            ) : (
+              <ContextMenuItem
+                onClick={() => {
+                  api.publish(path)
+                    .then(() => onPublishedChanged?.())
+                    .catch((e) => console.error("Failed to publish page:", e));
+                }}
+              >
+                <Rss className="h-3.5 w-3.5" />
+                Publish
+              </ContextMenuItem>
+            )
+          ) : (
+            <>
+              <ContextMenuItem
+                disabled={folderMarkdownFiles.length === 0 || folderPublishedCount === folderMarkdownFiles.length}
+                onClick={() => {
+                  publishMany(folderMarkdownFiles, true)
+                    .then(() => onPublishedChanged?.())
+                    .catch((e) => console.error("Failed to publish folder:", e));
+                }}
+              >
+                <Rss className="h-3.5 w-3.5" />
+                Publish folder ({folderMarkdownFiles.length})
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={folderPublishedCount === 0}
+                onClick={() => {
+                  publishMany(folderMarkdownFiles.filter((p) => publishedPaths?.has(p)), false)
+                    .then(() => onPublishedChanged?.())
+                    .catch((e) => console.error("Failed to unpublish folder:", e));
+                }}
+              >
+                <Rss className="h-3.5 w-3.5" />
+                Unpublish folder ({folderPublishedCount})
+              </ContextMenuItem>
+            </>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => node.edit()}>
             <Move className="h-3.5 w-3.5" />
