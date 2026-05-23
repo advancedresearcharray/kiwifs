@@ -13,6 +13,10 @@ export function isCanvasFile(p: string): boolean {
   return p.toLowerCase().endsWith(".canvas.json");
 }
 
+export function isExcalidrawFile(p: string): boolean {
+  return p.toLowerCase().endsWith(".excalidraw.md");
+}
+
 export function dirOf(p: string): string {
   const clean = stripTrailingSlash(p);
   const idx = clean.lastIndexOf("/");

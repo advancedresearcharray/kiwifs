@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, Eye, Loader2, Rss } from "lucide-react";
+import { BookPlus, Check, Copy, ExternalLink, Eye, Loader2 } from "lucide-react";
 import { api, type PublishStatusResponse } from "@kw/lib/api";
 import { Button } from "@kw/components/ui/button";
 import {
@@ -97,7 +97,7 @@ export function PublishButton({ path }: Props) {
         {busy ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
-          <Rss className="h-3.5 w-3.5" />
+          <BookPlus className="h-3.5 w-3.5" />
         )}
         <span className="hidden sm:inline">Publish</span>
       </Button>
@@ -157,7 +157,7 @@ export function PublishButton({ path }: Props) {
             {busy ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Rss className="h-3.5 w-3.5" />
+              <BookPlus className="h-3.5 w-3.5" />
             )}
             Unpublish
           </button>

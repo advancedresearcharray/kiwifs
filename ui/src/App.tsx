@@ -15,6 +15,7 @@ import {
   PanelLeftOpen,
   Pin,
   Plus,
+  PenTool,
   Presentation,
   Search as SearchIcon,
   Star,
@@ -33,6 +34,7 @@ import { KiwiHistory } from "./components/KiwiHistory";
 import { KiwiData } from "./components/KiwiData";
 import { KiwiBases } from "./components/KiwiBases";
 import { KiwiCanvasScreen } from "./components/KiwiCanvasScreen";
+import { KiwiWhiteboardScreen } from "./components/KiwiWhiteboardScreen";
 import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
@@ -53,7 +55,7 @@ import {
 } from "./components/ui/tooltip";
 import { api, getCurrentSpace, setCurrentSpace, sseUrl, type TreeEntry } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
-import { isMarkdown, isCanvasFile } from "./lib/paths";
+import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
 
@@ -83,6 +85,9 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [basesOpen, setBasesOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const [initialCanvasPath, setInitialCanvasPath] = useState<string | null>(null);
+  const [whiteboardOpen, setWhiteboardOpen] = useState(false);
+  const [initialWhiteboardPath, setInitialWhiteboardPath] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
@@ -104,6 +109,7 @@ export default function App() {
   const closeAllViews = useCallback(() => {
     setBasesOpen(false);
     setCanvasOpen(false);
+    setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
     setDataOpen(false);
@@ -136,8 +142,8 @@ export default function App() {
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
   const editorRef = useRef<{ save: () => Promise<void> } | null>(null);
-  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, timelineOpen, kanbanOpen });
-  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, timelineOpen, kanbanOpen };
+  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen });
+  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen };
 
   // Prevent browser from navigating to a file:// URL when OS files are
   // dropped anywhere on the page.  react-dnd's HTML5Backend (inside
@@ -351,7 +357,15 @@ const handleSpaceSwitch = useCallback(() => {
     }
     if (isCanvasFile(path)) {
       closeAllViews();
+      setInitialCanvasPath(path);
       setCanvasOpen(true);
+      if (isMobile) setSidebarOpen(false);
+      return;
+    }
+    if (isExcalidrawFile(path)) {
+      closeAllViews();
+      setInitialWhiteboardPath(path);
+      setWhiteboardOpen(true);
       if (isMobile) setSidebarOpen(false);
       return;
     }
@@ -373,6 +387,7 @@ const handleSpaceSwitch = useCallback(() => {
     setDataOpen(false);
     setBasesOpen(false);
     setCanvasOpen(false);
+    setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
     recordVisit(path);
@@ -440,6 +455,9 @@ const handleSpaceSwitch = useCallback(() => {
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasOpen(next); }} label="Canvas">
               <Presentation className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => { const next = !whiteboardOpen; closeAllViews(); setWhiteboardOpen(next); }} label="Whiteboard">
+              <PenTool className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !timelineOpen; closeAllViews(); setTimelineOpen(next); }} label="Timeline">
               <Clock4 className="h-4 w-4" />
@@ -651,7 +669,7 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
             {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
@@ -659,8 +677,17 @@ const handleSpaceSwitch = useCallback(() => {
               />
             ) : canvasOpen ? (
               <KiwiCanvasScreen
-                onClose={() => setCanvasOpen(false)}
-                onNavigate={(p) => { setCanvasOpen(false); navigate(p); }}
+                initialCanvasPath={initialCanvasPath}
+                onClose={() => { setCanvasOpen(false); setInitialCanvasPath(null); }}
+                onNavigate={(p) => { setCanvasOpen(false); setInitialCanvasPath(null); navigate(p); }}
+                onTreeRefresh={() => setRefreshKey((k) => k + 1)}
+              />
+            ) : whiteboardOpen ? (
+              <KiwiWhiteboardScreen
+                initialPath={initialWhiteboardPath}
+                onClose={() => { setWhiteboardOpen(false); setInitialWhiteboardPath(null); }}
+                onNavigate={(p) => { setWhiteboardOpen(false); setInitialWhiteboardPath(null); navigate(p); }}
+                onTreeRefresh={() => setRefreshKey((k) => k + 1)}
               />
             ) : timelineOpen ? (
               <KiwiTimeline

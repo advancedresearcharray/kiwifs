@@ -29,13 +29,14 @@ import {
   Folder,
   FolderOpen,
   Move,
+  PenTool,
   Plus,
   Trash2,
   Upload,
 } from "lucide-react";
 import { cn } from "@kw/lib/cn";
 import { api, type TreeEntry } from "@kw/lib/api";
-import { isMarkdown, isCanvasFile, stem, stripTrailingSlash, dirOf } from "@kw/lib/paths";
+import { isMarkdown, isCanvasFile, isExcalidrawFile, stem, stripTrailingSlash, dirOf } from "@kw/lib/paths";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -83,6 +84,7 @@ export type KiwiTreeHandle = {
 function nodeLabel(data: FlatNode): string {
   if (data.displayName) return data.displayName;
   if (isCanvasFile(data.id)) return data.name.replace(/\.canvas\.json$/i, "");
+  if (isExcalidrawFile(data.id)) return data.name.replace(/\.excalidraw\.md$/i, "");
   if (isMarkdown(data.id)) return stem(data.name);
   return data.name;
 }
@@ -542,7 +544,11 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     if (!isOsFileDrag(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
-    // Dragging over empty area below items → drop into root
+    // Only fall back to root when the cursor is genuinely over empty space.
+    // When over a tree row, handleNodeDragOver already set the correct target;
+    // avoid overriding it here.
+    const el = e.target;
+    if (el instanceof Element && el.closest("[data-row-path]")) return;
     setDragTarget({ rowPath: "", dropDir: "" });
   }, []);
 
@@ -1176,23 +1182,143 @@ function TreeNode({
     );
   }
 
-  // Canvas files open in the canvas view, not as raw downloads
+  // Canvas files open in the canvas view
   if (isCanvasFile(path)) {
     return (
-      <div ref={dragHandle} className="h-full w-full">
-        <TreeRowShell
-          node={node}
-          revealRequest={revealRequest}
-          isActive={isActive}
-          osDropHighlight={osDropHighlight}
-          onClick={() => onSelect(path)}
-          {...osDropHandlers}
-        >
-          <span className="w-3.5 shrink-0" />
-          <FileAxis3D className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="truncate">{label}</span>
-        </TreeRowShell>
-      </div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div ref={dragHandle} className="h-full w-full">
+            <TreeRowShell
+              node={node}
+              revealRequest={revealRequest}
+              isActive={isActive}
+              osDropHighlight={osDropHighlight}
+              onClick={() => onSelect(path)}
+              {...osDropHandlers}
+            >
+              <span className="w-3.5 shrink-0" />
+              <FileAxis3D className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              {node.isEditing ? <RenameInput node={node} /> : <span className="truncate">{label}</span>}
+            </TreeRowShell>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => onSelect(path)}>
+            <FileAxis3D className="h-3.5 w-3.5" /> Open
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => node.edit()}>
+            <Move className="h-3.5 w-3.5" /> Rename
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => {
+            openPromptDialog({
+              title: "Move canvas",
+              description: "Enter the new path:",
+              value: path,
+              onConfirm: async (newPath) => {
+                if (newPath === path) return;
+                try {
+                  const { content } = await api.readFile(path);
+                  await api.writeFile(newPath, content);
+                  await api.deleteFile(path);
+                  pushOp({ type: "move", from: path, to: newPath, content });
+                  onMoved?.(newPath);
+                } catch {}
+              },
+            });
+          }}>
+            <Move className="h-3.5 w-3.5" /> Move
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem className="text-destructive focus:text-destructive" onClick={() => {
+            openConfirmDialog({
+              title: "Delete canvas",
+              description: `Delete "${label}"?`,
+              destructive: true,
+              onConfirm: async () => {
+                try {
+                  const { content } = await api.readFile(path);
+                  await api.deleteFile(path);
+                  pushOp({ type: "delete", snapshots: [{ path, content }] });
+                  onDeleted?.();
+                } catch (e) { console.error("Failed to delete canvas:", e); }
+              },
+            });
+          }}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  }
+
+  // Excalidraw whiteboard files open in the whiteboard view
+  if (isExcalidrawFile(path)) {
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div ref={dragHandle} className="h-full w-full">
+            <TreeRowShell
+              node={node}
+              revealRequest={revealRequest}
+              isActive={isActive}
+              osDropHighlight={osDropHighlight}
+              onClick={() => onSelect(path)}
+              {...osDropHandlers}
+            >
+              <span className="w-3.5 shrink-0" />
+              <PenTool className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              {node.isEditing ? <RenameInput node={node} /> : <span className="truncate">{label}</span>}
+            </TreeRowShell>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => onSelect(path)}>
+            <PenTool className="h-3.5 w-3.5" /> Open
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => node.edit()}>
+            <Move className="h-3.5 w-3.5" /> Rename
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => {
+            openPromptDialog({
+              title: "Move whiteboard",
+              description: "Enter the new path:",
+              value: path,
+              onConfirm: async (newPath) => {
+                if (newPath === path) return;
+                try {
+                  const { content } = await api.readFile(path);
+                  await api.writeFile(newPath, content);
+                  await api.deleteFile(path);
+                  pushOp({ type: "move", from: path, to: newPath, content });
+                  onMoved?.(newPath);
+                } catch {}
+              },
+            });
+          }}>
+            <Move className="h-3.5 w-3.5" /> Move
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem className="text-destructive focus:text-destructive" onClick={() => {
+            openConfirmDialog({
+              title: "Delete whiteboard",
+              description: `Delete "${label}"?`,
+              destructive: true,
+              onConfirm: async () => {
+                try {
+                  const { content } = await api.readFile(path);
+                  await api.deleteFile(path);
+                  pushOp({ type: "delete", snapshots: [{ path, content }] });
+                  onDeleted?.();
+                } catch (e) { console.error("Failed to delete whiteboard:", e); }
+              },
+            });
+          }}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   }
 
@@ -1289,6 +1415,11 @@ function TreeNode({
             if (enableKanbanDrag) kanbanDraggable.setNodeRef(el);
           }}
           className="h-full w-full"
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData("application/kiwi-path", path);
+            e.dataTransfer.effectAllowed = "copyLink";
+          }}
           {...(enableKanbanDrag ? { ...kanbanDraggable.attributes, ...kanbanDraggable.listeners } : {})}
         >
           <TreeRowShell

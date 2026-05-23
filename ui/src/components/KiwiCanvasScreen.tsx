@@ -27,8 +27,10 @@ import {
 import { KiwiCanvas } from "./KiwiCanvas";
 
 type Props = {
+  initialCanvasPath?: string | null;
   onClose: () => void;
   onNavigate: (path: string) => void;
+  onTreeRefresh?: () => void;
 };
 
 const LAST_CANVAS_KEY = "kiwifs-last-canvas";
@@ -43,10 +45,10 @@ function canvasPathFromName(name: string): string {
   return `canvases/${base}.canvas.json`;
 }
 
-export function KiwiCanvasScreen({ onClose, onNavigate }: Props) {
+export function KiwiCanvasScreen({ initialCanvasPath, onClose, onNavigate, onTreeRefresh }: Props) {
   const [canvases, setCanvases] = useState<CanvasEntry[]>([]);
   const [listLoading, setListLoading] = useState(true);
-  const [activePath, setActivePath] = useState<string | null>(null);
+  const [activePath, setActivePath] = useState<string | null>(initialCanvasPath ?? null);
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -58,11 +60,41 @@ export function KiwiCanvasScreen({ onClose, onNavigate }: Props) {
     return list;
   }, []);
 
+  const createCanvas = useCallback(async (name: string) => {
+    const path = canvasPathFromName(name);
+    setCreating(true);
+    try {
+      await api.saveCanvas(path, { nodes: [], edges: [] });
+      await refreshList();
+      setActivePath(path);
+      setNewOpen(false);
+      setNewName("");
+      onTreeRefresh?.();
+    } catch (e) {
+      console.error("Create canvas failed:", e);
+    } finally {
+      setCreating(false);
+    }
+  }, [refreshList, onTreeRefresh]);
+
   useEffect(() => {
     refreshList()
+      .then((list) => {
+        if (initialCanvasPath) {
+          setActivePath(initialCanvasPath);
+        } else if (list.length === 0) {
+          createCanvas("Untitled");
+        }
+      })
       .catch(() => setCanvases([]))
       .finally(() => setListLoading(false));
-  }, [refreshList]);
+  }, [refreshList, initialCanvasPath, createCanvas]);
+
+  useEffect(() => {
+    if (initialCanvasPath) {
+      setActivePath(initialCanvasPath);
+    }
+  }, [initialCanvasPath]);
 
   useEffect(() => {
     if (activePath || canvases.length === 0) return;
@@ -81,26 +113,10 @@ export function KiwiCanvasScreen({ onClose, onNavigate }: Props) {
     if (!activePath) return;
     try {
       localStorage.setItem(LAST_CANVAS_KEY, activePath);
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }, [activePath]);
 
-  const handleCreate = async () => {
-    const path = canvasPathFromName(newName);
-    setCreating(true);
-    try {
-      await api.saveCanvas(path, { nodes: [], edges: [] });
-      await refreshList();
-      setActivePath(path);
-      setNewOpen(false);
-      setNewName("");
-    } catch (e) {
-      console.error("Create canvas failed:", e);
-    } finally {
-      setCreating(false);
-    }
-  };
+  const handleCreate = () => createCanvas(newName);
 
   return (
     <div className="h-full flex flex-col">
