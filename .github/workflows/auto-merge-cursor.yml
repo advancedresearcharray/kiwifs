@@ -1,0 +1,72 @@
+name: Auto-merge Cursor agent PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  check_suite:
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'cursor/')
+      ||
+      github.event_name == 'check_suite' &&
+      github.event.check_suite.conclusion == 'success'
+    steps:
+      - name: Find Cursor agent PR
+        id: find-pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            HEAD_REF="${{ github.head_ref }}"
+          else
+            HEAD_SHA="${{ github.event.check_suite.head_sha }}"
+            PR_DATA=$(gh api "repos/${{ github.repository }}/pulls?state=open&head=${{ github.repository_owner }}:cursor/" --jq '.[0] | {number, head_ref: .head.ref, body}' 2>/dev/null || echo '{}')
+            PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number // empty')
+            HEAD_REF=$(echo "$PR_DATA" | jq -r '.head_ref // empty')
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open Cursor PR found"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Verify branch starts with cursor/
+          if [[ ! "$HEAD_REF" == cursor/* ]]; then
+            echo "PR #$PR_NUMBER branch '$HEAD_REF' is not a Cursor agent branch"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Verify PR body contains Cursor agent marker
+          PR_BODY=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json body --jq '.body')
+          if ! echo "$PR_BODY" | grep -q "CURSOR_AGENT_PR_BODY_BEGIN"; then
+            echo "PR #$PR_NUMBER does not have Cursor agent marker in body"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Cursor agent PR #$PR_NUMBER confirmed (branch: $HEAD_REF)"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: steps.find-pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge "${{ steps.find-pr.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --auto --squash \
+            --subject "fix(ci): auto-merge Cursor agent fix (#${{ steps.find-pr.outputs.pr_number }})"
+          echo "Auto-merge enabled for PR #${{ steps.find-pr.outputs.pr_number }}"
