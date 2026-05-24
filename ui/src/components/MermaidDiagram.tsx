@@ -36,6 +36,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const renderIdRef = useRef(`kiwi-mermaid-${Math.random().toString(36).slice(2)}`);
+  const bindFunctionsRef = useRef<((element: Element) => void) | undefined>(undefined);
   const dragRef = useRef<{ startX: number; startY: number; startPanX: number; startPanY: number } | null>(null);
 
   const [isDark, setIsDark] = useState<boolean>(
@@ -65,14 +66,16 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       setPan({ x: 0, y: 0 });
 
       try {
-        const mermaid = await ensureInit(isDark ? "dark" : "default");
+        // Keep the application color mode from becoming an implicit Mermaid
+        // theme override. Mermaid's dark theme can emit light text on nodes that
+        // remain light, and app-level theme changes should not take precedence
+        // over per-diagram %%{init: ...}%% theme/themeVariables settings.
+        const mermaid = await ensureInit("default");
         const rendered = await mermaid.render(renderIdRef.current, chart);
         if (cancelled) return;
 
+        bindFunctionsRef.current = rendered.bindFunctions;
         setSvg(rendered.svg);
-        queueMicrotask(() => {
-          if (containerRef.current) rendered.bindFunctions?.(containerRef.current);
-        });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
@@ -83,6 +86,18 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       cancelled = true;
     };
   }, [chart, isDark]);
+
+  useEffect(() => {
+    const host = containerRef.current;
+    if (!host || !svg) return;
+
+    const root = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    root.innerHTML = `<style>
+      :host { display: block; }
+      svg { display: block; width: 100%; max-width: 100%; height: auto; }
+    </style>${svg}`;
+    bindFunctionsRef.current?.(root as unknown as Element);
+  }, [svg]);
 
   // Scroll-wheel zoom (also handles trackpad pinch via ctrlKey)
   useEffect(() => {
@@ -208,7 +223,6 @@ export function MermaidDiagram({ chart }: { chart: string }) {
                 width: `${zoom * 100}%`,
                 transform: `translate(${pan.x}px, ${pan.y}px)`,
               }}
-              dangerouslySetInnerHTML={{ __html: svg }}
             />
           </div>
           {!isDefaultView && (
