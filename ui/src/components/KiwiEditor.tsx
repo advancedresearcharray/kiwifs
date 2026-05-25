@@ -510,6 +510,7 @@ function EditorInner({
   const requestModeSwitch = useCallback(
     (target: EditorMode) => {
       if (target === editorMode) return;
+      if (saveStatus === "saving" || saving) return;
       if (saveStatus === "dirty") {
         setPendingSwitchTarget(target);
         setModeSwitchOpen(true);
@@ -517,7 +518,7 @@ function EditorInner({
       }
       void performModeSwitch(target);
     },
-    [editorMode, saveStatus, performModeSwitch],
+    [editorMode, saveStatus, saving, performModeSwitch],
   );
 
   const handleModeSwitchSave = useCallback(async () => {
@@ -599,6 +600,7 @@ function EditorInner({
               <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                 <EditorModeToggle
                   mode={editorMode}
+                  disabled={saving || saveStatus === "saving"}
                   onSelect={requestModeSwitch}
                 />
                 <Button
@@ -767,19 +769,26 @@ function EditorInner({
 
 function EditorModeToggle({
   mode,
+  disabled,
   onSelect,
 }: {
   mode: EditorMode;
+  disabled?: boolean;
   onSelect: (mode: EditorMode) => void;
 }) {
   return (
     <div
-      className="inline-flex rounded-md border border-border p-0.5 bg-muted/40"
+      className={cn(
+        "inline-flex rounded-md border border-border p-0.5 bg-muted/40",
+        disabled && "opacity-50 pointer-events-none",
+      )}
       role="group"
       aria-label="Editor mode"
+      aria-disabled={disabled || undefined}
     >
       <button
         type="button"
+        disabled={disabled}
         aria-pressed={mode === "visual"}
         className={cn(
           "inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors",
@@ -794,6 +803,7 @@ function EditorModeToggle({
       </button>
       <button
         type="button"
+        disabled={disabled}
         aria-pressed={mode === "source"}
         className={cn(
           "inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors",
