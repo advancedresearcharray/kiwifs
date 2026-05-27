@@ -5,7 +5,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { type Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import { cn } from "@/lib/cn";
+import { cn } from "@kw/lib/cn";
 import { markdownEditorExtensions } from "./markdownLanguage";
 import { markdownEditorTheme } from "./markdownEditorTheme";
 import { slashCompletionSource } from "./markdownSlashCommands";
