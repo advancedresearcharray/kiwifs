@@ -96,39 +96,50 @@ func TestKnowledgeTemplateInit(t *testing.T) {
 	}
 }
 
-func TestTeamWikiTemplateEmbedded(t *testing.T) {
+func TestWikiTemplateEmbedded(t *testing.T) {
 	t.Parallel()
 	paths := []string{
-		"templates/team-wiki/SCHEMA.md",
-		"templates/team-wiki/index.md",
-		"templates/team-wiki/welcome.md",
-		"templates/team-wiki/how-we-work.md",
-		"templates/team-wiki/architecture.md",
-		"templates/team-wiki/playbook.md",
-		"templates/team-wiki/onboarding/index.md",
-		"templates/team-wiki/decisions/index.md",
-		"templates/team-wiki/decisions/adr-001-example.md",
-		"templates/team-wiki/processes/index.md",
-		"templates/team-wiki/processes/deployment.md",
-		"templates/team-wiki/processes/dev-setup.md",
-		"templates/team-wiki/processes/incident-response.md",
-		"templates/team-wiki/reference/index.md",
-		"templates/team-wiki/reference/glossary.md",
-		"templates/team-wiki/reference/faq.md",
+		"templates/wiki/SCHEMA.md",
+		"templates/wiki/index.md",
+		"templates/wiki/welcome.md",
+		"templates/wiki/how-we-work.md",
+		"templates/wiki/architecture.md",
+		"templates/wiki/playbook.md",
+		"templates/wiki/onboarding/index.md",
+		"templates/wiki/decisions/index.md",
+		"templates/wiki/decisions/adr-001-example.md",
+		"templates/wiki/processes/index.md",
+		"templates/wiki/processes/deployment.md",
+		"templates/wiki/processes/dev-setup.md",
+		"templates/wiki/processes/incident-response.md",
+		"templates/wiki/reference/index.md",
+		"templates/wiki/reference/glossary.md",
+		"templates/wiki/reference/faq.md",
 	}
 	for _, p := range paths {
 		if _, err := fs.Stat(templates, p); err != nil {
 			t.Fatalf("embedded template missing %s: %v", p, err)
 		}
 	}
+
+	absent := []string{
+		"templates/wiki/getting-started.md",
+		"templates/wiki/engineering",
+		"templates/wiki/product",
+	}
+	for _, p := range absent {
+		if _, err := fs.Stat(templates, p); err == nil {
+			t.Fatalf("expected old wiki file %s to be removed, but it still exists", p)
+		}
+	}
 }
 
-func TestTeamWikiTemplateInit(t *testing.T) {
+func TestWikiTemplateInit(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "wiki")
 
 	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--root", root, "--template", "team-wiki"})
+	cmd.SetArgs([]string{"--root", root, "--template", "wiki"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +173,6 @@ func TestTeamWikiTemplateInit(t *testing.T) {
 		}
 	}
 
-	// Verify frontmatter is present in key pages
 	welcome, err := os.ReadFile(filepath.Join(root, "welcome.md"))
 	if err != nil {
 		t.Fatal(err)
