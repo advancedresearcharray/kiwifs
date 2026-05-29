@@ -14,6 +14,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/api"
 	"github.com/kiwifs/kiwifs/internal/bootstrap"
 	"github.com/kiwifs/kiwifs/internal/config"
+	"github.com/kiwifs/kiwifs/internal/workspace"
 	"github.com/labstack/echo/v4"
 )
 
@@ -312,10 +313,10 @@ func (m *Manager) SpaceInfo(name string) (*SpaceMeta, error) {
 	return meta, nil
 }
 
-// CreateSpace initialises a new space directory with a minimal config,
-// builds the full dependency stack, and registers it. Returns the space
-// metadata on success.
-func (m *Manager) CreateSpace(name, root string) (*SpaceMeta, error) {
+// CreateSpace initialises a new space directory with the chosen workspace
+// template (blank by default), builds the full dependency stack, and
+// registers it. Returns the space metadata on success.
+func (m *Manager) CreateSpace(name, root, template string) (*SpaceMeta, error) {
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
@@ -338,24 +339,11 @@ func (m *Manager) CreateSpace(name, root string) (*SpaceMeta, error) {
 		return nil, fmt.Errorf("invalid space name %q", name)
 	}
 
-	if err := os.MkdirAll(root, 0755); err != nil {
-		return nil, fmt.Errorf("create root: %w", err)
+	if template == "" {
+		template = "blank"
 	}
-	kiwiDir := filepath.Join(root, ".kiwi")
-	if err := os.MkdirAll(kiwiDir, 0755); err != nil {
-		return nil, fmt.Errorf("create .kiwi: %w", err)
-	}
-	cfgPath := filepath.Join(kiwiDir, "config.toml")
-	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		minimal := "[search]\nengine = \"sqlite\"\n\n[versioning]\nstrategy = \"git\"\n"
-		if werr := os.WriteFile(cfgPath, []byte(minimal), 0644); werr != nil {
-			return nil, fmt.Errorf("write config: %w", werr)
-		}
-	}
-	rulesPath := filepath.Join(kiwiDir, "rules.md")
-	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
-		defaultRules := "# Agent Rules\n\nRules in this file are included in `kiwi_context` for every connected agent.\n\n## Always\n\n- Search existing pages before creating new ones\n- After implementing a feature, update relevant documentation\n"
-		_ = os.WriteFile(rulesPath, []byte(defaultRules), 0644)
+	if err := workspace.Init(root, template); err != nil {
+		return nil, err
 	}
 
 	cfg := m.spaceCfg(root)
@@ -415,6 +403,14 @@ func (m *Manager) Handler() http.Handler {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	e.GET("/api/init-templates", func(c echo.Context) error {
+		list, err := workspace.ListInitTemplates()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, map[string]interface{}{"templates": list})
+	})
+
 	e.GET("/api/spaces", func(c echo.Context) error {
 		names := m.ListSpaces()
 		out := make([]SpaceMeta, 0, len(names))
@@ -437,13 +433,14 @@ func (m *Manager) Handler() http.Handler {
 
 	e.POST("/api/spaces", func(c echo.Context) error {
 		var body struct {
-			Name string `json:"name"`
-			Root string `json:"root"`
+			Name     string `json:"name"`
+			Root     string `json:"root"`
+			Template string `json:"template"`
 		}
 		if err := c.Bind(&body); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid JSON body")
 		}
-		info, err := m.CreateSpace(body.Name, body.Root)
+		info, err := m.CreateSpace(body.Name, body.Root, body.Template)
 		if err != nil {
 			if strings.Contains(err.Error(), "already exists") {
 				return echo.NewHTTPError(http.StatusConflict, err.Error())

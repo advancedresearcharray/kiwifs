@@ -7,11 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kiwifs/kiwifs/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
 func TestKnowledgeTemplateEmbedded(t *testing.T) {
 	t.Parallel()
+	embedded := workspace.EmbeddedTemplates()
 	paths := []string{
 		"templates/knowledge/SCHEMA.md",
 		"templates/knowledge/index.md",
@@ -21,7 +23,7 @@ func TestKnowledgeTemplateEmbedded(t *testing.T) {
 		"templates/knowledge/playbook.md",
 	}
 	for _, p := range paths {
-		if _, err := fs.Stat(templates, p); err != nil {
+		if _, err := fs.Stat(embedded, p); err != nil {
 			t.Fatalf("embedded template missing %s: %v", p, err)
 		}
 	}
@@ -34,7 +36,7 @@ func TestKnowledgeTemplateEmbedded(t *testing.T) {
 		"templates/knowledge/welcome.md",
 	}
 	for _, p := range absent {
-		if _, err := fs.Stat(templates, p); err == nil {
+		if _, err := fs.Stat(embedded, p); err == nil {
 			t.Fatalf("expected %s to be removed, but it still exists", p)
 		}
 	}
@@ -42,7 +44,7 @@ func TestKnowledgeTemplateEmbedded(t *testing.T) {
 
 func TestMemoryTemplateRemoved(t *testing.T) {
 	t.Parallel()
-	if _, err := fs.Stat(templates, "templates/memory/SCHEMA.md"); err == nil {
+	if _, err := fs.Stat(workspace.EmbeddedTemplates(), "templates/memory/SCHEMA.md"); err == nil {
 		t.Fatal("memory template should be removed from embedded files")
 	}
 }
@@ -98,6 +100,7 @@ func TestKnowledgeTemplateInit(t *testing.T) {
 
 func TestWikiTemplateEmbedded(t *testing.T) {
 	t.Parallel()
+	embedded := workspace.EmbeddedTemplates()
 	paths := []string{
 		"templates/wiki/SCHEMA.md",
 		"templates/wiki/index.md",
@@ -117,7 +120,7 @@ func TestWikiTemplateEmbedded(t *testing.T) {
 		"templates/wiki/reference/faq.md",
 	}
 	for _, p := range paths {
-		if _, err := fs.Stat(templates, p); err != nil {
+		if _, err := fs.Stat(embedded, p); err != nil {
 			t.Fatalf("embedded template missing %s: %v", p, err)
 		}
 	}
@@ -128,7 +131,7 @@ func TestWikiTemplateEmbedded(t *testing.T) {
 		"templates/wiki/product",
 	}
 	for _, p := range absent {
-		if _, err := fs.Stat(templates, p); err == nil {
+		if _, err := fs.Stat(embedded, p); err == nil {
 			t.Fatalf("expected old wiki file %s to be removed, but it still exists", p)
 		}
 	}

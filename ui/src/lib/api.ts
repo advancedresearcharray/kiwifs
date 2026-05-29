@@ -230,13 +230,20 @@ export const api = {
 
   async createSpace(
     name: string,
-    root: string
+    root: string,
+    template?: string
   ): Promise<SpaceMeta> {
     return request("/api/spaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, root }),
+      body: JSON.stringify({ name, root, template: template ?? "blank" }),
     });
+  },
+
+  async listInitTemplates(): Promise<{
+    templates: { id: string; label: string; description?: string }[];
+  }> {
+    return request("/api/init-templates");
   },
 
   async deleteSpace(name: string): Promise<{ deleted: string }> {
