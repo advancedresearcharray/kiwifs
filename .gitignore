@@ -37,7 +37,7 @@ tmp/
 
 # Runtime data (created by `kiwifs init`)
 knowledge/
-!cmd/templates/knowledge/
+!internal/workspace/templates/knowledge/
 
 # Storybook
 ui/storybook-static/

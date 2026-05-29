@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -241,6 +243,71 @@ func TestListSpacesPreservesOrder(t *testing.T) {
 }
 
 // ─── HTTP handler tests for space CRUD ──────────────────────────────────────
+
+func TestHTTPListInitTemplates(t *testing.T) {
+	m := NewManager(nil)
+	defer m.Close()
+	h := m.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/init-templates", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/init-templates status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Templates []struct {
+			ID          string `json:"id"`
+			Label       string `json:"label"`
+			Description string `json:"description"`
+		} `json:"templates"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Templates) == 0 {
+		t.Fatal("expected at least one init template")
+	}
+	foundKnowledge := false
+	for _, tpl := range resp.Templates {
+		if tpl.ID == "knowledge" {
+			foundKnowledge = true
+			if tpl.Label == "" {
+				t.Fatal("knowledge template missing label")
+			}
+		}
+	}
+	if !foundKnowledge {
+		t.Fatalf("knowledge template not found in %v", resp.Templates)
+	}
+}
+
+func TestHTTPCreateSpaceWithTemplate(t *testing.T) {
+	baseCfg := minimalCfg()
+	baseCfg.Storage.Root = t.TempDir()
+	m := NewManager(baseCfg)
+	dir := t.TempDir()
+	m.AddSpace("seed", dir, minimalCfg())
+	defer m.Close()
+
+	h := m.Handler()
+	spaceRoot := filepath.Join(t.TempDir(), "wiki-space")
+
+	body := `{"name":"wikispace","root":"` + spaceRoot + `","template":"wiki"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/spaces", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/spaces status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(spaceRoot, "welcome.md")); err != nil {
+		t.Fatalf("wiki template should create welcome.md: %v", err)
+	}
+}
 
 func TestHTTPCreateSpace(t *testing.T) {
 	baseCfg := minimalCfg()
