@@ -3,6 +3,7 @@ import {
   Clock4,
   Columns3,
   Database,
+  FileText,
   LayoutGrid,
   Moon,
   Network,
@@ -30,6 +31,7 @@ import { KiwiCanvasScreen } from "./components/KiwiCanvasScreen";
 import { KiwiWhiteboardScreen } from "./components/KiwiWhiteboardScreen";
 import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
+import { KiwiDocs } from "./components/KiwiDocs";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
@@ -80,6 +82,7 @@ export default function App() {
   const [initialWhiteboardPath, setInitialWhiteboardPath] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
   const treeRef = useRef<KiwiTreeHandle>(null);
   const treeFilterRef = useRef<HTMLInputElement>(null);
@@ -102,6 +105,7 @@ export default function App() {
     setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setDocsOpen(false);
     setDataOpen(false);
     setGraphOpen(false);
     setHistoryOpen(false);
@@ -134,8 +138,8 @@ export default function App() {
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
-  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen });
-  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen };
+  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen, docsOpen });
+  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen, docsOpen };
 
   // Prevent browser from navigating to a file:// URL when OS files are
   // dropped anywhere on the page.  react-dnd's HTML5Backend (inside
@@ -247,6 +251,7 @@ const handleSpaceSwitch = useCallback(() => {
     setCanvasOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setDocsOpen(false);
     setSpaceKey((k) => k + 1);
     setRefreshKey((k) => k + 1);
   }, []);
@@ -332,6 +337,7 @@ const handleSpaceSwitch = useCallback(() => {
         setCanvasOpen(false);
         setTimelineOpen(false);
         setKanbanOpen(false);
+        setDocsOpen(false);
       } else if (pathname === "/") {
         fromPopState.current = true;
         setActivePath(null);
@@ -389,6 +395,7 @@ const handleSpaceSwitch = useCallback(() => {
     setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setDocsOpen(false);
     recordVisit(path);
     if (isMobile) setSidebarOpen(false);
   }
@@ -463,6 +470,9 @@ const handleSpaceSwitch = useCallback(() => {
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !kanbanOpen; closeAllViews(); setKanbanOpen(next); }} label="Kanban">
               <Columns3 className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => { if (!activePath) return; const next = !docsOpen; closeAllViews(); setDocsOpen(next); }} label="Document view">
+              <FileText className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
               <Database className="h-4 w-4" />
@@ -542,7 +552,7 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || docsOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
             {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
@@ -571,6 +581,13 @@ const handleSpaceSwitch = useCallback(() => {
               <KiwiKanban
                 onClose={() => setKanbanOpen(false)}
                 onNavigate={(p) => { setKanbanOpen(false); navigate(p); }}
+              />
+            ) : docsOpen && activePath ? (
+              <KiwiDocs
+                path={activePath}
+                tree={tree}
+                onClose={() => setDocsOpen(false)}
+                onNavigate={(p) => { setDocsOpen(false); navigate(p); }}
               />
             ) : dataOpen ? (
               <KiwiData onClose={() => setDataOpen(false)} />
