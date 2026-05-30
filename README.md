@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.kiwifs.com">Docs</a> · <a href="docs/API.md">API</a> · <a href="https://demo.kiwifs.com">Demo</a> · <a href="docs/EXAMPLES.md">Examples</a> · <a href="docs/FAQ.md">FAQ</a> · <a href="docs/ROADMAP.md">Roadmap</a> · <a href="docs/ARCHITECTURE.md">Architecture</a> · <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="https://docs.kiwifs.com">Docs</a> · <a href="docs/API.md">API</a> · <a href="https://demo.kiwifs.com/storybook/">Storybook</a> · <a href="docs/EXAMPLES.md">Examples</a> · <a href="docs/FAQ.md">FAQ</a> · <a href="docs/ROADMAP.md">Roadmap</a> · <a href="docs/ARCHITECTURE.md">Architecture</a> · <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 ```bash
@@ -65,7 +65,7 @@ echo "# Report" > /kiwi/r.md      Cmd+K search, backlinks, TOC
 | | |
 |---|---|
 | **62 MCP tools** | Native integration with Claude, Cursor, and any MCP client. [Docs](https://docs.kiwifs.com/concepts/mcp) |
-| **Web UI** | Wiki links, backlinks, graph view, block editor, dark mode. Embedded via `go:embed`. [Demo](https://demo.kiwifs.com) |
+| **Web UI** | Wiki links, backlinks, graph view, block editor, dark mode. Embedded via `go:embed`. [Storybook](https://demo.kiwifs.com/storybook/) |
 | **Full-text + vector search** | BM25 via SQLite FTS5. Pluggable vector: OpenAI, Ollama, Cohere + sqlite-vec, Qdrant, pgvector, Pinecone. [Docs](https://docs.kiwifs.com/concepts/search) |
 | **Git versioning** | Every write is an atomic commit. Blame, diff, point-in-time restore. [Docs](https://docs.kiwifs.com/concepts/versioning) |
 | **DQL queries** | SQL-like queries over frontmatter. `TABLE`, `LIST`, `COUNT`, `WHERE`, `SORT`, `GROUP BY`. [Docs](https://docs.kiwifs.com/concepts/dql) |
