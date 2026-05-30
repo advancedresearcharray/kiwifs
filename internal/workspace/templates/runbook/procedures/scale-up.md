@@ -1,8 +1,11 @@
 ---
 title: Scale Up
 tags: [capacity, scaling, performance]
-status: draft
+status: active
 last-reviewed: 2026-01-01
+last-tested:
+test-cadence: quarterly
+estimated-time: "5-10 minutes"
 ---
 
 # Scale Up

@@ -1,7 +1,7 @@
 ---
 tracker:
   kind: kiwi
-  endpoint: http://localhost:3030
+  endpoint: ${KIWIFS_URL:-http://localhost:3333}
   api_prefix: /api/kiwi
 
 polling:

@@ -94,25 +94,71 @@ Total: ~1500 tokens. Full reads would have cost ~8000 tokens.
    episode_id: unique-id
    session_id: current-session
    confidence: 0.8
+   importance: 3
    tags: [topic]
+   related-pages: [pages/relevant-page.md]
    ---
    ```
-2. `kiwi_append` to `log.md`:
+2. Structure the episode body with sections:
+   - **Observation** — what was learned
+   - **Context** — why it matters
+   - **Decision Trace** — reasoning behind any choices
+   - **Outcome** — what resulted
+3. `kiwi_append` to `log.md`:
    `- YYYY-MM-DD: Remembered <summary> → [[episodes/<file>]]`
+
+### Importance Scale
+
+| Level | Meaning | Consolidation |
+|-------|---------|---------------|
+| 5 | Critical insight, must persist | Consolidate immediately |
+| 4 | High value, consolidate soon | Next consolidation pass |
+| 3 | Normal observation | Standard weekly consolidation |
+| 2 | Low value, context-dependent | Consolidate only if pattern emerges |
+| 1 | Ephemeral, unlikely to matter | Archive after 90 days if unused |
 
 ## Consolidate (episodes → durable pages)
 
-Run when asked, or when `kiwi_memory_report` shows unconsolidated episodes.
+### When to Run
+
+Consolidation should trigger when:
+- `kiwi_memory_report` shows ≥ 5 unconsolidated episodes on the same topic
+- Any episode has `importance: 5`
+- A weekly maintenance pass runs
+- Explicitly requested by a human or orchestrator
+
+### Procedure
 
 1. `kiwi_memory_report` — list unconsolidated episodes.
-2. `kiwi_read` each unconsolidated episode.
-3. Extract durable facts. `kiwi_search` for existing pages on
+2. Group episodes by topic (use `tags` and `related-pages`).
+3. `kiwi_read` each unconsolidated episode in a topic group.
+4. **Check for contradictions.** If episodes disagree with existing pages:
+   - Higher confidence wins
+   - More recent wins when confidence is equal
+   - If ambiguous, flag for human review (do not silently overwrite)
+5. Extract durable facts. `kiwi_search` for existing pages on
    those topics.
-4. Merge into existing `pages/` entries or create new ones.
-   Set `merged-from` in the page frontmatter listing episode paths.
-5. Mark episodes: `kiwi_write` each with `consolidated: true` and
+6. Merge into existing `pages/` entries or create new ones.
+   Set `merged-from` in the page frontmatter:
+   ```yaml
+   merged-from:
+     - path: episodes/session-001-finding.md
+       episode_id: session-001
+       date: 2026-05-30
+   ```
+7. Set `derived-from` with `type: consolidation` on the page.
+8. Mark episodes: `kiwi_write` each with `consolidated: true` and
    `merged-into: [pages/<slug>.md]` added to frontmatter.
-6. Update `log.md` and `index.md`.
+9. Update `log.md` and `index.md`.
+
+### Pruning and Archival
+
+After consolidation:
+- Episodes with `consolidated: true` older than 90 days: move to
+  `episodes/archive/` to reduce retrieval noise.
+- Never delete episodes — archive preserves the audit trail.
+- Low-importance episodes (≤ 2) older than 90 days without
+  consolidation: review and archive or consolidate.
 
 ## Lint (maintenance pass)
 

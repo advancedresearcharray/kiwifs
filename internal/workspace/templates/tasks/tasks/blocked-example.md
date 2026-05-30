@@ -1,8 +1,10 @@
 ---
 type: task
 title: Deploy new API version
+category: feature
 status: blocked
 priority: 1
+effort: m
 assignee: ""
 blocked-by:
   - tasks/example-task.md

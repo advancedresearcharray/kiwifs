@@ -14,19 +14,25 @@ operations to find work, track progress, and manage dependencies.
 Query for tasks ready to be picked up, ordered by priority:
 
 ```
-kiwi_query("TABLE _path, title, priority, tags WHERE type = 'task' AND status = 'todo' AND _blocked = false SORT priority ASC")
+kiwi_query("TABLE _path, title, priority, effort, tags WHERE type = 'task' AND status = 'todo' AND _blocked = false SORT priority ASC")
 ```
 
 To see all tasks across all statuses:
 
 ```
-kiwi_query("TABLE _path, title, status, priority, assignee WHERE type = 'task' SORT priority ASC, _updated DESC")
+kiwi_query("TABLE _path, title, status, priority, effort, assignee WHERE type = 'task' SORT priority ASC, _updated DESC")
 ```
 
 To find blocked tasks:
 
 ```
 kiwi_query("TABLE _path, title, blocked-by WHERE type = 'task' AND status = 'blocked'")
+```
+
+To view an epic's sub-tasks:
+
+```
+kiwi_query("TABLE _path, title, status, effort WHERE parent = 'tasks/epic-slug.md' SORT priority ASC")
 ```
 
 ## Claim a Task
@@ -85,15 +91,34 @@ Use this frontmatter:
 ---
 type: task
 title: "Short description of what to do"
+category: feature
 status: todo
 priority: 2
+effort: m
 assignee: ""
 tags: [area, topic]
 ---
 ```
 
 Include acceptance criteria in the body. See SCHEMA.md for the full
-field reference and priority scale.
+field reference, priority scale, and effort scale.
+
+### Create an Epic
+
+For large work that decomposes into multiple tasks:
+
+```yaml
+---
+type: task
+title: "Epic: User Authentication"
+category: epic
+status: in_progress
+priority: 1
+tags: [auth, security]
+---
+```
+
+Then create sub-tasks with `parent: tasks/epic-slug.md`.
 
 ## Bulk Operations
 
@@ -103,7 +128,7 @@ field reference and priority scale.
 kiwi_query("TABLE _path, title WHERE type = 'task' AND priority IS NULL")
 ```
 
-Review each and set appropriate priority.
+Review each and set appropriate priority, category, and effort.
 
 ### Find stale in-progress tasks
 
@@ -114,6 +139,12 @@ kiwi_query("TABLE _path, title, claimed-by, claimed-at WHERE type = 'task' AND s
 If a task has been in-progress for too long with no updates, check
 if the claim has expired and re-assign.
 
+### Check epic progress
+
+```
+kiwi_query("TABLE parent, count(_path) AS total, count(CASE WHEN status = 'done' THEN 1 END) AS completed WHERE parent IS NOT NULL GROUP BY parent")
+```
+
 ### Archive completed tasks
 
 Move done tasks to keep the board clean:
@@ -121,6 +152,24 @@ Move done tasks to keep the board clean:
 ```
 kiwi_rename("tasks/done-task.md", "tasks/done/done-task.md")
 ```
+
+## Maintain
+
+Run periodically:
+
+1. `kiwi_lint` with `path` — check individual files for structural issues.
+2. Find tasks without effort estimates:
+   ```
+   kiwi_query("TABLE _path, title WHERE type = 'task' AND effort IS NULL AND status != 'done'")
+   ```
+3. Find `xl` tasks that should be split:
+   ```
+   kiwi_query("TABLE _path, title WHERE type = 'task' AND effort = 'xl' AND category != 'epic'")
+   ```
+4. Check for stale claims (expired leases).
+5. Verify blocked tasks still have valid blockers.
+
+**Best practice:** After every `kiwi_write`, call `kiwi_lint` on the same path.
 
 ## Quality Rules
 
@@ -130,3 +179,7 @@ kiwi_rename("tasks/done-task.md", "tasks/done/done-task.md")
 - **Include acceptance criteria** — agents need clear "definition of done."
 - **Use `blocked-by` for dependencies** — don't leave implicit blockers.
 - **When done, mark `done`** — this may unblock downstream tasks.
+- **Estimate effort** — every task should have an `effort` size.
+- **Categorize work** — use `category` to distinguish features from bugs from chores.
+- **Respect the DoD** — review the Definition of Done before marking complete.
+- **Split `xl` tasks** — if effort is `xl`, decompose into an epic with sub-tasks.

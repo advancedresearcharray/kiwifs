@@ -1,8 +1,11 @@
 ---
 title: Deploy Rollback
 tags: [deployment, rollback, ci-cd]
-status: draft
+status: active
 last-reviewed: 2026-01-01
+last-tested: 2026-01-01
+test-cadence: quarterly
+estimated-time: "10-15 minutes"
 ---
 
 # Deploy Rollback

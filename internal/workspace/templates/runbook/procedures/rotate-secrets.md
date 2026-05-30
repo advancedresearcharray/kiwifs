@@ -1,8 +1,11 @@
 ---
 title: Rotate Secrets
 tags: [security, secrets, credentials]
-status: draft
+status: active
 last-reviewed: 2026-01-01
+last-tested:
+test-cadence: quarterly
+estimated-time: "20-30 minutes"
 ---
 
 # Rotate Secrets

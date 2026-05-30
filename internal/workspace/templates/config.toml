@@ -7,6 +7,7 @@ root = "."
 
 [search]
 engine = "sqlite"
+# semantic = false  # Enable vector search (requires embedding model config)
 
 [versioning]
 strategy = "git"
@@ -15,30 +16,21 @@ strategy = "git"
 # remote = "git@github.com:user/kb.git"
 # interval = "5m"
 # branch = "main"
-# Rebase onto the backup branch before pushing. Defaults to true so
-# out-of-band pushes from another client are incorporated before backup.
 # rebase_before_push = true
 
 [memory]
-# Episodic files live here when memory_kind is unset (see docs/MEMORY.md).
 # episodes_path_prefix = "episodes/"
+# consolidation_threshold = 5  # Auto-flag when N episodes share a topic
+# stale_episode_days = 90      # Days before unconsolidated episodes are flagged
+
+[lint]
+# require_frontmatter = true
+# require_title = true
+# require_tags = true
+# max_page_lines = 300
+# check_wikilinks = true
+# freshness_default_days = 90
 
 [auth]
 type = "none"
-# type = "apikey"  → single global key via api_key below
-# type = "perspace" → per-space keys via [[auth.api_keys]] below
-# type = "oidc"    → JWT validation via [auth.oidc] below
-
-# Single global API key (auth.type = "apikey"):
-# api_key = "your-secret-key"
-
-# Per-space API keys (auth.type = "perspace"):
-# [[auth.api_keys]]
-# key   = "kiwi_proj_abc123"
-# space = "project-alpha"
-# actor = "my-agent"
-
-# OIDC / OAuth JWT validation (auth.type = "oidc"):
-# [auth.oidc]
-# issuer    = "https://accounts.google.com"
-# client_id = "your-client-id"
+# type = "apikey" / "perspace" / "oidc" ...
