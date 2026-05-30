@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.19.8](https://github.com/kiwifs/kiwifs/compare/v0.19.7...v0.19.8) (2026-05-30)
+
+
+### Features
+
+* rename Team Wiki → Wiki, add README scaffold to init ([2c8d330](https://github.com/kiwifs/kiwifs/commit/2c8d33054fe10e3795069779845552dfcca1d567))
+* **templates:** flesh out all init templates with richer scaffolding ([9a1ef39](https://github.com/kiwifs/kiwifs/commit/9a1ef3979173c45adf874d85050f4b2a79d0aec4))
+
+
+### Bug Fixes
+
+* add root redirect to /storybook/ on GitHub Pages ([ce6d6d3](https://github.com/kiwifs/kiwifs/commit/ce6d6d327d70054dac7eca5bb3019aeaba02996b))
+* add root redirect to /storybook/ on GitHub Pages ([ac07c1a](https://github.com/kiwifs/kiwifs/commit/ac07c1a2e707389e440b8ad53cd0eaa34a2aa6c9))
+* replace root redirect with index page, update demo links ([1e06fca](https://github.com/kiwifs/kiwifs/commit/1e06fca55bee779c9a4fb681e8a9f9920a6954f9))
+
 ## [0.19.7](https://github.com/kiwifs/kiwifs/compare/v0.19.6...v0.19.7) (2026-05-29)
 
 
