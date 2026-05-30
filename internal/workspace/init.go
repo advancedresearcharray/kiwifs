@@ -27,7 +27,7 @@ var nonSpaceDirs = map[string]bool{
 
 var templateLabels = map[string]string{
 	"knowledge": "Knowledge Base",
-	"wiki":      "Team Wiki",
+	"wiki":      "Wiki",
 	"runbook":   "Runbook",
 	"research":  "Research",
 	"tasks":     "Tasks",
@@ -36,7 +36,7 @@ var templateLabels = map[string]string{
 
 var templateDescriptions = map[string]string{
 	"knowledge": "LLM-maintained knowledge base with schema, episodes, and agent playbook",
-	"wiki":      "Team wiki with onboarding, ADRs, processes, and reference docs",
+	"wiki":      "Wiki with onboarding, ADRs, processes, and reference docs",
 	"runbook":   "Operational runbooks and incident response procedures",
 	"research":  "Research notes, hypotheses, and literature tracking",
 	"tasks":     "Task tracking with priorities and status workflows",
@@ -166,6 +166,14 @@ func Init(root, template string) error {
 		data, _ := fs.ReadFile(templates, "templates/rules.md")
 		if len(data) > 0 {
 			_ = os.WriteFile(rulesPath, data, 0644)
+		}
+	}
+
+	readmePath := filepath.Join(root, "README.md")
+	if _, err := os.Stat(readmePath); os.IsNotExist(err) {
+		data, _ := fs.ReadFile(templates, "templates/README.md")
+		if len(data) > 0 {
+			_ = os.WriteFile(readmePath, data, 0644)
 		}
 	}
 
