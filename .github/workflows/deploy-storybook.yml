@@ -42,6 +42,7 @@ jobs:
         run: |
           mkdir -p _site/storybook
           cp -r ui/storybook-static/* _site/storybook/
+          echo '<meta http-equiv="refresh" content="0;url=/storybook/">' > _site/index.html
 
       - name: upload pages artifact
         uses: actions/upload-pages-artifact@v3
