@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest an idea or improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: Describe the problem you're trying to solve or the workflow you want to improve.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: "How you'd like it to work. Be specific about the interface: CLI flag, API endpoint, UI behavior, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you've thought about.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: use_case_type
+    attributes:
+      label: How are you using KiwiFS?
+      description: This helps us prioritize.
+      options:
+        - Agent memory
+        - Team wiki
+        - Personal knowledge base
+        - Compliance / audit docs
+        - Headless CMS
+        - Data query / analysis
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and this hasn't been requested yet.
+          required: true
