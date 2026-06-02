@@ -101,7 +101,7 @@ export function WatchDialog({ open, onOpenChange, path, isWatched, isCloud, onWa
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
           <Bell className="h-3.5 w-3.5 shrink-0" />
-          <span>Configure notification channels in workspace settings.</span>
+          <span>Configure notification channels in organization settings.</span>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">

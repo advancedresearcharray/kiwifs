@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 type WatchEntry = {
   path: string;
-  channel?: string;
 };
 
 const BASE_KEY = "kiwifs-watched-pages";
@@ -40,18 +39,18 @@ async function fetchWatches(): Promise<WatchEntry[]> {
     const res = await fetch("/api/kiwi/watches");
     if (!res.ok) return [];
     const data = await res.json();
-    return (data as any[]).map((w: any) => ({ path: w.path, channel: w.channel }));
+    return (data as any[]).map((w: any) => ({ path: w.path }));
   } catch {
     return [];
   }
 }
 
-async function createWatchApi(path: string, channel?: string): Promise<boolean> {
+async function createWatchApi(path: string): Promise<boolean> {
   try {
     const res = await fetch("/api/kiwi/watches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, channel }),
+      body: JSON.stringify({ path }),
     });
     return res.ok || res.status === 409;
   } catch {
@@ -88,9 +87,9 @@ export function useWatchedPages(space: string = "default") {
   }, [space, cloud]);
 
   const addWatch = useCallback(
-    async (path: string, channel?: string) => {
+    async (path: string) => {
       if (cloud) {
-        const ok = await createWatchApi(path, channel);
+        const ok = await createWatchApi(path);
         if (ok) {
           const updated = await fetchWatches();
           setWatched(updated);
@@ -98,7 +97,7 @@ export function useWatchedPages(space: string = "default") {
         }
       } else {
         setWatched((prev) => {
-          const next = [...prev, { path, channel }];
+          const next = [...prev, { path }];
           saveLocal(space, next);
           return next;
         });
