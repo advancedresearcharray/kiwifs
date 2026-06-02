@@ -10,10 +10,11 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, Eye, EyeOff, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
 import { dirOf, titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
+import { HostPageActions } from "./HostPageActions";
 import { KiwiBreadcrumb } from "./KiwiBreadcrumb";
 import { KiwiToC } from "./KiwiToC";
 import { KiwiBacklinks } from "./KiwiBacklinks";
@@ -58,9 +59,6 @@ type Props = {
   isStarred?: boolean;
   onTogglePin?: () => void;
   isPinned?: boolean;
-  onToggleWatch?: () => void;
-  isWatched?: boolean;
-  onOpenWatchDialog?: () => void;
   onDeleted?: () => void;
   onDuplicated?: (newPath: string) => void;
   onMoved?: (newPath: string) => void;
@@ -369,7 +367,7 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
   return "unknown";
 }
 
-export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onToggleWatch, isWatched, onOpenWatchDialog, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
+export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
   const treeEntry = useMemo(() => findEntry(tree, path), [tree, path]);
   const isDir = treeEntry?.isDir ?? false;
 
@@ -595,18 +593,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                     <TooltipContent side="bottom">{isPinned ? "Unpin" : "Pin"}</TooltipContent>
                   </Tooltip>
                 )}
-                {(onToggleWatch || onOpenWatchDialog) && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" onClick={onOpenWatchDialog ?? onToggleWatch} className="h-8 w-8" aria-label={isWatched ? "Unwatch page" : "Watch page"}>
-                        {isWatched
-                          ? <EyeOff className="h-4 w-4 text-primary" />
-                          : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">{isWatched ? "Unwatch" : "Watch"}</TooltipContent>
-                  </Tooltip>
-                )}
+                <HostPageActions path={path} />
                 {onToggleStar && (
                   <Tooltip>
                     <TooltipTrigger asChild>

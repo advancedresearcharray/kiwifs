@@ -4,16 +4,23 @@
  * Set before boot:
  *   window.__KIWIFS_CONFIG__ = {
  *     toolbarActions: [{ id: "my-tool", icon: "Wand2", label: "My tool" }],
+ *     pageActions: [{ id: "watch", icon: "Eye", activeIcon: "EyeOff", label: "Watch", activeLabel: "Unwatch" }],
  *   };
  *
  * Listen for clicks:
  *   window.addEventListener("kiwifs-toolbar-action", (e) => {
  *     if (e.detail.id === "my-tool") { ... }
  *   });
+ *   window.addEventListener("kiwifs-page-action", (e) => {
+ *     if (e.detail.id === "watch") { console.log(e.detail.path); }
+ *   });
  *
  * Optional active/disabled styling from the host:
  *   window.dispatchEvent(new CustomEvent("kiwifs-host-toolbar-state", {
  *     detail: { "my-tool": { active: true } },
+ *   }));
+ *   window.dispatchEvent(new CustomEvent("kiwifs-host-page-action-state", {
+ *     detail: { "watch": { active: true } },
  *   }));
  */
 
@@ -27,7 +34,26 @@ export type KiwiToolbarAction = {
   disabled?: boolean;
 };
 
+export type KiwiPageAction = {
+  /** Stable id; emitted in kiwifs-page-action detail */
+  id: string;
+  /** Lucide icon export name for default state */
+  icon: string;
+  /** Lucide icon export name when active (optional) */
+  activeIcon?: string;
+  /** Tooltip + aria-label */
+  label: string;
+  /** Tooltip when active (optional) */
+  activeLabel?: string;
+  disabled?: boolean;
+};
+
 export type KiwiToolbarActionState = {
+  active?: boolean;
+  disabled?: boolean;
+};
+
+export type KiwiPageActionState = {
   active?: boolean;
   disabled?: boolean;
 };
@@ -35,10 +61,14 @@ export type KiwiToolbarActionState = {
 export type KiwiHostConfig = {
   allowedOrigins?: string[];
   toolbarActions?: KiwiToolbarAction[];
+  pageActions?: KiwiPageAction[];
 };
 
 export const KIWI_TOOLBAR_ACTION_EVENT = "kiwifs-toolbar-action";
 export const KIWI_TOOLBAR_STATE_EVENT = "kiwifs-host-toolbar-state";
+export const KIWI_PAGE_ACTION_EVENT = "kiwifs-page-action";
+export const KIWI_PAGE_ACTION_STATE_EVENT = "kiwifs-host-page-action-state";
+export const KIWI_PAGE_CHANGED_EVENT = "kiwifs-page-changed";
 
 declare global {
   interface Window {
@@ -55,11 +85,30 @@ export function getToolbarActions(): KiwiToolbarAction[] {
   return getHostConfig().toolbarActions ?? [];
 }
 
+export function getPageActions(): KiwiPageAction[] {
+  return getHostConfig().pageActions ?? [];
+}
+
 export function dispatchToolbarAction(id: string): void {
   window.dispatchEvent(
     new CustomEvent(KIWI_TOOLBAR_ACTION_EVENT, { detail: { id } }),
   );
 }
 
+export function dispatchPageAction(id: string, path: string): void {
+  window.dispatchEvent(
+    new CustomEvent(KIWI_PAGE_ACTION_EVENT, { detail: { id, path } }),
+  );
+}
+
+export function dispatchPageChanged(path: string | null): void {
+  window.dispatchEvent(
+    new CustomEvent(KIWI_PAGE_CHANGED_EVENT, { detail: { path } }),
+  );
+}
+
 export type ToolbarActionEvent = CustomEvent<{ id: string }>;
 export type ToolbarStateEvent = CustomEvent<Record<string, KiwiToolbarActionState>>;
+export type PageActionEvent = CustomEvent<{ id: string; path: string }>;
+export type PageActionStateEvent = CustomEvent<Record<string, KiwiPageActionState>>;
+export type PageChangedEvent = CustomEvent<{ path: string | null }>;
