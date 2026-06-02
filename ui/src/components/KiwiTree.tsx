@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  forwardRef,
+  type SetStateAction,
+} from "react";
 import { Tree, NodeApi, type NodeRendererProps } from "react-arborist";
 import { useDraggable } from "@dnd-kit/core";
 import { getCurrentSpace } from "../lib/api";
@@ -33,12 +43,13 @@ import {
   Plus,
   Trash2,
   Upload,
+  AlertTriangle,
   ExternalLink,
   Rss,
 } from "lucide-react";
 import { cn } from "@kw/lib/cn";
-import { api, type TreeEntry } from "@kw/lib/api";
-import { isMarkdown, isCanvasFile, isExcalidrawFile, stem, stripTrailingSlash, dirOf } from "@kw/lib/paths";
+import { api, apiErrorMessage, type TreeEntry } from "@kw/lib/api";
+import { isMarkdown, isCanvasFile, isExcalidrawFile, stem, stripTrailingSlash, dirOf, basename } from "@kw/lib/paths";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -46,20 +57,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@kw/components/ui/context-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@kw/components/ui/dialog";
-import { Button } from "@kw/components/ui/button";
-import { Input } from "@kw/components/ui/input";
-import { Label } from "@kw/components/ui/label";
 import { type TreeRevealRequest } from "@kw/lib/treeReveal";
 import { createTreePageDragData } from "@kw/lib/kanbanDnd";
+import { shouldApplyTreeLoad } from "@kw/lib/treeRefresh";
+import { applyOptimisticTreeMove } from "@kw/lib/treeReorder";
+import { persistSiblingOrder } from "@kw/lib/treeOrderPersistence";
 import { useFileOpsStore } from "@kw/stores/fileOpsStore";
+import { useKiwiTreeUiStore, type ConfirmDialog, type PromptDialog } from "@kw/stores/kiwiTreeUiStore";
+import { KiwiTreeDialogs } from "@kw/components/tree/KiwiTreeDialogs";
 
 type Props = {
   activePath: string | null;
@@ -69,7 +74,7 @@ type Props = {
   onCreateChild?: (folder: string) => void;
   onDeleted?: () => void;
   onDuplicated?: (newPath: string) => void;
-  onMoved?: (newPath: string) => void;
+  onMoved?: (newPath: string, options?: { refresh?: boolean }) => void;
   enableKanbanDrag?: boolean;
   filterQuery?: string;
   compactFolders?: boolean;
@@ -98,13 +103,6 @@ function isKiwiConfig(name: string): boolean {
 }
 
 const FOLDER_EXPAND_DELAY_MS = 600;
-
-type OsDragTarget = {
-  /** Path of the row to visually highlight (always a folder, or "" for root). */
-  rowPath: string;
-  /** Directory path that files will actually be uploaded to. */
-  dropDir: string;
-};
 
 function isOsFileDrag(e: React.DragEvent): boolean {
   return e.dataTransfer.types.includes("Files");
@@ -183,19 +181,32 @@ function findEntry(root: TreeEntry, path: string): TreeEntry | null {
   return null;
 }
 
-type PromptDialog = {
-  title: string;
-  description: string;
-  value: string;
-  onConfirm: (value: string) => void;
+type MoveArgs = {
+  dragIds: string[];
+  dragNodes: NodeApi<FlatNode>[];
+  parentId: string | null;
+  parentNode: NodeApi<FlatNode> | null;
+  index: number;
 };
 
-type ConfirmDialog = {
-  title: string;
-  description: string;
-  destructive?: boolean;
-  onConfirm: () => void;
-};
+function destinationChildrenAfterMove(args: MoveArgs, rootNodes: FlatNode[], replacements?: Map<string, FlatNode>): FlatNode[] {
+  const children = (args.parentNode?.children?.map((child) => child.data) || rootNodes).slice();
+  let insertAt = Math.max(0, Math.min(args.index, children.length));
+
+  for (const dragNode of args.dragNodes) {
+    const replacement = replacements?.get(dragNode.id);
+    const moving = replacement || dragNode.data;
+    children.splice(insertAt, 0, moving);
+    const originalIndex = children.findIndex((child, i) => i !== insertAt && child.id === dragNode.id);
+    if (originalIndex >= 0) {
+      children.splice(originalIndex, 1);
+      if (originalIndex < insertAt) insertAt -= 1;
+    }
+    insertAt += 1;
+  }
+
+  return children;
+}
 
 export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   {
@@ -223,21 +234,26 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const treeRef = useRef<any>(null);
+  const pendingScrollTopRef = useRef<number | null>(null);
+  const lastOptimisticTreeMutationAtRef = useRef(0);
 
-  const [dupOpen, setDupOpen] = useState(false);
-  const [dupSource, setDupSource] = useState("");
-  const [dupTarget, setDupTarget] = useState("");
-  const [dupBusy, setDupBusy] = useState(false);
-
-  const [promptDialog, setPromptDialog] = useState<PromptDialog | null>(null);
-  const [promptValue, setPromptValue] = useState("");
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
-
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const dupSource = useKiwiTreeUiStore((state) => state.dupSource);
+  const dupTarget = useKiwiTreeUiStore((state) => state.dupTarget);
+  const openDupDialog = useKiwiTreeUiStore((state) => state.openDupDialog);
+  const closeDupDialog = useKiwiTreeUiStore((state) => state.closeDupDialog);
+  const setDupBusy = useKiwiTreeUiStore((state) => state.setDupBusy);
+  const openPromptDialog = useKiwiTreeUiStore((state) => state.openPromptDialog);
+  const setAlertMessage = useKiwiTreeUiStore((state) => state.setAlertMessage);
+  const openConfirmDialog = useKiwiTreeUiStore((state) => state.openConfirmDialog);
+  const uploadStatus = useKiwiTreeUiStore((state) => state.uploadStatus);
+  const setUploadStatus = useKiwiTreeUiStore((state) => state.setUploadStatus);
   const [containerHeight, setContainerHeight] = useState(0);
-  const [dragTarget, setDragTarget] = useState<OsDragTarget | null>(null);
-  const [fileDragActive, setFileDragActive] = useState(false);
+  const dragTarget = useKiwiTreeUiStore((state) => state.dragTarget);
+  const setDragTarget = useKiwiTreeUiStore((state) => state.setDragTarget);
+  const updateDragTarget = useKiwiTreeUiStore((state) => state.updateDragTarget);
+  const fileDragActive = useKiwiTreeUiStore((state) => state.fileDragActive);
+  const setFileDragActive = useKiwiTreeUiStore((state) => state.setFileDragActive);
+  const resetFileDragUi = useKiwiTreeUiStore((state) => state.resetFileDragUi);
   const fileDragDepthRef = useRef(0);
   const dragExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
@@ -247,6 +263,34 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   useImperativeHandle(ref, () => ({
     collapseAll: () => treeRef.current?.closeAll(),
   }));
+
+  const saveTreeScroll = useCallback(() => {
+    const listEl = treeRef.current?.listEl?.current as HTMLDivElement | null | undefined;
+    if (listEl) pendingScrollTopRef.current = listEl.scrollTop;
+  }, []);
+
+  const setRootPreservingScroll = useCallback(
+    (next: SetStateAction<TreeEntry | null>) => {
+      saveTreeScroll();
+      setRoot(next);
+    },
+    [saveTreeScroll],
+  );
+
+  useLayoutEffect(() => {
+    const top = pendingScrollTopRef.current;
+    if (top == null) return;
+    pendingScrollTopRef.current = null;
+
+    const restore = () => {
+      const listEl = treeRef.current?.listEl?.current as HTMLDivElement | null | undefined;
+      if (listEl) listEl.scrollTop = top;
+    };
+
+    restore();
+    const raf = window.requestAnimationFrame(restore);
+    return () => window.cancelAnimationFrame(raf);
+  }, [root, containerHeight]);
 
   // Callback ref: attach ResizeObserver whenever the container div mounts.
   // This solves the race where the first render shows TreeSkeleton (root=null)
@@ -267,17 +311,6 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     roRef.current = ro;
   }, []);
 
-  function openPromptDialog(d: PromptDialog) {
-    setPromptValue(d.value);
-    setPromptDialog(d);
-  }
-
-  function openDupDialog(srcPath: string) {
-    setDupSource(srcPath);
-    setDupTarget(srcPath.replace(/\.md$/i, "-copy.md"));
-    setDupOpen(true);
-  }
-
   function handleDuplicate() {
     let target = dupTarget.trim();
     if (!target) return;
@@ -287,7 +320,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
       .readFile(dupSource)
       .then(({ content }) =>
         api.writeFile(target, content).then(() => {
-          setDupOpen(false);
+          closeDupDialog();
           onDuplicated?.(target);
         }),
       )
@@ -296,14 +329,21 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   }
 
   useEffect(() => {
+    const requestStartedAt = Date.now();
     api
       .tree("/")
       .then((t) => {
-        setRoot(t);
+        if (!shouldApplyTreeLoad({
+          requestStartedAt,
+          lastLocalMutationAt: lastOptimisticTreeMutationAtRef.current,
+        })) {
+          return;
+        }
+        setRootPreservingScroll(t);
         setError(null);
       })
       .catch((e) => setError(String(e)));
-  }, [refreshKey, retryCount]);
+  }, [refreshKey, retryCount, setRootPreservingScroll]);
 
   // Reveal support: open parents when reveal request comes in
   useEffect(() => {
@@ -324,7 +364,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
       treeRef.current?.scrollTo(activePath);
     }, 30);
     return () => clearTimeout(t);
-  }, [activePath, autoReveal, refreshKey]);
+  }, [activePath, autoReveal]);
 
   const data = useMemo(() => {
     if (!root) return [];
@@ -343,29 +383,55 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   }, []);
 
   const handleMove = useCallback(
-    async (args: {
-      dragIds: string[];
-      parentId: string | null;
-      index: number;
-    }) => {
+    async (args: MoveArgs) => {
       const src = args.dragIds[0];
-      if (!src) return;
-      const fileName = src.split("/").pop()!;
-      const destDir = args.parentId || "";
+      const sourceNode = args.dragNodes[0]?.data;
+      if (!src || !sourceNode || !root) return;
+      const cleanSrc = stripTrailingSlash(src);
+      const fileName = basename(cleanSrc);
+      const destDir = args.parentId ? stripTrailingSlash(args.parentId) : "";
       const dest = destDir ? `${destDir}/${fileName}` : fileName;
-      if (src === dest) return;
+      const previousRoot = root;
+
+      if (sourceNode.isDir && dest.startsWith(`${cleanSrc}/`)) {
+        console.warn("Cannot move a folder inside itself:", { from: cleanSrc, to: dest });
+        return;
+      }
+
+      lastOptimisticTreeMutationAtRef.current = Date.now();
+      setRootPreservingScroll(applyOptimisticTreeMove(root, args));
 
       try {
-        const { content } = await api.readFile(src);
+        if (cleanSrc === dest) {
+          await persistSiblingOrder(destinationChildrenAfterMove(args, data), api);
+          onMoved?.("", { refresh: false });
+          return;
+        }
+
+        if (sourceNode.isDir) {
+          await api.renameDir(cleanSrc, dest);
+          const movedNode: FlatNode = { ...sourceNode, id: dest, name: fileName };
+          await persistSiblingOrder(destinationChildrenAfterMove(args, data, new Map([[src, movedNode]])), api);
+          onMoved?.(dest);
+          return;
+        }
+
+        const { content } = await api.readFile(cleanSrc);
         await api.writeFile(dest, content);
-        await api.deleteFile(src);
-        pushOp({ type: "move", from: src, to: dest, content });
+        await api.deleteFile(cleanSrc);
+        pushOp({ type: "move", from: cleanSrc, to: dest, content });
+
+        const movedNode: FlatNode = { ...sourceNode, id: dest, name: fileName };
+        await persistSiblingOrder(destinationChildrenAfterMove(args, data, new Map([[src, movedNode]])), api);
         onMoved?.(dest);
       } catch (e) {
-        console.error("Move failed:", e);
+        setRootPreservingScroll(previousRoot);
+        const detail = apiErrorMessage(e);
+        console.error("Move/reorder failed:", e);
+        setAlertMessage(`Move/reorder failed. The tree was restored. ${detail}`);
       }
     },
-    [onMoved, pushOp],
+    [data, onMoved, pushOp, root, setRootPreservingScroll],
   );
 
   const handleRename = useCallback(
@@ -377,10 +443,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
       if (args.node.data.isDir) {
         const newPath = dir ? `${dir}/${newName}` : newName;
         if (newPath === oldPath) return;
-        const entry = root ? findEntry(root, oldPath) : null;
-        if (!entry) return;
-        const files = collectFiles(entry);
-        await api.renameDir(oldPath, newPath, files);
+        await api.renameDir(oldPath, newPath);
         onMoved?.(newPath);
       } else {
         if (isMarkdown(oldPath) && !newName.endsWith(".md")) newName += ".md";
@@ -444,10 +507,9 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
 
   const resetFileDrag = useCallback(() => {
     fileDragDepthRef.current = 0;
-    setFileDragActive(false);
-    setDragTarget(null);
+    resetFileDragUi();
     clearDragExpandTimer();
-  }, [clearDragExpandTimer]);
+  }, [clearDragExpandTimer, resetFileDragUi]);
 
   useEffect(() => {
     const onDragEnd = () => resetFileDrag();
@@ -590,7 +652,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
       // not individual files. For files, that's their parent folder row.
       // For root-level files (dropDir=""), rowPath="" triggers the container highlight.
       const highlightRow = isDir ? nodePath : dropDir;
-      setDragTarget((prev) => {
+      updateDragTarget((prev) => {
         if (prev?.rowPath !== highlightRow) {
           if (isDir) scheduleFolderExpand(nodePath, isOpen);
           else clearDragExpandTimer();
@@ -598,7 +660,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
         return { rowPath: highlightRow, dropDir };
       });
     },
-    [scheduleFolderExpand, clearDragExpandTimer],
+    [scheduleFolderExpand, clearDragExpandTimer, updateDragTarget],
   );
 
   const handleNodeDrop = useCallback(
@@ -763,7 +825,14 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
         selectionFollowsFocus
         searchTerm={filterQuery.trim()}
         searchMatch={treeSearchMatch}
-        disableDrag={enableKanbanDrag}
+        disableDrag={(data) => enableKanbanDrag && !data.isDir && isMarkdown(data.id)}
+        disableDrop={({ parentNode, dragNodes }) =>
+          dragNodes.some((dragNode) => {
+            const dragId = stripTrailingSlash(dragNode.id);
+            const parentId = parentNode?.id ? stripTrailingSlash(parentNode.id) : "";
+            return dragNode.data.virtualDir || (dragNode.data.isDir && parentId.startsWith(`${dragId}/`));
+          })
+        }
         disableEdit={(d) => isKiwiConfig(d.name) || !!d.virtualDir}
         renderCursor={DropCursor}
         onMove={handleMove}
@@ -785,7 +854,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
             onMoved={onMoved}
             onDeleted={onDeleted}
             openPromptDialog={openPromptDialog}
-            openConfirmDialog={setConfirmDialog}
+            openConfirmDialog={openConfirmDialog}
             enableKanbanDrag={enableKanbanDrag}
             pushOp={pushOp}
             root={root}
@@ -799,133 +868,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
         )}
       </Tree>
 
-      {/* Dialogs */}
-      <Dialog open={dupOpen} onOpenChange={setDupOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Duplicate page</DialogTitle>
-            <DialogDescription>
-              Enter the path for the new copy.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="tree-dup-path">New path</Label>
-            <Input
-              id="tree-dup-path"
-              autoFocus
-              value={dupTarget}
-              onChange={(e) => setDupTarget(e.target.value)}
-              className="font-mono"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleDuplicate();
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDupOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleDuplicate}
-              disabled={dupBusy || !dupTarget.trim()}
-            >
-              {dupBusy ? "Duplicating..." : "Duplicate"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!promptDialog}
-        onOpenChange={(open) => {
-          if (!open) setPromptDialog(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{promptDialog?.title}</DialogTitle>
-            <DialogDescription>{promptDialog?.description}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Input
-              autoFocus
-              value={promptValue}
-              onChange={(e) => setPromptValue(e.target.value)}
-              className="font-mono"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && promptValue.trim() && promptDialog) {
-                  promptDialog.onConfirm(promptValue.trim());
-                  setPromptDialog(null);
-                }
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPromptDialog(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (promptValue.trim() && promptDialog) {
-                  promptDialog.onConfirm(promptValue.trim());
-                  setPromptDialog(null);
-                }
-              }}
-              disabled={!promptValue.trim()}
-            >
-              Confirm
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!alertMessage}
-        onOpenChange={(open) => {
-          if (!open) setAlertMessage(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Conflict</DialogTitle>
-            <DialogDescription>{alertMessage}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setAlertMessage(null)}>OK</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!confirmDialog}
-        onOpenChange={(open) => {
-          if (!open) setConfirmDialog(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{confirmDialog?.title}</DialogTitle>
-            <DialogDescription>{confirmDialog?.description}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmDialog(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant={confirmDialog?.destructive ? "destructive" : "default"}
-              onClick={() => {
-                confirmDialog?.onConfirm();
-                setConfirmDialog(null);
-              }}
-            >
-              Confirm
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <KiwiTreeDialogs onDuplicate={handleDuplicate} />
     </div>
   );
 });
@@ -936,7 +879,7 @@ type TreeNodeProps = NodeRendererProps<FlatNode> & {
   onSelect: (path: string) => void;
   onCreateChild?: (folder: string) => void;
   openDupDialog: (srcPath: string) => void;
-  onMoved?: (newPath: string) => void;
+  onMoved?: (newPath: string, options?: { refresh?: boolean }) => void;
   onDeleted?: () => void;
   openPromptDialog: (d: PromptDialog) => void;
   openConfirmDialog: (d: ConfirmDialog) => void;
@@ -955,6 +898,19 @@ type TreeNodeProps = NodeRendererProps<FlatNode> & {
   publishedPaths?: Set<string>;
   onPublishedChanged?: () => void;
 };
+
+function FrontmatterWarning({ path, error }: { path: string; error?: string }) {
+  if (!error) return null;
+  return (
+    <span
+      className="ml-auto inline-flex items-center text-amber-500"
+      title={`Invalid frontmatter: ${error}`}
+      aria-label={`Invalid frontmatter in ${path}`}
+    >
+      <AlertTriangle className="h-3.5 w-3.5" />
+    </span>
+  );
+}
 
 function TreeNode({
   node,
@@ -991,6 +947,7 @@ function TreeNode({
     onDrop: (e: React.DragEvent) => onNodeDrop(e, path, node.data.isDir),
   };
   const label = nodeLabel(node.data);
+  const frontmatterError = node.data.frontmatterError;
   const showChevron = node.data.isDir && (node.data.children?.length ?? 0) > 0;
   const isVirtualDir = node.data.isDir && !!node.data.virtualDir;
   const isPublished = (isVirtualDir || (!node.data.isDir && isMarkdown(path))) && (publishedPaths?.has(path) ?? false);
@@ -1107,6 +1064,7 @@ function TreeNode({
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
                 </span>
               )}
+              {!node.isEditing && <FrontmatterWarning path={path} error={frontmatterError} />}
               {onCreateChild && !node.isEditing && !isVirtual && (
                 <button
                   type="button"
@@ -1223,11 +1181,8 @@ function TreeNode({
                 value: path,
                 onConfirm: async (newPath) => {
                   if (newPath === path) return;
-                  const entry = findEntry(root, path);
-                  if (!entry) return;
-                  const files = collectFiles(entry);
                   const cleanPath = newPath.replace(/\/+$/, "");
-                  await api.renameDir(path, cleanPath, files);
+                  await api.renameDir(path, cleanPath);
                   onMoved?.(cleanPath);
                 },
               });
@@ -1514,10 +1469,10 @@ function TreeNode({
             if (enableKanbanDrag) kanbanDraggable.setNodeRef(el);
           }}
           className="h-full w-full"
-          draggable
           onDragStart={(e) => {
+            // Let react-arborist own the native tree drag. We only attach the
+            // page path payload so canvas drops can still consume tree drags.
             e.dataTransfer.setData("application/kiwi-path", path);
-            e.dataTransfer.effectAllowed = "copyLink";
           }}
           {...(enableKanbanDrag ? { ...kanbanDraggable.attributes, ...kanbanDraggable.listeners } : {})}
         >
@@ -1547,6 +1502,7 @@ function TreeNode({
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
               </span>
             )}
+            {!node.isEditing && <FrontmatterWarning path={path} error={frontmatterError} />}
           </TreeRowShell>
         </div>
       </ContextMenuTrigger>
