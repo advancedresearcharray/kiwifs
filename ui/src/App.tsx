@@ -33,6 +33,7 @@ import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
+import { WatchDialog } from "./components/WatchDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { useRecentPages } from "./hooks/useRecentPages";
 import { useStarredPages } from "./hooks/useStarredPages";
@@ -133,7 +134,8 @@ export default function App() {
   const { recent, recordVisit } = useRecentPages(currentSpace);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
-  const { toggle: toggleWatch, isWatched } = useWatchedPages(currentSpace);
+  const { toggle: toggleWatch, isWatched, addWatch, removeWatch, isCloud } = useWatchedPages(currentSpace);
+  const [watchDialogOpen, setWatchDialogOpen] = useState(false);
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
@@ -666,6 +668,7 @@ const handleSpaceSwitch = useCallback(() => {
                 isPinned={isPinned(activePath)}
                 onToggleWatch={() => toggleWatch(activePath)}
                 isWatched={isWatched(activePath)}
+                onOpenWatchDialog={() => setWatchDialogOpen(true)}
                 onDeleted={() => {
                   setActivePath(null);
                   setRefreshKey((k) => k + 1);
@@ -726,6 +729,17 @@ const handleSpaceSwitch = useCallback(() => {
           setEditing(true);
         }}
       />
+      {activePath && (
+        <WatchDialog
+          open={watchDialogOpen}
+          onOpenChange={setWatchDialogOpen}
+          path={activePath}
+          isWatched={isWatched(activePath)}
+          isCloud={isCloud}
+          onWatch={(p, channel) => addWatch(p, channel)}
+          onUnwatch={(p) => removeWatch(p)}
+        />
+      )}
       <KeyboardShortcuts
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}

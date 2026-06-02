@@ -60,6 +60,7 @@ type Props = {
   isPinned?: boolean;
   onToggleWatch?: () => void;
   isWatched?: boolean;
+  onOpenWatchDialog?: () => void;
   onDeleted?: () => void;
   onDuplicated?: (newPath: string) => void;
   onMoved?: (newPath: string) => void;
@@ -368,7 +369,7 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
   return "unknown";
 }
 
-export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onToggleWatch, isWatched, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
+export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onToggleWatch, isWatched, onOpenWatchDialog, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
   const treeEntry = useMemo(() => findEntry(tree, path), [tree, path]);
   const isDir = treeEntry?.isDir ?? false;
 
@@ -594,10 +595,10 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                     <TooltipContent side="bottom">{isPinned ? "Unpin" : "Pin"}</TooltipContent>
                   </Tooltip>
                 )}
-                {onToggleWatch && (
+                {(onToggleWatch || onOpenWatchDialog) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" onClick={onToggleWatch} className="h-8 w-8" aria-label={isWatched ? "Unwatch page" : "Watch page"}>
+                      <Button variant="ghost" size="icon" onClick={onOpenWatchDialog ?? onToggleWatch} className="h-8 w-8" aria-label={isWatched ? "Unwatch page" : "Watch page"}>
                         {isWatched
                           ? <EyeOff className="h-4 w-4 text-primary" />
                           : <Eye className="h-4 w-4" />}
