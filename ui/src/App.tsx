@@ -736,7 +736,7 @@ const handleSpaceSwitch = useCallback(() => {
           path={activePath}
           isWatched={isWatched(activePath)}
           isCloud={isCloud}
-          onWatch={(p, channel) => addWatch(p, channel)}
+          onWatch={(p) => addWatch(p)}
           onUnwatch={(p) => removeWatch(p)}
         />
       )}

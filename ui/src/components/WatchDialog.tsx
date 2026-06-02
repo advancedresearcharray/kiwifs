@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Eye, EyeOff, Mail, MessageSquare, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Bell, AlertCircle } from "lucide-react";
 import { Button } from "@kw/components/ui/button";
 import {
   Dialog,
@@ -10,44 +10,35 @@ import {
   DialogTitle,
 } from "@kw/components/ui/dialog";
 
-type Channel = "email" | "slack" | "discord";
-
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   path: string;
   isWatched: boolean;
   isCloud: boolean;
-  onWatch: (path: string, channel?: string) => void;
+  onWatch: (path: string) => void;
   onUnwatch: (path: string) => void;
 };
 
-const CHANNELS: { id: Channel; label: string; icon: typeof Mail; description: string }[] = [
-  { id: "email", label: "Email", icon: Mail, description: "Get notified via your account email" },
-  { id: "slack", label: "Slack", icon: MessageSquare, description: "Post to a Slack channel via webhook" },
-  { id: "discord", label: "Discord", icon: MessageSquare, description: "Post to a Discord channel via webhook" },
-];
-
 export function WatchDialog({ open, onOpenChange, path, isWatched, isCloud, onWatch, onUnwatch }: Props) {
-  const [selected, setSelected] = useState<Channel>("email");
   const [busy, setBusy] = useState(false);
 
   if (!isCloud) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-muted-foreground" />
               Notifications not available
             </DialogTitle>
             <DialogDescription>
-              Page watch notifications require KiwiFS Cloud. In standalone mode,
-              you can configure webhooks manually via the API to receive change events.
+              Page watch notifications require Kiwi Cloud. In standalone mode,
+              configure webhooks via the API for change events.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Close
             </Button>
           </DialogFooter>
@@ -59,22 +50,24 @@ export function WatchDialog({ open, onOpenChange, path, isWatched, isCloud, onWa
   if (isWatched) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <EyeOff className="h-5 w-5" />
-              Unwatch this page?
+              Unwatch page
             </DialogTitle>
             <DialogDescription>
-              You'll stop receiving notifications when <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">{path}</code> is modified.
+              Stop receiving notifications for changes to{" "}
+              <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">{path}</code>
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
+              size="sm"
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
@@ -83,7 +76,7 @@ export function WatchDialog({ open, onOpenChange, path, isWatched, isCloud, onWa
                 onOpenChange(false);
               }}
             >
-              {busy ? "Unwatching..." : "Unwatch"}
+              Unwatch
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -93,58 +86,39 @@ export function WatchDialog({ open, onOpenChange, path, isWatched, isCloud, onWa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eye className="h-5 w-5" />
-            Watch this page
+            Watch page
           </DialogTitle>
           <DialogDescription>
-            Get notified when <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">{path}</code> is modified.
-            Choose how you'd like to be notified:
+            Get notified when{" "}
+            <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">{path}</code>{" "}
+            is modified. Notifications are sent to your connected channels.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-2 py-2">
-          {CHANNELS.map((ch) => {
-            const Icon = ch.icon;
-            const active = selected === ch.id;
-            return (
-              <button
-                key={ch.id}
-                type="button"
-                onClick={() => setSelected(ch.id)}
-                className={
-                  "flex items-center gap-3 w-full rounded-md border px-3 py-2.5 text-left text-sm transition-colors " +
-                  (active
-                    ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                    : "border-border hover:bg-accent")
-                }
-              >
-                <Icon className={"h-4 w-4 shrink-0 " + (active ? "text-primary" : "text-muted-foreground")} />
-                <div className="min-w-0">
-                  <div className={"font-medium " + (active ? "text-primary" : "")}>{ch.label}</div>
-                  <div className="text-xs text-muted-foreground">{ch.description}</div>
-                </div>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+          <Bell className="h-3.5 w-3.5 shrink-0" />
+          <span>Configure notification channels in workspace settings.</span>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
+            size="sm"
             disabled={busy}
             onClick={async () => {
               setBusy(true);
-              onWatch(path, selected);
+              onWatch(path);
               setBusy(false);
               onOpenChange(false);
             }}
           >
-            {busy ? "Watching..." : "Watch page"}
+            Watch page
           </Button>
         </DialogFooter>
       </DialogContent>
