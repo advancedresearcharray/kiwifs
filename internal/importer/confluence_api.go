@@ -464,6 +464,10 @@ func convertStorageFormat(storageXML string) string {
 	// Convert Confluence macros BEFORE HTML conversion
 	md = convertConfluenceMacros(md)
 
+	// Convert Confluence-specific inline elements to standard HTML
+	// (these would otherwise be stripped by the HTML parser as unknown tags)
+	md = convertConfluenceInlineElements(md)
+
 	// Parse as HTML and convert to markdown
 	doc := parseHTMLString(md)
 	if doc == nil {

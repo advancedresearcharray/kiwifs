@@ -559,6 +559,34 @@ func convertNodeWithPlaceholders(buf *strings.Builder, n *html.Node, listDepth i
 		}
 		buf.WriteByte('`')
 
+	case "del", "s":
+		buf.WriteString("~~")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("~~")
+
+	case "u":
+		buf.WriteString("<u>")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("</u>")
+
+	case "sup":
+		buf.WriteString("<sup>")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("</sup>")
+
+	case "sub":
+		buf.WriteString("<sub>")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("</sub>")
+
 	case "pre":
 		buf.WriteString("\n\n```\n")
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -713,6 +741,34 @@ func convertNode(buf *strings.Builder, n *html.Node, listDepth int) {
 			convertNode(buf, c, listDepth)
 		}
 		buf.WriteByte('`')
+
+	case "del", "s":
+		buf.WriteString("~~")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNode(buf, c, listDepth)
+		}
+		buf.WriteString("~~")
+
+	case "u":
+		buf.WriteString("<u>")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNode(buf, c, listDepth)
+		}
+		buf.WriteString("</u>")
+
+	case "sup":
+		buf.WriteString("<sup>")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNode(buf, c, listDepth)
+		}
+		buf.WriteString("</sup>")
+
+	case "sub":
+		buf.WriteString("<sub>")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNode(buf, c, listDepth)
+		}
+		buf.WriteString("</sub>")
 
 	case "pre":
 		buf.WriteString("\n\n```\n")
