@@ -14,10 +14,10 @@ import (
 //
 // Mapping:
 //   {status}         → frontmatter status field + badge rendering
-//   {info}           → :::info
-//   {warning}        → :::warning
-//   {note}           → :::note
-//   {tip}            → :::tip
+//   {info}           → > [!INFO]
+//   {warning}        → > [!WARNING]
+//   {note}           → > [!NOTE]
+//   {tip}            → > [!TIP]
 //   {toc}            → [[toc]]
 //   {children}       → kiwi-query block listing child pages
 //   {code}           → fenced code block
@@ -25,6 +25,15 @@ import (
 //   {panel}          → blockquote with title
 func convertConfluenceMacros(storageXML string) string {
 	result := storageXML
+
+	// Code macro MUST be converted FIRST since code blocks can appear
+	// inside other macros (info, warning, expand, panel). Processing them
+	// first means their content is already markdown when the parent macro
+	// is converted by innerHTMLToMarkdown.
+	result = convertCodeMacro(result)
+
+	// Status macro (inline, not block-level)
+	result = convertStatusMacro(result)
 
 	// Admonition macros: info, warning, note, tip
 	result = convertAdmonitionMacro(result, "info")
@@ -37,12 +46,6 @@ func convertConfluenceMacros(storageXML string) string {
 
 	// Children macro
 	result = convertChildrenMacro(result)
-
-	// Status macro
-	result = convertStatusMacro(result)
-
-	// Code macro
-	result = convertCodeMacro(result)
 
 	// Expand/collapse macro
 	result = convertExpandMacro(result)
@@ -76,21 +79,44 @@ func convertAdmonitionMacro(input, kind string) string {
 		if len(submatch) < 2 {
 			return match
 		}
-		content := strings.TrimSpace(submatch[1])
+		rawContent := strings.TrimSpace(submatch[1])
 
 		// Extract optional title from ac:parameter
 		title := extractMacroParam(match, "title")
 
+		// Convert the inner HTML content to plain text/markdown before blockquoting.
+		// The content is still HTML (e.g. <p>text</p>, <ul><li>...</li></ul>).
+		content := innerHTMLToMarkdown(rawContent)
+
+		// Map Confluence admonition types to KiwiFS callout types
+		calloutType := strings.ToUpper(kind)
+
 		var buf strings.Builder
 		if title != "" {
-			buf.WriteString(fmt.Sprintf("\n\n:::%s %s\n", kind, title))
+			buf.WriteString(fmt.Sprintf("\n\n> [!%s] %s\n", calloutType, title))
 		} else {
-			buf.WriteString(fmt.Sprintf("\n\n:::%s\n", kind))
+			buf.WriteString(fmt.Sprintf("\n\n> [!%s]\n", calloutType))
 		}
-		buf.WriteString(content)
-		buf.WriteString("\n:::\n\n")
+		// Prefix each line of content with > for blockquote
+		for _, line := range strings.Split(content, "\n") {
+			buf.WriteString("> " + line + "\n")
+		}
+		buf.WriteString("\n")
 		return buf.String()
 	})
+}
+
+// innerHTMLToMarkdown converts a snippet of HTML (typically from inside a Confluence
+// macro body) into simple markdown text. Handles <p>, <ul>, <ol>, <strong>, <em>, <code>.
+func innerHTMLToMarkdown(htmlContent string) string {
+	doc := parseHTMLString(htmlContent)
+	if doc == nil {
+		// Fallback: strip tags manually
+		tagRe := regexp.MustCompile(`<[^>]+>`)
+		return strings.TrimSpace(tagRe.ReplaceAllString(htmlContent, ""))
+	}
+	result := htmlToMarkdown(doc)
+	return strings.TrimSpace(result)
 }
 
 var tocRegex = regexp.MustCompile(`(?s)<ac:structured-macro[^>]*ac:name="toc"[^>]*>.*?</ac:structured-macro>|<ac:structured-macro[^>]*ac:name="toc"[^>]*/>`)
