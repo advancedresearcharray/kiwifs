@@ -352,7 +352,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     setTimeout(() => {
       const node = treeRef.current?.get(revealRequest.path);
       node?.focus();
-      node?.scrollTo();
+      treeRef.current?.scrollTo(revealRequest.path);
     }, 50);
   }, [revealRequest]);
 
