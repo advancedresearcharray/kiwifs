@@ -781,17 +781,16 @@ function EditorInner({
                 Frontmatter
                 {fmText.trim() && <span className="ml-1 text-xs text-muted-foreground">(has data)</span>}
               </button>
-              {fmOpen && (
-                <Textarea
-                  id={frontmatterId}
-                  value={fmText}
-                  onChange={(e) => handleFrontmatterTextChange(e.target.value)}
-                  aria-label="Frontmatter YAML"
-                  placeholder={"title: My Page\ntags:\n  - draft"}
-                  className="mt-2 font-mono text-xs min-h-[80px] resize-y"
-                  rows={Math.max(3, fmText.split("\n").length)}
-                />
-              )}
+              <Textarea
+                id={frontmatterId}
+                value={fmText}
+                onChange={(e) => handleFrontmatterTextChange(e.target.value)}
+                aria-label="Frontmatter YAML"
+                placeholder={"title: My Page\ntags:\n  - draft"}
+                className={cn("mt-2 font-mono text-xs min-h-[80px] resize-y", !fmOpen && "hidden")}
+                rows={Math.max(3, fmText.split("\n").length)}
+                hidden={!fmOpen}
+              />
             </div>
           )}
 
