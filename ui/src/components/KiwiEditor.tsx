@@ -458,8 +458,6 @@ function EditorInner({
     if (!editor) return;
     const pm = (editor as any)._tiptapEditor?.view;
     if (!pm) return;
-    pm.dom.setAttribute("aria-label", "Markdown visual editor");
-    pm.dom.setAttribute("aria-multiline", "true");
     const state = pm.state;
     if (state.plugins.some((p: any) => p.key === (wikiLinkPluginKey as any).key)) return;
     const newState = state.reconfigure({
@@ -467,6 +465,17 @@ function EditorInner({
     });
     pm.updateState(newState);
   }, [editor]);
+
+  useEffect(() => {
+    if (!editor || !ready) return;
+    try {
+      const pm = (editor as any)._tiptapEditor?.view;
+      pm.dom.setAttribute("aria-label", "Markdown visual editor");
+      pm.dom.setAttribute("aria-multiline", "true");
+    } catch {
+      // view not yet mounted
+    }
+  }, [editor, ready]);
 
   useEffect(() => {
     if (!editor || editorMode !== "visual") return;
