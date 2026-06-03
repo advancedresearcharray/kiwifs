@@ -35,6 +35,13 @@ func convertConfluenceMacros(storageXML string) string {
 	// Status macro (inline, not block-level)
 	result = convertStatusMacro(result)
 
+	// Expand/collapse macro - convert before admonitions since expands
+	// can appear inside admonitions
+	result = convertExpandMacro(result)
+
+	// Panel macro - convert before admonitions for nesting support
+	result = convertPanelMacro(result)
+
 	// Admonition macros: info, warning, note, tip
 	result = convertAdmonitionMacro(result, "info")
 	result = convertAdmonitionMacro(result, "warning")
@@ -46,12 +53,6 @@ func convertConfluenceMacros(storageXML string) string {
 
 	// Children macro
 	result = convertChildrenMacro(result)
-
-	// Expand/collapse macro
-	result = convertExpandMacro(result)
-
-	// Panel macro
-	result = convertPanelMacro(result)
 
 	// Excerpt macro (just extract content)
 	result = convertExcerptMacro(result)
@@ -255,4 +256,133 @@ func parseHTMLString(s string) *html.Node {
 		return nil
 	}
 	return doc
+}
+
+// convertConfluenceInlineElements converts Confluence-specific inline XML elements
+// (emoticons, links, task lists, time, etc.) into standard HTML before the HTML
+// parser runs. Without this, the HTML parser treats them as unknown elements and
+// strips their content.
+func convertConfluenceInlineElements(input string) string {
+	result := input
+
+	// Task lists: <ac:task-list> → markdown checkbox list
+	result = convertTaskList(result)
+
+	// Emoticons: <ac:emoticon ac:emoji-fallback="✅"/> → emoji text
+	result = convertEmoticons(result)
+
+	// Page links: <ac:link><ri:page ri:content-title="Page Title"/></ac:link> → [[Page Title]]
+	result = convertPageLinks(result)
+
+	// Anchor links: <ac:link ac:anchor="..."><ac:plain-text-link-body>text</ac:plain-text-link-body></ac:link>
+	result = convertAnchorLinks(result)
+
+	// User mentions: <ac:link><ri:user ri:userkey="..."/></ac:link> → @user
+	result = convertUserMentions(result)
+
+	// Time elements: <time datetime="2026-06-15"/> → 2026-06-15
+	result = convertTimeElements(result)
+
+	// Jira macro (common): show as linked issue key
+	result = convertJiraMacro(result)
+
+	// Unknown/corrupted macros: extract any remaining ac:plain-text-body content
+	result = convertCorruptedMacros(result)
+
+	return result
+}
+
+var taskListRegex = regexp.MustCompile(`(?s)<ac:task-list>(.*?)</ac:task-list>`)
+var taskRegex = regexp.MustCompile(`(?s)<ac:task>.*?<ac:task-status>(.*?)</ac:task-status>.*?<ac:task-body>(.*?)</ac:task-body>.*?</ac:task>`)
+
+func convertTaskList(input string) string {
+	return taskListRegex.ReplaceAllStringFunc(input, func(match string) string {
+		var buf strings.Builder
+		buf.WriteString("\n<ul>\n")
+		tasks := taskRegex.FindAllStringSubmatch(match, -1)
+		for _, t := range tasks {
+			if len(t) < 3 {
+				continue
+			}
+			status := t[1]
+			body := t[2]
+			// Strip <span> wrapper from task body
+			spanRe := regexp.MustCompile(`<span[^>]*>(.*?)</span>`)
+			if m := spanRe.FindStringSubmatch(body); len(m) >= 2 {
+				body = m[1]
+			}
+			if status == "complete" {
+				buf.WriteString("<li>[x] " + body + "</li>\n")
+			} else {
+				buf.WriteString("<li>[ ] " + body + "</li>\n")
+			}
+		}
+		buf.WriteString("</ul>\n")
+		return buf.String()
+	})
+}
+
+var emoticonRegex = regexp.MustCompile(`<ac:emoticon[^>]*ac:emoji-fallback="([^"]*)"[^>]*/>`)
+
+func convertEmoticons(input string) string {
+	return emoticonRegex.ReplaceAllString(input, "$1")
+}
+
+var pageLinkWithBodyRegex = regexp.MustCompile(`(?s)<ac:link[^>]*>.*?<ri:page[^>]*ri:content-title="([^"]*)"[^>]*/>.*?<ac:plain-text-link-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-link-body>.*?</ac:link>`)
+var pageLinkSimpleRegex = regexp.MustCompile(`(?s)<ac:link[^>]*>\s*<ri:page[^>]*ri:content-title="([^"]*)"[^>]*/>\s*</ac:link>`)
+
+func convertPageLinks(input string) string {
+	// Use [[wiki-link|label]] syntax for Confluence page references
+	result := pageLinkWithBodyRegex.ReplaceAllString(input, `[[$1|$2]]`)
+	result = pageLinkSimpleRegex.ReplaceAllString(result, `[[$1]]`)
+	return result
+}
+
+var anchorLinkRegex = regexp.MustCompile(`(?s)<ac:link[^>]*ac:anchor="([^"]*)"[^>]*>.*?<ac:plain-text-link-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-link-body>.*?</ac:link>`)
+
+func convertAnchorLinks(input string) string {
+	return anchorLinkRegex.ReplaceAllString(input, `<a href="#$1">$2</a>`)
+}
+
+var userMentionRegex = regexp.MustCompile(`(?s)<ac:link[^>]*>\s*<ri:user[^>]*ri:userkey="([^"]*)"[^>]*/>\s*</ac:link>`)
+
+func convertUserMentions(input string) string {
+	return userMentionRegex.ReplaceAllString(input, `@$1`)
+}
+
+var timeRegex = regexp.MustCompile(`<time[^>]*datetime="([^"]*)"[^>]*/>`)
+
+func convertTimeElements(input string) string {
+	return timeRegex.ReplaceAllString(input, `$1`)
+}
+
+var jiraMacroRegex = regexp.MustCompile(`(?s)<ac:structured-macro[^>]*ac:name="jira"[^>]*>(.*?)</ac:structured-macro>`)
+
+func convertJiraMacro(input string) string {
+	return jiraMacroRegex.ReplaceAllStringFunc(input, func(match string) string {
+		key := extractMacroParam(match, "key")
+		server := extractMacroParam(match, "server")
+		if key != "" {
+			if server != "" {
+				return fmt.Sprintf(`<code>%s</code>`, key)
+			}
+			return fmt.Sprintf(`<code>%s</code>`, key)
+		}
+		return ""
+	})
+}
+
+var corruptedMacroRegex = regexp.MustCompile(`(?s)<ac:structured-macro>.*?<ac:plain-text-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-body>\s*</ac:structured-macro>`)
+
+func convertCorruptedMacros(input string) string {
+	return corruptedMacroRegex.ReplaceAllStringFunc(input, func(match string) string {
+		bodyRe := regexp.MustCompile(`(?s)<ac:plain-text-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-body>`)
+		bodyMatch := bodyRe.FindStringSubmatch(match)
+		if len(bodyMatch) >= 2 {
+			lang := extractMacroParam(match, "language")
+			code := bodyMatch[1]
+			return fmt.Sprintf("\n```%s\n%s\n```\n", lang, code)
+		}
+		return match
+	})
 }
