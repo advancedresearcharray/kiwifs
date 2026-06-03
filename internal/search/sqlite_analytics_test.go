@@ -486,7 +486,7 @@ func TestRollupHourlyToDaily(t *testing.T) {
 	hour := now - now%3600
 
 	// Seed old hourly data (8+ days ago)
-	oldHour := hour - 8*86400
+	oldHour := hour - 10*86400
 	seedPageViewHours(t, s, "old-doc.md", "ui", oldHour, 10)
 	seedPageViewHours(t, s, "old-doc.md", "ui", oldHour+3600, 5)
 	seedPageViewHours(t, s, "old-doc.md", "api", oldHour, 3)
@@ -541,8 +541,8 @@ func TestRollupHourlyToDaily_UnionQuerySeamless(t *testing.T) {
 	now := time.Now().Unix()
 	hour := now - now%3600
 
-	// Seed some old data that we'll roll up (8 days ago)
-	oldHour := hour - 8*86400
+	// Seed some old data that we'll roll up (10 days ago)
+	oldHour := hour - 10*86400
 	seedPageViewHours(t, s, "doc.md", "ui", oldHour, 10)
 
 	// Seed recent data
@@ -550,8 +550,8 @@ func TestRollupHourlyToDaily_UnionQuerySeamless(t *testing.T) {
 
 	// Use a wide enough range to cover the truncated day boundary.
 	// After rollup, the daily bucket is at truncateDay(oldHour) which could
-	// be up to 23h59m before oldHour. Use 9-day-old start to be safe.
-	rangeStart := hour - 9*86400
+	// be up to 23h59m before oldHour. Use 11-day-old start to be safe.
+	rangeStart := hour - 11*86400
 
 	// Before rollup: query should return 15 total
 	stats, err := s.PageViewsInRange(ctx, "", rangeStart, now)
