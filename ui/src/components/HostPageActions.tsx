@@ -40,12 +40,12 @@ function HostPageActionButton({ action, state, path }: HostPageActionButtonProps
           type="button"
           variant="ghost"
           size="icon"
-          className={cn("h-8 w-8", isActive && "text-primary")}
+          className={cn("h-8 w-8", isActive && "text-emerald-500 hover:text-emerald-600")}
           aria-label={label}
           disabled={disabled}
           onClick={() => dispatchPageAction(action.id, path)}
         >
-          <Icon className={cn("h-4 w-4", isActive && "fill-current")} />
+          <Icon className={cn("h-4 w-4", isActive && "fill-emerald-500/20")} />
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>

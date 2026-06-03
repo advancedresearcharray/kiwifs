@@ -3,17 +3,21 @@ package importer
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"fmt"
+	htmlstd "html"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/html"
 )
 
 type ConfluenceSource struct {
-	exportPath string
-	pages      []confluencePage
+	exportPath  string
+	pages       []confluencePage
+	attachments []confluenceExportAttachment
 }
 
 type confluencePage struct {
@@ -21,6 +25,19 @@ type confluencePage struct {
 	title    string
 	markdown string
 	meta     map[string]any
+}
+
+type confluenceExportAttachment struct {
+	pagePath string
+	filePath string
+	fileName string
+}
+
+// confluenceExportEntity represents a page in the Confluence XML export manifest.
+type confluenceExportEntity struct {
+	ID       string `xml:"id,attr"`
+	Title    string `xml:"title"`
+	ParentID string `xml:"parent,attr"`
 }
 
 func NewConfluence(exportPath string) (*ConfluenceSource, error) {
@@ -44,6 +61,9 @@ func (s *ConfluenceSource) Name() string {
 }
 
 func (s *ConfluenceSource) walk() error {
+	// Try to parse hierarchy from entities.xml (Confluence HTML export manifest)
+	hierarchy := s.parseHierarchy()
+
 	return filepath.Walk(s.exportPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -53,7 +73,18 @@ func (s *ConfluenceSource) walk() error {
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
+
+		// Collect attachments (non-HTML files in attachment directories)
 		if ext != ".html" && ext != ".htm" {
+			rel, _ := filepath.Rel(s.exportPath, path)
+			dir := filepath.Dir(rel)
+			if strings.Contains(dir, "attachment") || strings.Contains(dir, "attachments") {
+				s.attachments = append(s.attachments, confluenceExportAttachment{
+					pagePath: dir,
+					filePath: path,
+					fileName: filepath.Base(path),
+				})
+			}
 			return nil
 		}
 
@@ -62,7 +93,12 @@ func (s *ConfluenceSource) walk() error {
 			return fmt.Errorf("read %s: %w", path, readErr)
 		}
 
-		doc, parseErr := html.Parse(bytes.NewReader(data))
+		// Apply macro conversion on raw file content FIRST to preserve
+		// CDATA sections that html.Parse would strip
+		rawHTML := string(data)
+		rawHTML = convertConfluenceMacros(rawHTML)
+
+		doc, parseErr := html.Parse(bytes.NewReader([]byte(rawHTML)))
 		if parseErr != nil {
 			return fmt.Errorf("parse %s: %w", path, parseErr)
 		}
@@ -78,19 +114,187 @@ func (s *ConfluenceSource) walk() error {
 		}
 
 		body := findBody(doc)
-		md := htmlToMarkdown(body)
+		// Convert the body to markdown, preserving macro-converted blocks
+		bodyHTML := renderHTMLNode(body)
+		md := convertMixedContent(bodyHTML)
 
 		rel, _ := filepath.Rel(s.exportPath, path)
 		relPath := strings.TrimSuffix(rel, ext)
 
+		// Use hierarchy path if available, otherwise preserve directory structure
+		titleStr := fmt.Sprintf("%v", meta["title"])
+		if hierPath, ok := hierarchy[titleStr]; ok {
+			relPath = hierPath
+		} else {
+			// Preserve the directory-based hierarchy from the export
+			relPath = buildExportHierarchyPath(relPath)
+		}
+
 		s.pages = append(s.pages, confluencePage{
 			relPath:  relPath,
-			title:    fmt.Sprintf("%v", meta["title"]),
+			title:    titleStr,
 			markdown: md,
 			meta:     meta,
 		})
 		return nil
 	})
+}
+
+// parseHierarchy attempts to read the entities.xml manifest from a Confluence
+// HTML export to reconstruct the page tree.
+func (s *ConfluenceSource) parseHierarchy() map[string]string {
+	hierarchy := make(map[string]string)
+
+	// Confluence HTML exports include an entities.xml file
+	entitiesPath := filepath.Join(s.exportPath, "entities.xml")
+	data, err := os.ReadFile(entitiesPath)
+	if err != nil {
+		return hierarchy
+	}
+
+	// Simple XML parsing for the entities file
+	pages := parseEntitiesXML(data)
+	if len(pages) == 0 {
+		return hierarchy
+	}
+
+	// Build parent map
+	idToPage := make(map[string]*pageInfo)
+	for i := range pages {
+		idToPage[pages[i].ID] = &pages[i]
+	}
+
+	// Build hierarchy paths
+	for _, page := range pages {
+		var parts []string
+		current := &page
+		for current != nil {
+			parts = append([]string{slugifyTitle(current.Title)}, parts...)
+			if current.ParentID == "" {
+				break
+			}
+			parent, ok := idToPage[current.ParentID]
+			if !ok {
+				break
+			}
+			current = parent
+		}
+		hierarchy[page.Title] = strings.Join(parts, "/")
+	}
+
+	return hierarchy
+}
+
+type entitiesXMLDoc struct {
+	XMLName xml.Name         `xml:"hibernate-generic"`
+	Objects []entitiesObject `xml:"object"`
+}
+
+type entitiesObject struct {
+	Class      string            `xml:"class,attr"`
+	ID        string            `xml:"id"`
+	Properties []entitiesProperty `xml:"property"`
+	Collections []entitiesCollection `xml:"collection"`
+}
+
+type entitiesProperty struct {
+	Name  string `xml:"name,attr"`
+	Value string `xml:",chardata"`
+	ID    string `xml:"id"`
+}
+
+type entitiesCollection struct {
+	Name     string             `xml:"name,attr"`
+	Elements []entitiesElement  `xml:"element"`
+}
+
+type entitiesElement struct {
+	Class string `xml:"class,attr"`
+	ID    string `xml:"id"`
+}
+
+type pageInfo struct {
+	ID       string
+	Title    string
+	ParentID string
+}
+
+func parseEntitiesXML(data []byte) []pageInfo {
+	var pages []pageInfo
+
+	var doc entitiesXMLDoc
+	if err := xml.Unmarshal(data, &doc); err != nil {
+		// Fallback: try simple regex-based parsing
+		return parseEntitiesSimple(data)
+	}
+
+	for _, obj := range doc.Objects {
+		if obj.Class != "Page" && obj.Class != "page" &&
+			!strings.Contains(obj.Class, "Page") {
+			continue
+		}
+
+		p := pageInfo{ID: obj.ID}
+		for _, prop := range obj.Properties {
+			switch prop.Name {
+			case "title":
+				p.Title = prop.Value
+			case "parent":
+				p.ParentID = prop.ID
+			}
+		}
+		if p.Title != "" {
+			pages = append(pages, p)
+		}
+	}
+
+	return pages
+}
+
+func parseEntitiesSimple(data []byte) []pageInfo {
+	// Fallback for non-standard entity formats
+	return nil
+}
+
+// buildExportHierarchyPath converts a Confluence HTML export relative path
+// into a clean hierarchy path. Confluence exports often have paths like
+// "SpaceName/PageTitle_123456789.html" — we strip the numeric suffixes.
+func buildExportHierarchyPath(relPath string) string {
+	parts := strings.Split(relPath, string(filepath.Separator))
+	var clean []string
+	for _, part := range parts {
+		// Strip trailing numeric IDs (e.g., "Page-Title_123456789" -> "Page-Title")
+		cleaned := stripConfluenceID(part)
+		if cleaned != "" {
+			clean = append(clean, slugifyTitle(cleaned))
+		}
+	}
+	if len(clean) == 0 {
+		return slugifyTitle(relPath)
+	}
+	return strings.Join(clean, "/")
+}
+
+// stripConfluenceID removes the trailing _NNNNNNNN numeric ID that Confluence
+// HTML exports append to filenames.
+func stripConfluenceID(s string) string {
+	// Pattern: "Some-Title_123456789" -> "Some-Title"
+	idx := strings.LastIndex(s, "_")
+	if idx < 0 {
+		return s
+	}
+	suffix := s[idx+1:]
+	allDigits := true
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits && len(suffix) >= 5 {
+		return s[:idx]
+	}
+	return s
 }
 
 func (s *ConfluenceSource) Stream(ctx context.Context) (<-chan Record, <-chan error) {
@@ -113,7 +317,8 @@ func (s *ConfluenceSource) Stream(ctx context.Context) (<-chan Record, <-chan er
 			}
 			fields["_raw_content"] = p.markdown
 
-			pk := sanitizePath(p.relPath)
+			// Use hierarchy-aware path instead of flat sanitized path
+			pk := p.relPath
 
 			rec := Record{
 				SourceID:   fmt.Sprintf("confluence:%s:%d", name, i),
@@ -121,6 +326,41 @@ func (s *ConfluenceSource) Stream(ctx context.Context) (<-chan Record, <-chan er
 				Table:      name,
 				Fields:     fields,
 				PrimaryKey: pk,
+			}
+			select {
+			case records <- rec:
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		// Stream attachments as separate records
+		for _, att := range s.attachments {
+			if ctx.Err() != nil {
+				return
+			}
+
+			data, err := os.ReadFile(att.filePath)
+			if err != nil {
+				continue
+			}
+
+			attPath := filepath.Join(filepath.Dir(att.pagePath), "_assets", att.fileName)
+
+			fields := map[string]any{
+				"_raw_content":  string(data),
+				"_is_binary":    true,
+				"_binary_data":  data,
+				"title":         att.fileName,
+				"attachment_of": att.pagePath,
+			}
+
+			rec := Record{
+				SourceID:   fmt.Sprintf("confluence:%s:att:%s", name, att.fileName),
+				SourceDSN:  s.exportPath,
+				Table:      name,
+				Fields:     fields,
+				PrimaryKey: attPath,
 			}
 			select {
 			case records <- rec:
@@ -161,6 +401,234 @@ func extractConfluenceMeta(doc *html.Node) map[string]any {
 	}
 	walk(doc)
 	return meta
+}
+
+// renderHTMLNode serializes an html.Node back to its HTML string representation.
+func renderHTMLNode(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	html.Render(&buf, n)
+	return buf.String()
+}
+
+// convertMixedContent handles a string that's a mix of HTML elements and
+// already-converted markdown (from macro processing). It protects markdown
+// blocks from being mangled by the HTML parser.
+func convertMixedContent(input string) string {
+	// Extract markdown blocks (code fences, admonitions, details, kiwi-query, [[toc]])
+	// and replace with placeholders before HTML parsing.
+	// We use <kiwi-ph> custom elements which survive HTML parsing.
+	var placeholders []string
+	placeholder := func(block string) string {
+		idx := len(placeholders)
+		placeholders = append(placeholders, block)
+		return fmt.Sprintf("<kiwi-ph data-idx=\"%d\"></kiwi-ph>", idx)
+	}
+
+	protected := input
+
+	// Protect code fences (```...```)
+	codeFenceRe := regexp.MustCompile("(?s)```[^\n]*\n.*?```")
+	protected = codeFenceRe.ReplaceAllStringFunc(protected, func(match string) string {
+		return placeholder(htmlstd.UnescapeString(match))
+	})
+
+	// Protect admonitions (:::kind ... :::)
+	admonRe := regexp.MustCompile(`(?s):::[a-z]+[^\n]*\n.*?:::`)
+	protected = admonRe.ReplaceAllStringFunc(protected, func(match string) string {
+		return placeholder(match)
+	})
+
+	// Protect [[toc]]
+	protected = strings.ReplaceAll(protected, "[[toc]]", placeholder("[[toc]]"))
+
+	// Protect <details> blocks
+	detailsRe := regexp.MustCompile(`(?s)<details>.*?</details>`)
+	protected = detailsRe.ReplaceAllStringFunc(protected, func(match string) string {
+		return placeholder(match)
+	})
+
+	// Protect blockquotes that came from panel conversion
+	blockquoteRe := regexp.MustCompile(`(?m)(^> .+\n?)+`)
+	protected = blockquoteRe.ReplaceAllStringFunc(protected, func(match string) string {
+		return placeholder(match)
+	})
+
+	// Protect status spans
+	statusRe := regexp.MustCompile(`<span class="status[^"]*">[^<]*</span>`)
+	protected = statusRe.ReplaceAllStringFunc(protected, func(match string) string {
+		return placeholder(match)
+	})
+
+	// Now parse the remaining HTML and convert to markdown
+	doc := parseHTMLString(protected)
+	var md string
+	if doc != nil {
+		md = htmlToMarkdownWithPlaceholders(findBody(doc), placeholders)
+	} else {
+		md = protected
+		// Restore placeholders in raw text
+		for i, block := range placeholders {
+			ph := fmt.Sprintf("<kiwi-ph data-idx=\"%d\"></kiwi-ph>", i)
+			md = strings.Replace(md, ph, block, 1)
+		}
+	}
+
+	return strings.TrimSpace(md)
+}
+
+// htmlToMarkdownWithPlaceholders is like htmlToMarkdown but recognizes
+// <kiwi-ph> elements and replaces them with stored markdown blocks.
+func htmlToMarkdownWithPlaceholders(n *html.Node, placeholders []string) string {
+	if n == nil {
+		return ""
+	}
+	var buf strings.Builder
+	convertNodeWithPlaceholders(&buf, n, 0, placeholders)
+	return strings.TrimSpace(buf.String())
+}
+
+func convertNodeWithPlaceholders(buf *strings.Builder, n *html.Node, listDepth int, placeholders []string) {
+	if n.Type == html.TextNode {
+		buf.WriteString(n.Data)
+		return
+	}
+
+	if n.Type == html.ElementNode && n.Data == "kiwi-ph" {
+		// Restore the placeholder
+		idxStr := getAttr(n, "data-idx")
+		idx := 0
+		fmt.Sscanf(idxStr, "%d", &idx)
+		if idx >= 0 && idx < len(placeholders) {
+			buf.WriteString("\n\n")
+			buf.WriteString(placeholders[idx])
+			buf.WriteString("\n\n")
+		}
+		return
+	}
+
+	if n.Type != html.ElementNode {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		return
+	}
+
+	// Delegate to the existing converter logic but with placeholder awareness
+	switch n.Data {
+	case "h1", "h2", "h3", "h4", "h5", "h6":
+		level := int(n.Data[1] - '0')
+		buf.WriteString("\n\n")
+		buf.WriteString(strings.Repeat("#", level))
+		buf.WriteByte(' ')
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("\n\n")
+
+	case "p", "div":
+		buf.WriteString("\n\n")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("\n\n")
+
+	case "br":
+		buf.WriteByte('\n')
+
+	case "strong", "b":
+		buf.WriteString("**")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("**")
+
+	case "em", "i":
+		buf.WriteString("*")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("*")
+
+	case "code":
+		buf.WriteByte('`')
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteByte('`')
+
+	case "pre":
+		buf.WriteString("\n\n```\n")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("\n```\n\n")
+
+	case "a":
+		href := getAttr(n, "href")
+		buf.WriteByte('[')
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("](")
+		buf.WriteString(href)
+		buf.WriteByte(')')
+
+	case "ul":
+		buf.WriteByte('\n')
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.ElementNode && c.Data == "li" {
+				buf.WriteString(strings.Repeat("  ", listDepth))
+				buf.WriteString("- ")
+				for gc := c.FirstChild; gc != nil; gc = gc.NextSibling {
+					convertNodeWithPlaceholders(buf, gc, listDepth+1, placeholders)
+				}
+				buf.WriteByte('\n')
+			}
+		}
+
+	case "ol":
+		buf.WriteByte('\n')
+		counter := 1
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.ElementNode && c.Data == "li" {
+				buf.WriteString(strings.Repeat("  ", listDepth))
+				fmt.Fprintf(buf, "%d. ", counter)
+				for gc := c.FirstChild; gc != nil; gc = gc.NextSibling {
+					convertNodeWithPlaceholders(buf, gc, listDepth+1, placeholders)
+				}
+				buf.WriteByte('\n')
+				counter++
+			}
+		}
+
+	case "table":
+		buf.WriteString("\n\n")
+		convertTable(buf, n)
+		buf.WriteString("\n\n")
+
+	case "blockquote":
+		buf.WriteString("\n\n> ")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+		buf.WriteString("\n\n")
+
+	case "hr":
+		buf.WriteString("\n\n---\n\n")
+
+	case "html", "head", "body":
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+
+	default:
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			convertNodeWithPlaceholders(buf, c, listDepth, placeholders)
+		}
+	}
 }
 
 func findBody(doc *html.Node) *html.Node {

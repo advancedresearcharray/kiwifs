@@ -325,11 +325,15 @@ func renderRawContent(rawContent, sourceName, sourceID string) []byte {
 }
 
 func sanitizePath(s string) string {
-	s = strings.ReplaceAll(s, "/", "_")
-	s = strings.ReplaceAll(s, "\\", "_")
-	s = strings.ReplaceAll(s, " ", "_")
-	s = strings.ReplaceAll(s, "..", "_")
-	return s
+	// Preserve forward slashes for hierarchy-aware sources
+	parts := strings.Split(s, "/")
+	for i, part := range parts {
+		part = strings.ReplaceAll(part, "\\", "_")
+		part = strings.ReplaceAll(part, " ", "_")
+		part = strings.ReplaceAll(part, "..", "_")
+		parts[i] = part
+	}
+	return strings.Join(parts, "/")
 }
 
 // SanitizePath is the exported version of sanitizePath for use by other packages.

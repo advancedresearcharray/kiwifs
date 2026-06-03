@@ -767,7 +767,7 @@ This is an advanced topic.
 	}
 
 	// Verify nested file.
-	content2, err := store.Read(ctx, filepath.Base(docsDir)+"/guides_advanced.md")
+	content2, err := store.Read(ctx, filepath.Base(docsDir)+"/guides/advanced.md")
 	if err != nil {
 		t.Fatalf("read advanced: %v", err)
 	}

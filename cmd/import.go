@@ -30,6 +30,7 @@ var importCmd = &cobra.Command{
   kiwifs import --from gsheets --spreadsheet-id "1BxiM..." --sheet "Sheet1" --credentials creds.json
   kiwifs import --from obsidian --path /path/to/vault
   kiwifs import --from confluence --path /path/to/export
+  kiwifs import --from confluence --api --space MYSPACE --url https://mysite.atlassian.net/wiki
   kiwifs import --from dynamodb --region us-east-1 --table students
   kiwifs import --from redis --addr localhost:6379 --pattern "students:*"
   kiwifs import --from elasticsearch --url http://localhost:9200 --index students`,
@@ -69,8 +70,10 @@ func init() {
 	importCmd.Flags().String("password", "", "auth password (redis)")
 	importCmd.Flags().Int("redis-db", 0, "Redis database number")
 	importCmd.Flags().String("pattern", "", "key pattern (redis)")
-	importCmd.Flags().String("url", "", "server URL (elasticsearch)")
+	importCmd.Flags().String("url", "", "server URL (elasticsearch, confluence API)")
 	importCmd.Flags().String("index", "", "index name (elasticsearch)")
+	importCmd.Flags().Bool("api", false, "use live API mode (confluence)")
+	importCmd.Flags().String("space", "", "space key (confluence API mode)")
 }
 
 func runImport(cmd *cobra.Command, _ []string) error {
@@ -286,8 +289,23 @@ func buildSource(cmd *cobra.Command, from string) (importer.Source, error) {
 
 	case "confluence":
 		path, _ := cmd.Flags().GetString("path")
+		apiMode, _ := cmd.Flags().GetBool("api")
+		spaceKey, _ := cmd.Flags().GetString("space")
+		confluenceURL, _ := cmd.Flags().GetString("url")
+		if apiMode || spaceKey != "" {
+			// Live API mode: fetch directly from Confluence Cloud
+			email := os.Getenv("CONFLUENCE_EMAIL")
+			token := os.Getenv("CONFLUENCE_API_TOKEN")
+			if confluenceURL == "" {
+				confluenceURL = os.Getenv("CONFLUENCE_BASE_URL")
+			}
+			if spaceKey == "" {
+				return nil, fmt.Errorf("--space is required for confluence API mode")
+			}
+			return importer.NewConfluenceAPI(confluenceURL, spaceKey, email, token)
+		}
 		if path == "" {
-			return nil, fmt.Errorf("--path is required for confluence")
+			return nil, fmt.Errorf("--path is required for confluence (offline mode), or use --api --space KEY for live API")
 		}
 		return importer.NewConfluence(path)
 
