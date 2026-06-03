@@ -408,21 +408,48 @@ func extractLabels(page confluenceAPIPage) []string {
 }
 
 // slugifyTitle converts a page title to a filesystem-safe slug preserving readability.
+// Preserves Unicode letters and digits (CJK, Arabic, Cyrillic, etc.) while stripping
+// only characters that are unsafe for filesystems (NUL, /, \, :, *, ?, ", <, >, |).
 func slugifyTitle(title string) string {
 	s := strings.ToLower(strings.TrimSpace(title))
-	s = strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			return r
+
+	var buf strings.Builder
+	prevDash := false
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			buf.WriteRune(r)
+			prevDash = (r == '-')
+		case r == ' ', r == '_', r == '\t':
+			if !prevDash {
+				buf.WriteByte('-')
+				prevDash = true
+			}
+		case r == '/', r == '\\', r == ':', r == '*', r == '?', r == '"', r == '<', r == '>', r == '|', r == 0:
+			// Filesystem-unsafe: skip
+			if !prevDash && buf.Len() > 0 {
+				buf.WriteByte('-')
+				prevDash = true
+			}
+		case r > 127:
+			// Preserve Unicode letters/digits (CJK, Arabic, etc.)
+			buf.WriteRune(r)
+			prevDash = false
+		default:
+			// Other ASCII punctuation: skip
+			if !prevDash && buf.Len() > 0 {
+				buf.WriteByte('-')
+				prevDash = true
+			}
 		}
-		if r == ' ' || r == '_' || r == '/' {
-			return '-'
-		}
-		return -1
-	}, s)
-	for strings.Contains(s, "--") {
-		s = strings.ReplaceAll(s, "--", "-")
 	}
-	return strings.Trim(s, "-")
+
+	result := strings.Trim(buf.String(), "-")
+	if result == "" {
+		// Fallback for titles that produce empty slugs (shouldn't happen now with Unicode support)
+		return "untitled"
+	}
+	return result
 }
 
 // convertStorageFormat converts Confluence Storage Format (XHTML) to Markdown,
