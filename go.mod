@@ -163,7 +163,10 @@ require (
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/swaggo/swag/v2 v2.0.0-rc5 // indirect
 	github.com/testcontainers/testcontainers-go v0.35.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/elasticsearch v0.35.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/mongodb v0.35.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.35.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/redis v0.35.0 // indirect
 	github.com/tetratelabs/wazero v1.10.1 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
