@@ -847,11 +847,12 @@ export const api = {
   async importUpload(opts: {
     file: File;
     from: string;
-    mode: "preview" | "import";
+    mode: "preview" | "import" | "infer-fields";
     prefix?: string;
     id_column?: string;
     table?: string;
     query?: string;
+    field_mappings?: ImportFieldMapping[];
   }): Promise<ImportPreviewResponse | ImportRunResponse> {
     const form = new FormData();
     form.append("file", opts.file);
@@ -861,6 +862,7 @@ export const api = {
     if (opts.id_column) form.append("id_column", opts.id_column);
     if (opts.table) form.append("table", opts.table);
     if (opts.query) form.append("query", opts.query);
+    if (opts.field_mappings?.length) form.append("field_mappings", JSON.stringify(opts.field_mappings));
     const res = await fetch(`${kiwiBase()}/import/upload`, {
       method: "POST",
       headers: { "X-Actor": actor(), ..._extraHeaders },
@@ -885,6 +887,14 @@ export const api = {
 
   async importPreview(params: ImportPreviewRequest): Promise<ImportPreviewResponse> {
     return request(`${kiwiBase()}/import/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  },
+
+  async importInferFields(params: Omit<ImportPreviewRequest, "limit" | "field_mappings">): Promise<ImportInferFieldsResponse> {
+    return request(`${kiwiBase()}/import/infer-fields`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
@@ -1045,6 +1055,13 @@ export type ImportBrowseResponse = {
   tables: { name: string; estimated_count?: number }[];
 };
 
+export type ImportFieldMapping = {
+  source: string;
+  target: string;
+  type?: "string" | "number" | "date" | "boolean";
+  skip?: boolean;
+};
+
 export type ImportPreviewRequest = {
   from: string;
   dsn?: string;
@@ -1058,11 +1075,18 @@ export type ImportPreviewRequest = {
   table_id?: string;
   credentials?: unknown;
   api_key?: string;
+  prefix?: string;
+  id_column?: string;
+  field_mappings?: ImportFieldMapping[];
   limit?: number;
 };
 
 export type ImportPreviewResponse = {
   records: { path: string; frontmatter: Record<string, unknown>; body_preview: string }[];
+};
+
+export type ImportInferFieldsResponse = {
+  fields: ImportFieldMapping[];
 };
 
 export type ImportRunRequest = {
@@ -1080,6 +1104,7 @@ export type ImportRunRequest = {
   prefix?: string;
   id_column?: string;
   columns?: string[];
+  field_mappings?: ImportFieldMapping[];
   credentials?: unknown;
   api_key?: string;
   limit?: number;
