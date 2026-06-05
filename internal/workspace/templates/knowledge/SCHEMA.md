@@ -55,12 +55,14 @@ Every `.md` file should have YAML frontmatter. Required fields marked *.
 | derived-from    | object[]   |          | Provenance chain. Each entry: `source` (URI or path), `type` (`ingest` · `consolidation` · `synthesis`), `date` (ISO 8601), `actor` (who/what produced it) |
 | merged-from     | object[]   |          | Episode paths this page was consolidated from. Each entry: `path`, `episode_id`, `date` |
 | confidence      | float      |          | 0.0–1.0, certainty level of this knowledge  |
+| memory_status   | string     |          | `active` · `contested` · `superseded` · `stale` (default: `active`) |
 
 ### Episodes (`episodes/*.md`)
 
 | Field           | Type       | Required | Values / Notes                              |
 |-----------------|------------|----------|---------------------------------------------|
 | memory_kind     | string     | *        | Always `episodic`                           |
+| memory_status   | string     |          | `active` · `contested` · `superseded` · `stale` (default: `active`) |
 | episode_id      | string     | *        | Unique session/episode identifier           |
 | session_id      | string     |          | Groups episodes from the same session       |
 | confidence      | float      |          | 0.0–1.0, how certain is this observation    |
