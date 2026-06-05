@@ -164,6 +164,9 @@ func TestElasticsearchImporterIntegration(t *testing.T) {
 		t.Fatalf("port: %v", err)
 	}
 	base := fmt.Sprintf("http://elastic:changeme@%s:%s", host, mapped.Port())
+	if err := waitElasticsearchReady(ctx, base); err != nil {
+		t.Fatalf("elasticsearch ready: %v", err)
+	}
 	doc := map[string]any{"name": "alpha", "qty": 10}
 	body, _ := json.Marshal(doc)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, base+"/widgets/_doc/1", bytes.NewReader(body))
@@ -283,5 +286,34 @@ func TestDynamoDBImporterIntegration(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].PrimaryKey == "" {
 		t.Fatalf("records: %+v", got)
+	}
+}
+
+func waitElasticsearchReady(ctx context.Context, base string) error {
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/_cluster/health", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			var health struct {
+				Status string `json:"status"`
+			}
+			_ = json.NewDecoder(resp.Body).Decode(&health)
+			resp.Body.Close()
+			if health.Status == "green" || health.Status == "yellow" {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("cluster health not green/yellow before timeout")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
