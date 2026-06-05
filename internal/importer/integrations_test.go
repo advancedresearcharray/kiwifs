@@ -3,9 +3,12 @@ package importer
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -144,34 +147,31 @@ func TestRedisImporterIntegration(t *testing.T) {
 
 func TestElasticsearchImporterIntegration(t *testing.T) {
 	requireDocker(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	container, err := elasticsearch.Run(ctx, "docker.elastic.co/elasticsearch/elasticsearch:8.11.0",
+	ctr, err := elasticsearch.Run(ctx, "docker.elastic.co/elasticsearch/elasticsearch:8.11.0",
 		elasticsearch.WithPassword("changeme"),
+		// ES 8 defaults to HTTPS; use plain HTTP so importer URL + health checks work.
+		testcontainers.WithEnv(map[string]string{
+			"xpack.security.http.ssl.enabled": "false",
+		}),
 	)
 	if err != nil {
 		t.Fatalf("start elasticsearch: %v", err)
 	}
-	t.Cleanup(func() { _ = container.Terminate(context.Background()) })
+	t.Cleanup(func() { _ = ctr.Terminate(context.Background()) })
 
-	host, err := container.Host(ctx)
-	if err != nil {
-		t.Fatalf("host: %v", err)
-	}
-	mapped, err := container.MappedPort(ctx, "9200/tcp")
-	if err != nil {
-		t.Fatalf("port: %v", err)
-	}
-	base := fmt.Sprintf("http://elastic:changeme@%s:%s", host, mapped.Port())
-	if err := waitElasticsearchReady(ctx, base); err != nil {
+	client := esTestHTTPClient(ctr)
+	base := elasticsearchBaseURL(ctr)
+	if err := waitElasticsearchReady(ctx, client, base+"/_cluster/health"); err != nil {
 		t.Fatalf("elasticsearch ready: %v", err)
 	}
 	doc := map[string]any{"name": "alpha", "qty": 10}
 	body, _ := json.Marshal(doc)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, base+"/widgets/_doc/1", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("index doc: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestElasticsearchImporterIntegration(t *testing.T) {
 		t.Fatalf("index status: %d", resp.StatusCode)
 	}
 	refresh, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/widgets/_refresh", nil)
-	if rresp, err := http.DefaultClient.Do(refresh); err == nil {
+	if rresp, err := client.Do(refresh); err == nil {
 		rresp.Body.Close()
 	}
 
@@ -289,26 +289,53 @@ func TestDynamoDBImporterIntegration(t *testing.T) {
 	}
 }
 
-func waitElasticsearchReady(ctx context.Context, base string) error {
-	deadline := time.Now().Add(2 * time.Minute)
+func elasticsearchBaseURL(ctr *elasticsearch.ElasticsearchContainer) string {
+	addr := strings.TrimPrefix(ctr.Settings.Address, "https://")
+	addr = strings.TrimPrefix(addr, "http://")
+	return fmt.Sprintf("http://%s:%s@%s", ctr.Settings.Username, ctr.Settings.Password, addr)
+}
+
+func esTestHTTPClient(ctr *elasticsearch.ElasticsearchContainer) *http.Client {
+	if ctr.Settings.CACert == nil {
+		return http.DefaultClient
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(ctr.Settings.CACert)
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool},
+		},
+	}
+}
+
+func waitElasticsearchReady(ctx context.Context, client *http.Client, healthURL string) error {
+	deadline := time.Now().Add(3 * time.Minute)
+	var lastErr error
 	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/_cluster/health", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 		if err != nil {
 			return err
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err == nil {
 			var health struct {
 				Status string `json:"status"`
 			}
-			_ = json.NewDecoder(resp.Body).Decode(&health)
+			decodeErr := json.NewDecoder(resp.Body).Decode(&health)
 			resp.Body.Close()
-			if health.Status == "green" || health.Status == "yellow" {
+			if decodeErr == nil && (health.Status == "green" || health.Status == "yellow") {
 				return nil
 			}
+			if decodeErr != nil {
+				lastErr = decodeErr
+			} else {
+				lastErr = fmt.Errorf("cluster status %q", health.Status)
+			}
+		} else {
+			lastErr = err
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("cluster health not green/yellow before timeout")
+			return fmt.Errorf("cluster health not green/yellow before timeout: %v", lastErr)
 		}
 		select {
 		case <-ctx.Done():
