@@ -64,6 +64,7 @@ func TestPostgresImporterIntegration(t *testing.T) {
 		INSERT INTO sample_rows (label, qty, active, amount) VALUES
 			('alpha', 10, true, 19.99),
 			('beta', 0, false, 0.00);
+		ANALYZE sample_rows;
 	`)
 	if err != nil {
 		t.Fatalf("seed table: %v", err)
@@ -83,8 +84,9 @@ func TestPostgresImporterIntegration(t *testing.T) {
 	for _, tbl := range tables {
 		if tbl.Name == "sample_rows" {
 			foundTable = true
+			// pg_class.reltuples is -1 until ANALYZE; after seeding we expect a non-negative estimate.
 			if tbl.EstimatedCount < 0 {
-				t.Fatalf("unexpected estimated count: %d", tbl.EstimatedCount)
+				t.Fatalf("unexpected estimated count after ANALYZE: %d", tbl.EstimatedCount)
 			}
 		}
 	}
