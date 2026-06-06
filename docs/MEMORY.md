@@ -33,6 +33,21 @@ Use `memory_kind` to classify a page. Recognised values include:
 
 ---
 
+## `memory_status` in frontmatter
+
+Use `memory_status` to track the lifecycle of a memory page:
+
+| Value | Meaning |
+|-------|---------|
+| `active` | Current memory, retrieved normally (**default** when absent) |
+| `contested` | A contradiction was flagged; still retrievable, surfaced in memory reports |
+| `superseded` | Replaced by a newer memory; **excluded from default search** |
+| `stale` | Aged out or expired; deprioritized in ranking (future) |
+
+Pages with `memory_status: superseded` are indexed but omitted from default FTS search results. Pass `include_superseded=true` on `GET /api/kiwi/search` to include them.
+
+---
+
 ## Path convention: `episodes/`
 
 By default, any markdown under the prefix **`episodes/`** (configurable) is treated as **episodic** when `memory_kind` is not set to `semantic` or `consolidation`. That lets you drop files into a folder without always setting `memory_kind`.
