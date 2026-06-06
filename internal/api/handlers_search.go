@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/kiwifs/kiwifs/internal/config"
@@ -46,6 +47,7 @@ type searchResponse struct {
 //	@Param			offset			query		int		false	"Number of search results to skip (offset) (default: 0)"
 //	@Param			boost				query		string	false	"Set to 'none' or 'off' to disable trust boosting in search results"
 //	@Param			include_superseded	query		bool	false	"Include pages with memory_status: superseded (excluded by default)"
+//	@Param			recency_weight		query		number	false	"Blend recency into ranking, from 0.0 relevance-only to 1.0 recency-only"
 //	@Param			modifiedAfter		query		string	false	"RFC3339 formatted cutoff date to filter search results by modification time"
 //	@Param			scope				query		string	false	"Filter results to pages whose frontmatter scope exactly matches"
 //	@Success		200				{object}	searchResponse
@@ -66,16 +68,21 @@ func (h *Handlers) Search(c echo.Context) error {
 	if pathPrefix == "" {
 		pathPrefix = c.QueryParam("path_prefix")
 	}
+	recencyWeight, perr := parseRecencyWeight(c)
+	if perr != nil {
+		return perr
+	}
 	var (
 		results []search.Result
 		err     error
 	)
 	switch {
-	case includeSuperseded || scope != "":
+	case includeSuperseded || scope != "" || recencyWeight > 0:
 		if os, ok := h.searcher.(search.OptionsSearcher); ok {
 			results, err = os.SearchWithOptions(c.Request().Context(), q, limit, offset, pathPrefix, search.SearchOptions{
 				IncludeSuperseded: includeSuperseded,
 				Scope:             scope,
+				RecencyWeight:     recencyWeight,
 			})
 		} else if scope == "" {
 			results, err = h.searcher.Search(c.Request().Context(), q, limit, offset, pathPrefix)
@@ -151,6 +158,18 @@ func (h *Handlers) Search(c echo.Context) error {
 	}
 	tracing.Record(c.Request().Context(), tracing.Event{Kind: tracing.KindSearch, Query: q, HitCount: len(results)})
 	return c.JSON(http.StatusOK, h.buildSearchResponse(c, q, limit, offset, pathPrefix, results))
+}
+
+func parseRecencyWeight(c echo.Context) (float64, error) {
+	raw := c.QueryParam("recency_weight")
+	if raw == "" {
+		return 0, nil
+	}
+	weight, err := strconv.ParseFloat(raw, 64)
+	if err != nil || weight < 0 || weight > 1 {
+		return 0, echo.NewHTTPError(http.StatusBadRequest, "invalid recency_weight: expected number between 0.0 and 1.0")
+	}
+	return weight, nil
 }
 
 func (h *Handlers) buildSearchResponse(c echo.Context, q string, limit, offset int, pathPrefix string, results []search.Result) searchResponse {

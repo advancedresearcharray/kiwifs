@@ -89,6 +89,9 @@ type SearchOptions struct {
 	IncludeSuperseded bool
 	// Scope restricts results to pages whose frontmatter scope exactly matches.
 	Scope string
+	// RecencyWeight blends recency into the relevance score when > 0.
+	// Valid range is 0.0 through 1.0; callers should validate user input.
+	RecencyWeight float64
 }
 
 // OptionsSearcher supports optional search tuning beyond the base Searcher contract.

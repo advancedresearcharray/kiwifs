@@ -286,10 +286,18 @@ func (b *LocalBackend) Tree(ctx context.Context, path string) (json.RawMessage, 
 }
 
 func (b *LocalBackend) Search(ctx context.Context, query string, limit, offset int, pathPrefix string) ([]SearchResult, error) {
-	return b.SearchScoped(ctx, query, limit, offset, pathPrefix, "")
+	return b.searchWithOptions(ctx, query, limit, offset, pathPrefix, search.SearchOptions{})
 }
 
 func (b *LocalBackend) SearchScoped(ctx context.Context, query string, limit, offset int, pathPrefix, scope string) ([]SearchResult, error) {
+	return b.searchWithOptions(ctx, query, limit, offset, pathPrefix, search.SearchOptions{Scope: scope})
+}
+
+func (b *LocalBackend) SearchWithRecency(ctx context.Context, query string, limit, offset int, pathPrefix string, recencyWeight float64) ([]SearchResult, error) {
+	return b.searchWithOptions(ctx, query, limit, offset, pathPrefix, search.SearchOptions{RecencyWeight: recencyWeight})
+}
+
+func (b *LocalBackend) searchWithOptions(ctx context.Context, query string, limit, offset int, pathPrefix string, opts search.SearchOptions) ([]SearchResult, error) {
 	if err := b.init(); err != nil {
 		return nil, err
 	}
@@ -297,18 +305,26 @@ func (b *LocalBackend) SearchScoped(ctx context.Context, query string, limit, of
 		results []search.Result
 		err     error
 	)
-	if scope != "" {
-		os, ok := b.stack.Searcher.(search.OptionsSearcher)
-		if !ok {
+	if opts.IncludeSuperseded || opts.RecencyWeight > 0 || opts.Scope != "" {
+		if os, ok := b.stack.Searcher.(search.OptionsSearcher); ok {
+			results, err = os.SearchWithOptions(ctx, query, limit, offset, pathPrefix, opts)
+		} else if opts.Scope != "" {
 			return nil, fmt.Errorf("scope search requires sqlite search backend")
+		} else {
+			results, err = b.stack.Searcher.Search(ctx, query, limit, offset, pathPrefix)
 		}
-		results, err = os.SearchWithOptions(ctx, query, limit, offset, pathPrefix, search.SearchOptions{Scope: scope})
 	} else {
 		results, err = b.stack.Searcher.Search(ctx, query, limit, offset, pathPrefix)
 	}
 	if err != nil {
 		return nil, err
 	}
+	out := mapSearchResults(results)
+	tracing.Record(ctx, tracing.Event{Kind: tracing.KindSearch, Query: query, HitCount: len(out)})
+	return out, nil
+}
+
+func mapSearchResults(results []search.Result) []SearchResult {
 	out := make([]SearchResult, len(results))
 	for i, r := range results {
 		snippet := r.Snippet
@@ -319,8 +335,7 @@ func (b *LocalBackend) SearchScoped(ctx context.Context, query string, limit, of
 			Score:   r.Score,
 		}
 	}
-	tracing.Record(ctx, tracing.Event{Kind: tracing.KindSearch, Query: query, HitCount: len(out)})
-	return out, nil
+	return out
 }
 
 var markTagRe = regexp.MustCompile(`</?mark>`)

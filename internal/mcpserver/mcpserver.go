@@ -136,6 +136,7 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithString("path_prefix", mcp.Description("Filter to a subtree like failures/")),
 				mcp.WithString("scope", mcp.Description("Filter to pages whose frontmatter scope exactly matches, e.g. user:alice")),
 				mcp.WithNumber("offset", mcp.Description("Offset for pagination (default 0)")),
+				mcp.WithNumber("recency_weight", mcp.Description("Blend recency into ranking, from 0.0 relevance-only to 1.0 recency-only")),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
@@ -1060,6 +1061,10 @@ func handleSearch(b Backend) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		scope, _ := args["scope"].(string)
+		recencyWeight, err := floatArg(args, "recency_weight", 0)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		var results []SearchResult
 		if scope != "" {
@@ -1068,6 +1073,12 @@ func handleSearch(b Backend) server.ToolHandlerFunc {
 				return mcp.NewToolResultError("scope search is not supported by this backend"), nil
 			}
 			results, err = sb.SearchScoped(ctx, query, limit+1, offset, prefix, scope)
+		} else if recencyWeight > 0 {
+			recencyBackend, ok := b.(recencySearchBackend)
+			if !ok {
+				return mcp.NewToolResultError("recency_weight is not supported by this backend"), nil
+			}
+			results, err = recencyBackend.SearchWithRecency(ctx, query, limit+1, offset, prefix, recencyWeight)
 		} else {
 			results, err = b.Search(ctx, query, limit+1, offset, prefix)
 		}
@@ -2279,6 +2290,36 @@ func intArg(args map[string]any, key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func floatArg(args map[string]any, key string, def float64) (float64, error) {
+	v, ok := args[key]
+	if !ok {
+		return def, nil
+	}
+	var n float64
+	switch raw := v.(type) {
+	case float64:
+		n = raw
+	case float32:
+		n = float64(raw)
+	case int:
+		n = float64(raw)
+	case int64:
+		n = float64(raw)
+	case json.Number:
+		var err error
+		n, err = raw.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a number", key)
+		}
+	default:
+		return 0, fmt.Errorf("%s must be a number", key)
+	}
+	if n < 0 || n > 1 {
+		return 0, fmt.Errorf("%s must be between 0.0 and 1.0", key)
+	}
+	return n, nil
 }
 
 func extractFrontmatterFromContent(content string) map[string]any {

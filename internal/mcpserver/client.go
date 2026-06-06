@@ -259,6 +259,14 @@ func (r *RemoteBackend) Search(ctx context.Context, query string, limit, offset 
 }
 
 func (r *RemoteBackend) SearchScoped(ctx context.Context, query string, limit, offset int, pathPrefix, scope string) ([]SearchResult, error) {
+	return r.searchFull(ctx, query, limit, offset, pathPrefix, scope, 0)
+}
+
+func (r *RemoteBackend) SearchWithRecency(ctx context.Context, query string, limit, offset int, pathPrefix string, recencyWeight float64) ([]SearchResult, error) {
+	return r.searchFull(ctx, query, limit, offset, pathPrefix, "", recencyWeight)
+}
+
+func (r *RemoteBackend) searchFull(ctx context.Context, query string, limit, offset int, pathPrefix, scope string, recencyWeight float64) ([]SearchResult, error) {
 	params := url.Values{}
 	params.Set("q", query)
 	if limit > 0 {
@@ -272,6 +280,9 @@ func (r *RemoteBackend) SearchScoped(ctx context.Context, query string, limit, o
 	}
 	if scope != "" {
 		params.Set("scope", scope)
+	}
+	if recencyWeight > 0 {
+		params.Set("recency_weight", strconv.FormatFloat(recencyWeight, 'f', -1, 64))
 	}
 	var result struct {
 		Results []SearchResult `json:"results"`
