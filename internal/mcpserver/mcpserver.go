@@ -62,6 +62,7 @@ func New(opts Options) (*server.MCPServer, Backend, error) {
 	)
 
 	registerTools(s, backend, opts)
+	registerMemoryTools(s, backend)
 	registerResources(s, backend, opts)
 
 	return s, backend, nil

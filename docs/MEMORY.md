@@ -59,6 +59,7 @@ Expired pages are flagged for review, not auto-deleted.
 
 ---
 
+
 ## Path convention: `episodes/`
 
 By default, any markdown under the prefix **`episodes/`** (configurable) is treated as **episodic** when `memory_kind` is not set to `semantic` or `consolidation`. That lets you drop files into a folder without always setting `memory_kind`.
