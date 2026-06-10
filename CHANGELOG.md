@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.32](https://github.com/kiwifs/kiwifs/compare/v0.19.31...v0.19.32) (2026-06-10)
+
+
+### Bug Fixes
+
+* **ci:** auto-merge Cursor agent fix ([#289](https://github.com/kiwifs/kiwifs/issues/289)) ([f87a286](https://github.com/kiwifs/kiwifs/commit/f87a28695b6a6cd5a8ce470674c6669882b73497))
+
 ## [0.19.31](https://github.com/kiwifs/kiwifs/compare/v0.19.30...v0.19.31) (2026-06-10)
 
 
