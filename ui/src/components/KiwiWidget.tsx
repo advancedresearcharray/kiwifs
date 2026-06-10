@@ -4,6 +4,9 @@ import yaml from "js-yaml";
 import { getWidget } from "@kw/widgets/registry";
 import { usePlayback } from "@kw/widgets/usePlayback";
 import { PlaybackControls } from "@kw/widgets/PlaybackControls";
+import { ArrayView } from "@kw/widgets/ArrayView";
+import { StateTable } from "@kw/widgets/StateTable";
+import { CodeHighlight } from "@kw/widgets/CodeHighlight";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 const liveScope = {
@@ -14,6 +17,9 @@ const liveScope = {
   useMemo,
   usePlayback,
   PlaybackControls,
+  ArrayView,
+  StateTable,
+  CodeHighlight,
 };
 
 interface Props {
@@ -25,7 +31,7 @@ export function KiwiWidget({ name, source }: Props) {
   if (name === "live") {
     return (
       <ErrorBoundary fallback={<WidgetError name={name} source={source} />}>
-        <div className="my-4 rounded-lg border border-border overflow-hidden">
+        <div className="kiwi-widget my-4 rounded-lg border border-border overflow-hidden">
           <LiveProvider code={source} scope={liveScope} noInline>
             <div className="p-4 bg-card">
               <LivePreview />
