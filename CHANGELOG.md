@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.30](https://github.com/kiwifs/kiwifs/compare/v0.19.29...v0.19.30) (2026-06-10)
+
+
+### Features
+
+* **ui:** widget:live playback engine, reusable components, and cache fix ([#287](https://github.com/kiwifs/kiwifs/issues/287)) ([01425e3](https://github.com/kiwifs/kiwifs/commit/01425e3828e005ddffd603110805b9db439c11a9))
+
+
+### Bug Fixes
+
+* **ui:** remove gap between code block header and content ([#285](https://github.com/kiwifs/kiwifs/issues/285)) ([1750db6](https://github.com/kiwifs/kiwifs/commit/1750db6481dc4aa90e1e4c7ba8fb7d5967c7bd24))
+
 ## [0.19.29](https://github.com/kiwifs/kiwifs/compare/v0.19.28...v0.19.29) (2026-06-10)
 
 
