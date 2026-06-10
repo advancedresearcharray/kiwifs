@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { getHighlighter, hasLang } from "@kw/lib/shiki";
+
 export interface CodeHighlightProps {
   /** The source code to display (plain text, one line per array entry or newline-separated string). */
   code: string | string[];
@@ -5,10 +8,49 @@ export interface CodeHighlightProps {
   activeLine?: number;
   /** Optional label above the code block. */
   title?: string;
+  /** Language for syntax highlighting (default: "python"). */
+  lang?: string;
 }
 
-export function CodeHighlight({ code, activeLine, title }: CodeHighlightProps) {
+interface TokenSpan {
+  content: string;
+  color?: string;
+}
+
+export function CodeHighlight({ code, activeLine, title, lang = "python" }: CodeHighlightProps) {
   const lines = Array.isArray(code) ? code : code.split("\n");
+  const source = lines.join("\n");
+
+  const isDark =
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("dark");
+
+  const [tokenLines, setTokenLines] = useState<TokenSpan[][] | null>(null);
+
+  useEffect(() => {
+    if (!hasLang(lang)) return;
+    let cancelled = false;
+    getHighlighter().then((hl) => {
+      if (cancelled) return;
+      try {
+        const result = hl.codeToTokens(source, {
+          lang: lang as Parameters<typeof hl.codeToTokens>[1]["lang"],
+          theme: isDark ? "github-dark" : "github-light",
+        });
+        setTokenLines(
+          result.tokens.map((line) =>
+            line.map((token) => ({
+              content: token.content,
+              color: token.color,
+            }))
+          )
+        );
+      } catch {
+        /* fall back to plain text */
+      }
+    });
+    return () => { cancelled = true; };
+  }, [source, lang, isDark]);
 
   return (
     <div style={{
@@ -33,6 +75,7 @@ export function CodeHighlight({ code, activeLine, title }: CodeHighlightProps) {
       <div style={{ padding: "8px 0" }}>
         {lines.map((line, i) => {
           const active = i === activeLine;
+          const tokens = tokenLines?.[i];
           return (
             <div
               key={i}
@@ -58,13 +101,22 @@ export function CodeHighlight({ code, activeLine, title }: CodeHighlightProps) {
               }}>
                 {i + 1}
               </span>
-              <span style={{
-                color: active
-                  ? "var(--kw-widget-text, #e5e7eb)"
-                  : "var(--kw-widget-dim, #94a3b8)",
-                whiteSpace: "pre",
-              }}>
-                {line}
+              <span style={{ whiteSpace: "pre" }}>
+                {tokens ? (
+                  tokens.map((tok, j) => (
+                    <span key={j} style={{ color: active ? undefined : tok.color }}>
+                      {tok.content}
+                    </span>
+                  ))
+                ) : (
+                  <span style={{
+                    color: active
+                      ? "var(--kw-widget-text, #e5e7eb)"
+                      : "var(--kw-widget-dim, #94a3b8)",
+                  }}>
+                    {line}
+                  </span>
+                )}
               </span>
             </div>
           );
