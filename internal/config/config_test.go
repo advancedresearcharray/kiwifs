@@ -225,6 +225,89 @@ overlap = 80
 	}
 }
 
+func TestEmbedderConfigResolvedProvider(t *testing.T) {
+	if got := (EmbedderConfig{Provider: "openai"}).ResolvedProvider(); got != "openai" {
+		t.Fatalf("provider wins: got %q", got)
+	}
+	if got := (EmbedderConfig{Provider: "openai", Type: "onnx"}).ResolvedProvider(); got != "openai" {
+		t.Fatalf("provider wins over type: got %q", got)
+	}
+	if got := (EmbedderConfig{Type: "onnx"}).ResolvedProvider(); got != "onnx" {
+		t.Fatalf("type alias: got %q", got)
+	}
+	if got := (EmbedderConfig{}).ResolvedProvider(); got != "" {
+		t.Fatalf("empty: got %q", got)
+	}
+}
+
+func TestEmbedderProviderWinsOverTypeOnLoad(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[search.vector.embedder]
+provider = "openai"
+type = "onnx"
+model = "text-embedding-3-small"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := cfg.Search.Vector.Embedder.Provider; got != "openai" {
+		t.Fatalf("provider = %q, want openai (provider wins over type alias)", got)
+	}
+}
+
+func TestONNXEmbedderTypeAlias(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[search.vector.embedder]
+type = "onnx"
+model_path = "/models/all-MiniLM-L6-v2/onnx/model.onnx"
+tokenizer_path = "/models/all-MiniLM-L6-v2/tokenizer.json"
+dimensions = 384
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Search.Vector.Embedder.Provider != "onnx" {
+		t.Fatalf("provider = %q, want onnx", cfg.Search.Vector.Embedder.Provider)
+	}
+}
+
+func TestONNXEmbedderTypeAliasIssue102Minimal(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	// Matches issue #102 acceptance config (type alias, model_path only).
+	body := `
+[search.vector.embedder]
+type = "onnx"
+model_path = "~/.kiwi/models/all-MiniLM-L6-v2/onnx/model.onnx"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	emb := cfg.Search.Vector.Embedder
+	if emb.Provider != "onnx" {
+		t.Fatalf("provider = %q, want onnx from type alias", emb.Provider)
+	}
+	if emb.ModelPath != "~/.kiwi/models/all-MiniLM-L6-v2/onnx/model.onnx" {
+		t.Fatalf("model_path = %q", emb.ModelPath)
+	}
+	if emb.TokenizerPath != "" {
+		t.Fatalf("tokenizer_path should be empty in config, got %q", emb.TokenizerPath)
+	}
+}
+
 func TestONNXEmbedderTOML(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := filepath.Join(root, ".kiwi")

@@ -78,11 +78,18 @@ type onnxRunner interface {
 // an onnxruntime session.
 func NewONNX(options ONNXOptions) (*ONNX, error) {
 	options = options.withDefaults()
+	options.ModelPath = ExpandUserPath(options.ModelPath)
+	options.RuntimePath = ExpandUserPath(options.RuntimePath)
 	if options.ModelPath == "" {
 		return nil, fmt.Errorf("onnx: model_path is required")
 	}
+	tokenizerPath, err := resolveTokenizerPath(options.ModelPath, options.TokenizerPath)
+	if err != nil {
+		return nil, err
+	}
+	options.TokenizerPath = tokenizerPath
 	if options.TokenizerPath == "" {
-		return nil, fmt.Errorf("onnx: tokenizer_path is required")
+		return nil, fmt.Errorf("onnx: tokenizer_path is required (set explicitly or place tokenizer.json beside the model)")
 	}
 	if _, err := os.Stat(options.ModelPath); err != nil {
 		return nil, fmt.Errorf("onnx: model not found at %s: %w", options.ModelPath, err)
