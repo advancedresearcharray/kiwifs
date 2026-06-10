@@ -5,7 +5,7 @@ import { getWidget } from "@kw/widgets/registry";
 import { usePlayback } from "@kw/widgets/usePlayback";
 import { PlaybackControls } from "@kw/widgets/PlaybackControls";
 import { ArrayView } from "@kw/widgets/ArrayView";
-import { StateTable } from "@kw/widgets/StateTable";
+import { PropertyBar } from "@kw/widgets/PropertyBar";
 import { CodeHighlight } from "@kw/widgets/CodeHighlight";
 import { ErrorBoundary } from "./ErrorBoundary";
 
@@ -18,7 +18,7 @@ const liveScope = {
   usePlayback,
   PlaybackControls,
   ArrayView,
-  StateTable,
+  PropertyBar,
   CodeHighlight,
 };
 

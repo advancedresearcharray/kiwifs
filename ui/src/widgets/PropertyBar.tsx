@@ -1,17 +1,17 @@
-export interface StateEntry {
+export interface PropertyEntry {
   label: string;
   value: string | number | boolean;
   /** If true, this entry changed on the current step (will be highlighted). */
   changed?: boolean;
 }
 
-export interface StateTableProps {
-  entries: StateEntry[];
+export interface PropertyBarProps {
+  entries: PropertyEntry[];
   /** Optional title above the table. */
   title?: string;
 }
 
-export function StateTable({ entries, title }: StateTableProps) {
+export function PropertyBar({ entries, title }: PropertyBarProps) {
   return (
     <div style={{
       display: "inline-flex",
