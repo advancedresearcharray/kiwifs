@@ -343,10 +343,10 @@ go build -tags onnx -o kiwifs .
 
 ```toml
 [search.vector.embedder]
-type = "onnx"
+type = "onnx"                  # provider = "onnx" also works
 model_path = "~/.kiwi/models/all-MiniLM-L6-v2/onnx/model.onnx"
 dimensions = 384
-# tokenizer_path optional — auto-discovered from parent dir
+# tokenizer_path optional — auto-discovered from parent dir after kiwifs model download
 ```
 
 Download an ONNX Runtime shared library that matches `github.com/yalue/onnxruntime_go` and point `runtime_path` at it if it is not on the system library path. For CJK-friendly search, use `multilingual-e5-small` and set `query_prefix = "query: "` plus `passage_prefix = "passage: "` so reindexing stores `passage: ...` vectors and search embeds `query: ...`.
