@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.31](https://github.com/kiwifs/kiwifs/compare/v0.19.30...v0.19.31) (2026-06-10)
+
+
+### Features
+
+* **ui:** add Shiki syntax highlighting to CodeHighlight widget ([1810ebf](https://github.com/kiwifs/kiwifs/commit/1810ebfee66767f3a2f0b8e3469866e33d4bb170))
+
+
+### Bug Fixes
+
+* **ui:** strip wiki link syntax from ToC heading text ([a7ceadf](https://github.com/kiwifs/kiwifs/commit/a7ceadf2b91de027842059cb3d1352e02b5d9eef))
+
 ## [0.19.30](https://github.com/kiwifs/kiwifs/compare/v0.19.29...v0.19.30) (2026-06-10)
 
 
