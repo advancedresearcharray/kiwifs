@@ -21,6 +21,8 @@ func TestLoadTokenizerSafeMalformedJSON(t *testing.T) {
 		{name: "empty object", content: "{}", wantErrContains: "malformed or incompatible"},
 		{name: "null", content: "null", wantErrContains: "malformed or incompatible"},
 		{name: "missing model field", content: `{"version":"1.0"}`, wantErrContains: "malformed or incompatible"},
+		{name: "model null", content: `{"model": null}`, wantErrContains: "malformed or incompatible"},
+		{name: "model empty object", content: `{"model": {}}`, wantErrContains: "malformed or incompatible"},
 		// syntactically invalid or empty input fails in FromFile before panic recovery.
 		{name: "empty file", content: "", wantErrContains: "load tokenizer"},
 		{name: "empty array", content: "[]", wantErrContains: "load tokenizer"},
