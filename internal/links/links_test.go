@@ -32,6 +32,7 @@ See [[real-link]] for docs.
 
 ~~~yaml
 [[tilde-fence]]
+![[embed-in-code]]
 ~~~
 `)
 	got := Extract(body)
