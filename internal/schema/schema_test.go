@@ -69,6 +69,27 @@ func TestLintIgnoresWikiLinksInFencedCode(t *testing.T) {
 	}
 }
 
+func TestLintIgnoresWikiLinksInIndentedAndInlineCode(t *testing.T) {
+	root := t.TempDir()
+	content := "# Indented example\n\n    [[indented-routes]]\n\nUse " + "`[[inline-routes]]`" + " in prose.\n"
+	if err := os.WriteFile(filepath.Join(root, "SCHEMA.md"), []byte("# Schema\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "indented.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Lint(root)
+	if err != nil {
+		t.Fatalf("lint: %v", err)
+	}
+	for _, is := range res.Issues {
+		if is.Kind == "broken-link" {
+			t.Fatalf("unexpected broken-link for indented/inline code syntax: %+v", is)
+		}
+	}
+}
+
 func TestLintMissingSchema(t *testing.T) {
 	root := t.TempDir()
 	res, err := Lint(root)
