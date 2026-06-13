@@ -2,7 +2,9 @@
 memory_kind: episodic
 episode_id: example-001
 session_id: example
-confidence: 0.8
+scope: user:demo
+confidence: 0.9
+expires_at: 2026-12-31T00:00:00Z
 importance: 3
 tags: [onboarding]
 related-pages: [pages/getting-started.md]

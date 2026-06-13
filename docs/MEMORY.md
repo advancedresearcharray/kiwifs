@@ -59,6 +59,28 @@ Expired pages are flagged for review, not auto-deleted.
 
 ---
 
+## Temporal validity: `valid_from` and `valid_until`
+
+Use RFC3339 timestamps to bound when a memory should be considered true:
+
+- **`valid_from`** — memory is not valid before this instant.
+- **`valid_until`** — memory is not valid after this instant.
+
+These fields complement `expires_at` / `ttl`: expiration marks content for review, while validity windows express *when a fact was true* (e.g. a policy that only applied during a date range). The `kiwi_forget` MCP tool sets `valid_until` when superseding a page.
+
+---
+
+## Memory isolation: `scope`
+
+Use **`scope`** to partition memories by user, project, or tenant (e.g. `user:alice`, `project:kiwifs`). Agents writing episodic notes should set `scope` when the observation applies to a single isolation boundary. Pass `scope` to `kiwi_search` / `kiwi_search_semantic` to filter results to that boundary.
+
+---
+
+## Contradictions: `contradicts`
+
+When new information conflicts with an existing page, set **`contradicts`** to the path of the conflicting page (relative to the knowledge root) and prefer `memory_status: contested` over silently overwriting. Resolve by updating confidence, recency, or merging into a superseding page — then record the outcome in `log.md`.
+
+---
 
 ## Path convention: `episodes/`
 

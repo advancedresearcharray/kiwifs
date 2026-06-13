@@ -30,6 +30,23 @@ Episodes are consolidated into pages over time. High-importance
 episodes are consolidated immediately; low-importance ones are
 reviewed on a weekly cadence.
 
+## Memory lifecycle
+
+1. **Write episodes** — during a session, agents append raw observations
+   under `episodes/` with `memory_kind: episodic`, a unique `episode_id`,
+   and optional `scope`, `confidence`, and `expires_at`.
+2. **Consolidate into semantic pages** — a scheduled job or on-demand pass
+   merges related episodes into durable `pages/` entries. Set `merged-from`
+   on the page to cite the source `episode_id` values.
+3. **Mark consolidated episodes** — update source episodes with
+   `consolidated: true` and `merged-into` pointing at the new page paths.
+4. **Track coverage** — run `kiwifs memory report` to list episodes not yet
+   referenced by any `merged-from`. A green report means every episodic file
+   has been folded into semantic memory.
+
+Old episodes stay in git for audit; they are not deleted when consolidated.
+Use `memory_status: superseded` on replaced pages rather than removing files.
+
 ## How It Works
 
 An agent [[SCHEMA|follows the schema]] to ingest new information,
