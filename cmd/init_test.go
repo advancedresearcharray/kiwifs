@@ -114,6 +114,7 @@ func TestKnowledgeTemplateMemorySchema(t *testing.T) {
 		"`memory_status`",
 		"`valid_from`",
 		"`valid_until`",
+		"`confidence`",
 		"`expires_at`",
 		"`ttl`",
 		"`scope`",
