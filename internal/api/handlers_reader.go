@@ -17,6 +17,12 @@ import (
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
+type publishedPageJSON struct {
+	Frontmatter map[string]any `json:"frontmatter"`
+	HTML        string         `json:"html"`
+	Markdown    string         `json:"markdown"`
+}
+
 var mdRenderer = goldmark.New(
 	goldmark.WithExtensions(extension.GFM),
 	goldmark.WithRendererOptions(gmhtml.WithUnsafe()),
@@ -92,7 +98,8 @@ func addHeadingIDs(html string) (string, []tocEntry) {
 //	@Description	Serves a rendered HTML view of a published markdown page, or serves co-located static assets (images, PDFs) publicly if they inherit access from their parent pages.
 //	@Tags			reader
 //	@Param			path	path		string	true	"Path to the published page or static asset"
-//	@Success		200		{string}	string	"Rendered HTML content or raw asset binary content"
+//	@Param			Accept	header		string	false	"Response format: text/html (default), text/markdown, or application/json"
+//	@Success		200		{string}	string	"Rendered HTML, raw markdown, JSON payload, or raw asset binary content"
 //	@Failure		404		{object}	map[string]string
 //	@Failure		500		{object}	map[string]string
 //	@Router			/p/{path} [get]
@@ -164,18 +171,30 @@ func (h *Handlers) PublishedPage(c echo.Context) error {
 		publishedAt = pat.Format("January 2, 2006")
 	}
 
-	data := readerData{
-		Title:       title,
-		Description: description,
-		PublishedAt: publishedAt,
-		BodyHTML:    template.HTML(bodyHTML),
-		TOC:         toc,
-		HasTOC:      len(toc) >= 2,
-	}
-
-	c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.Response().Header().Set("Cache-Control", "public, max-age=60")
-	return readerTmpl.Execute(c.Response(), data)
+
+	switch negotiateReaderFormat(c.Request().Header.Get("Accept")) {
+	case readerFormatMarkdown:
+		c.Response().Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		return c.Blob(http.StatusOK, "text/markdown; charset=utf-8", content)
+	case readerFormatJSON:
+		return c.JSON(http.StatusOK, publishedPageJSON{
+			Frontmatter: fm,
+			HTML:        bodyHTML,
+			Markdown:    string(bodyBytes),
+		})
+	default:
+		data := readerData{
+			Title:       title,
+			Description: description,
+			PublishedAt: publishedAt,
+			BodyHTML:    template.HTML(bodyHTML),
+			TOC:         toc,
+			HasTOC:      len(toc) >= 2,
+		}
+		c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
+		return readerTmpl.Execute(c.Response(), data)
+	}
 }
 
 func trimCopiedMarkdownTitleSuffix(path string) string {
