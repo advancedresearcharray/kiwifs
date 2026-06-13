@@ -130,6 +130,7 @@ func TestKnowledgeTemplateMemorySchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		"memory_kind: episodic",
 		"scope: user:demo",
 		"confidence: 0.9",
 		"expires_at: 2026-12-31T00:00:00Z",
