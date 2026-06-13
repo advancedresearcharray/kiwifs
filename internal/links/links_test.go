@@ -21,6 +21,26 @@ func TestExtractAndUnique(t *testing.T) {
 	}
 }
 
+func TestExtractIgnoresCodeBlocks(t *testing.T) {
+	body := []byte(`# Example TOML Configuration
+
+See [[real-link]] for docs.
+
+` + "```toml\n[server]\nhost = \"localhost\"\n\n[[routes]]\npath = \"/api\"\n```\n\n" + `Use ` + "`[[inline]]`" + ` in prose.
+
+    [[indented-code]]
+
+~~~yaml
+[[tilde-fence]]
+~~~
+`)
+	got := Extract(body)
+	want := []string{"real-link"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("extract: got %v, want %v", got, want)
+	}
+}
+
 func TestResolveWikiLinksToMarkdown(t *testing.T) {
 	resolver := func(target string) string {
 		m := map[string]string{

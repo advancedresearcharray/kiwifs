@@ -52,32 +52,119 @@ type Linker interface {
 }
 
 // wikiLinkRe matches [[target]] or [[target|label]]. Target may contain any
-// character except ] and |. We deliberately keep this simple — wiki links
-// inside fenced code blocks or inline code are still captured, which is
-// usually what authors want (code-block [[x]] is quite rare in practice).
+// character except ] and |.
 var wikiLinkRe = regexp.MustCompile(`!?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]`)
+
+// fenceRe matches fenced code block markers (``` or ~~~).
+var fenceRe = regexp.MustCompile(`^(\x60{3,}|~{3,})(.*)$`)
 
 // Extract pulls [[target]] entries out of a markdown body. Targets are
 // returned verbatim (trimmed of surrounding whitespace) in order of
 // appearance, with duplicates preserved so callers can derive a weight if
 // they want one. Most callers should de-dupe with Unique().
+//
+// Wiki links inside fenced code blocks, indented code blocks, or inline code
+// are ignored — e.g. TOML [[routes]] array-of-tables syntax must not be
+// treated as a broken wiki link during lint.
 func Extract(content []byte) []string {
 	if len(content) == 0 {
 		return nil
 	}
-	matches := wikiLinkRe.FindAllSubmatch(content, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(matches))
-	for _, m := range matches {
-		t := strings.TrimSpace(string(m[1]))
-		if t == "" {
+
+	var out []string
+	lines := strings.Split(string(content), "\n")
+	inFence := false
+	fenceMarker := ""
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if inFence {
+			if isClosingFence(trimmed, fenceMarker) {
+				inFence = false
+				fenceMarker = ""
+			}
 			continue
 		}
-		out = append(out, t)
+		if isOpeningFence(trimmed) {
+			inFence = true
+			fenceMarker = extractFenceMarker(trimmed)
+			continue
+		}
+		if isIndentedCodeLine(line) {
+			continue
+		}
+
+		out = append(out, extractFromLine(line)...)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
+}
+
+func extractFromLine(line string) []string {
+	var out []string
+	for _, seg := range splitInlineCode(line) {
+		if seg.isCode {
+			continue
+		}
+		matches := wikiLinkRe.FindAllSubmatch([]byte(seg.text), -1)
+		for _, m := range matches {
+			t := strings.TrimSpace(string(m[1]))
+			if t == "" {
+				continue
+			}
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func isOpeningFence(trimmed string) bool {
+	return fenceRe.MatchString(trimmed)
+}
+
+func extractFenceMarker(trimmed string) string {
+	m := fenceRe.FindStringSubmatch(trimmed)
+	if m == nil {
+		return "```"
+	}
+	return m[1]
+}
+
+func isClosingFence(trimmed, marker string) bool {
+	if marker == "" {
+		return false
+	}
+	ch := marker[0]
+	if len(trimmed) < len(marker) {
+		return false
+	}
+	for i := 0; i < len(trimmed); i++ {
+		if trimmed[i] != ch {
+			return i >= len(marker) && strings.TrimSpace(trimmed[i:]) == ""
+		}
+	}
+	return true
+}
+
+func isIndentedCodeLine(line string) bool {
+	if line == "" {
+		return false
+	}
+	if strings.HasPrefix(line, "\t") {
+		return true
+	}
+	spaces := 0
+	for _, r := range line {
+		if r == ' ' {
+			spaces++
+			continue
+		}
+		break
+	}
+	return spaces >= 4
 }
 
 // Unique de-dupes a slice of targets case-insensitively while preserving order.

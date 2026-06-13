@@ -160,6 +160,35 @@ Conflicting source of truth content, long enough to avoid the empty-page thresho
 	}
 }
 
+func TestScan_IgnoresWikiLinksInFencedCode(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"index.md": `---
+title: Index
+owner: alice
+status: verified
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---
+
+This index page has enough content to avoid empty-page warnings and links to [[index]].
+`,
+		"clips/test.md": `# Example TOML Configuration
+
+` + "```toml\n[server]\nhost = \"localhost\"\n\n[[routes]]\npath = \"/api\"\n```\n",
+	})
+
+	sc := New(root, store, nil, 90)
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	for _, is := range res.Issues {
+		if is.Kind == IssueBrokenLink {
+			t.Fatalf("unexpected broken-link for code-block syntax: %+v", is)
+		}
+	}
+}
+
 func TestScan_FlagsExpiredMemory(t *testing.T) {
 	store, root := buildStore(t, map[string]string{
 		"expired.md": `---
