@@ -12,6 +12,7 @@ KiwiFS stores content as markdown with YAML frontmatter, versions every write vi
 |---------|--------|----------|
 | Publish/unpublish API (`published: true` frontmatter) | ✅ | `internal/api/handlers_publish.go` |
 | Public reader at `/p/*` (server-rendered HTML) | ✅ | `internal/api/handlers_reader.go` |
+| Content negotiation on `/p/*` (`Accept`: HTML, markdown, JSON) | ✅ | `internal/api/accept.go`, `handlers_reader.go` |
 | REST file CRUD, search, metadata queries, DQL | ✅ | `internal/api/` |
 | Export to JSONL, CSV, Parquet, HTML, PDF, slides, static site | ✅ | `internal/exporter/`, `internal/docexport/` |
 | Atom/JSON feed syndication | ✅ | `internal/api/handlers_feed.go` |
@@ -36,6 +37,31 @@ KiwiFS stores content as markdown with YAML frontmatter, versions every write vi
 | Agent integration | ❌ | ❌ | ❌ | ❌ | 62 MCP tools |
 
 **KiwiFS's unique positioning:** Single binary, zero config, git-native, with the strongest search/query layer of any CMS. No database to manage — the filesystem is the database.
+
+## Public reader content negotiation
+
+Published pages at `GET /p/{path}` support `Accept` header negotiation for headless CMS consumers:
+
+| `Accept` header | Response |
+|---|---|
+| *(omitted)* / `text/html` / `*/*` | Server-rendered HTML page (default) |
+| `text/markdown` | Raw file source including YAML frontmatter |
+| `application/json` | `{ "frontmatter": {...}, "html": "...", "markdown": "..." }` |
+
+Examples:
+
+```bash
+# Default HTML
+curl -sS https://example.kiwifs.com/p/docs/guide.md
+
+# Raw markdown for static site generators
+curl -sS -H 'Accept: text/markdown' https://example.kiwifs.com/p/docs/guide.md
+
+# Structured payload for headless frontends
+curl -sS -H 'Accept: application/json' https://example.kiwifs.com/p/docs/guide.md
+```
+
+Unsupported `Accept` values (for example `image/png`) return **406 Not Acceptable** with an `Accept` response header listing supported formats. Malformed headers containing CR/LF injection attempts return **400 Bad Request**.
 
 ## What's Missing
 

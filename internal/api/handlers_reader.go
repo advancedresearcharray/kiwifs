@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -100,7 +101,9 @@ func addHeadingIDs(html string) (string, []tocEntry) {
 //	@Param			path	path		string	true	"Path to the published page or static asset"
 //	@Param			Accept	header		string	false	"Response format: text/html (default), text/markdown, or application/json"
 //	@Success		200		{string}	string	"Rendered HTML, raw markdown, JSON payload, or raw asset binary content"
+//	@Failure		400		{object}	map[string]string
 //	@Failure		404		{object}	map[string]string
+//	@Failure		406		{object}	map[string]string
 //	@Failure		500		{object}	map[string]string
 //	@Router			/p/{path} [get]
 func (h *Handlers) PublishedPage(c echo.Context) error {
@@ -173,7 +176,16 @@ func (h *Handlers) PublishedPage(c echo.Context) error {
 
 	c.Response().Header().Set("Cache-Control", "public, max-age=60")
 
-	switch negotiateReaderFormat(c.Request().Header.Get("Accept")) {
+	format, err := negotiateReaderFormat(c.Request().Header.Get("Accept"))
+	if err != nil {
+		if errors.Is(err, errAcceptNotAcceptable) {
+			c.Response().Header().Set("Accept", readerSupportedFormats)
+			return echo.NewHTTPError(http.StatusNotAcceptable, "unsupported Accept header")
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid Accept header")
+	}
+
+	switch format {
 	case readerFormatMarkdown:
 		c.Response().Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		return c.Blob(http.StatusOK, "text/markdown; charset=utf-8", content)
