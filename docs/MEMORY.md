@@ -111,6 +111,16 @@ Options:
 - `--json` / `-j` — machine-readable output (useful for CI and dashboards).
 - `--episodes-prefix` — override `[memory] episodes_path_prefix` for a single run.
 
+**Health metrics** (JSON fields and CLI/MCP text lines):
+
+| Field | Meaning |
+|-------|---------|
+| `coverage_pct` | Percent of episodic files referenced by at least one `merged-from` entry |
+| `avg_age_days` | Mean age in days of pages with `memory_status: active` or unset status (uses file mod time) |
+| `expired_count` | Pages whose `expires_at` is in the past |
+| `contested_count` | Pages with `memory_status: contested` |
+| `scope_counts` | Map of `scope` frontmatter value → page count (only pages with an explicit `scope` key) |
+
 **What the report does *not* do:** it does not read `derived-from` to decide “merged”. Only **`merged-from`** (and the path / id rules above) counts toward coverage. The intent is to answer: “What episodic content still needs to be pulled into a central or semantic page?”
 
 ---
@@ -125,7 +135,7 @@ curl -s "http://localhost:3333/api/kiwi/memory/report?episodes_prefix=raw/"
 curl -s "http://localhost:3333/api/kiwi/memory/report?limit=10&offset=0"
 ```
 
-Optional query parameter **`episodes_prefix`** overrides `[memory] episodes_path_prefix` from `.kiwi/config.toml`. Optional **`limit`** and **`offset`** paginate both `episodic_files` and `unmerged`; the response still includes unpaginated totals in `total_episodic` and `total_unmerged`. Response shape matches **`memory.Report`** (counts, `episodic_files`, `unmerged`, `warnings`).
+Optional query parameter **`episodes_prefix`** overrides `[memory] episodes_path_prefix` from `.kiwi/config.toml`. Optional **`limit`** and **`offset`** paginate both `episodic_files` and `unmerged`; the response still includes unpaginated totals in `total_episodic` and `total_unmerged`. Response shape matches **`memory.Report`** (counts, health metrics, `episodic_files`, `unmerged`, `warnings`).
 
 ---
 
