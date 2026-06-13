@@ -162,8 +162,16 @@ func TestKnowledgeTemplateMemorySchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(initEpisode), "episode_id: example-001") {
-		t.Error("initialized example episode missing episode_id")
+	for _, want := range []string{
+		"episode_id: example-001",
+		"memory_kind: episodic",
+		"scope: user:demo",
+		"confidence: 0.9",
+		"expires_at: 2026-12-31T00:00:00Z",
+	} {
+		if !strings.Contains(string(initEpisode), want) {
+			t.Errorf("initialized example episode missing %q", want)
+		}
 	}
 
 	store, err := storage.NewLocal(root)
