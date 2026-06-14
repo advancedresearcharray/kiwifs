@@ -1396,6 +1396,7 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 		fmt.Fprintf(&sb, "Episodic files:           %d\n", rep.EpisodicCount)
 		fmt.Fprintf(&sb, "merged-from references:   %d\n", rep.MergedFromRefs)
 		fmt.Fprintf(&sb, "Unmerged (no merged-from): %d\n", rep.TotalUnmerged)
+		rep.WriteHealthMetrics(&sb)
 		if limit > 0 || offset > 0 {
 			fmt.Fprintf(&sb, "Showing unmerged:          %d (offset %d)\n", len(rep.Unmerged), offset)
 		}

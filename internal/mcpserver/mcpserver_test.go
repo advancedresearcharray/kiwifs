@@ -982,8 +982,14 @@ episode_id: mcp-ep-1
 
 	h := handleMemoryReport(b)
 	out := mustCallTool(t, h, "kiwi_memory_report", map[string]any{})
-	if want := "Unmerged (no merged-from): 1"; !strings.Contains(out, want) {
-		t.Fatalf("want %q in:\n%s", want, out)
+	for _, want := range []string{
+		"Unmerged (no merged-from): 1",
+		"coverage:",
+		"avg age (active pages):",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("want %q in:\n%s", want, out)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(epDir, "run-2.md"), []byte(`---
 memory_kind: episodic

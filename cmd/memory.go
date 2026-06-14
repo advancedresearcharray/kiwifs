@@ -68,6 +68,7 @@ func runMemoryReport(cmd *cobra.Command, _ []string) error {
 	fmt.Printf("episodic files:          %d\n", rep.EpisodicCount)
 	fmt.Printf("merged-from references:  %d\n", rep.MergedFromRefs)
 	fmt.Printf("unmerged (no merged-from): %d\n", len(rep.Unmerged))
+	rep.WriteHealthMetrics(os.Stdout)
 	if len(rep.Unmerged) == 0 {
 		fmt.Fprintln(os.Stdout, "all episodic files are referenced by at least one merged-from list")
 	} else {

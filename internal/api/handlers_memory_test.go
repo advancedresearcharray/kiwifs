@@ -45,6 +45,9 @@ episode_id: ep-api-1
 	if len(rep.Unmerged) != 1 || rep.Unmerged[0].EpisodeID != "ep-api-1" {
 		t.Fatalf("unmerged: %+v", rep.Unmerged)
 	}
+	if rep.CoveragePct != 0 {
+		t.Fatalf("coverage_pct want 0 got %v", rep.CoveragePct)
+	}
 
 	// Semantic page cites the episode
 	mustPutFile(t, s, "concepts/c.md", `---
@@ -67,6 +70,9 @@ merged-from:
 	}
 	if len(rep.Unmerged) != 0 {
 		t.Fatalf("want 0 unmerged after merge ref, got %+v", rep.Unmerged)
+	}
+	if rep.CoveragePct != 100 {
+		t.Fatalf("coverage_pct want 100 got %v", rep.CoveragePct)
 	}
 }
 
