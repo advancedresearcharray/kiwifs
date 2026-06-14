@@ -293,12 +293,6 @@ func TestLimit(t *testing.T) {
 	}
 }
 
-func TestPostgresSkipWithoutEnv(t *testing.T) {
-	if os.Getenv("KIWI_TEST_POSTGRES_DSN") == "" {
-		t.Skip("skipping postgres integration test (set KIWI_TEST_POSTGRES_DSN)")
-	}
-}
-
 func TestMySQLSkipWithoutEnv(t *testing.T) {
 	if os.Getenv("KIWI_TEST_MYSQL_DSN") == "" {
 		t.Skip("skipping mysql integration test (set KIWI_TEST_MYSQL_DSN)")

@@ -3,6 +3,7 @@ package importer
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,12 +14,7 @@ import (
 )
 
 func TestPostgresImporterIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("requires Docker")
-	}
-	if !DockerAvailable() {
-		t.Skip("Docker not available")
-	}
+	requireDocker(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -63,7 +59,8 @@ func TestPostgresImporterIntegration(t *testing.T) {
 		);
 		INSERT INTO sample_rows (label, qty, active, amount) VALUES
 			('alpha', 10, true, 19.99),
-			('beta', 0, false, 0.00);
+			('beta', 0, false, 0.00),
+			('gamma', 5, true, 3.50);
 		ANALYZE sample_rows;
 	`)
 	if err != nil {
@@ -104,8 +101,8 @@ func TestPostgresImporterIntegration(t *testing.T) {
 			t.Fatalf("stream error: %v", err)
 		}
 	}
-	if len(got) != 2 {
-		t.Fatalf("records=%d, want 2", len(got))
+	if len(got) != 3 {
+		t.Fatalf("records=%d, want 3", len(got))
 	}
 
 	byPK := map[string]Record{}
@@ -135,6 +132,13 @@ func TestPostgresImporterIntegration(t *testing.T) {
 	if alpha.Fields["amount"] == nil {
 		t.Fatal("expected amount field")
 	}
+	createdAt, ok := alpha.Fields["created_at"].(string)
+	if !ok || createdAt == "" {
+		t.Fatalf("created_at should be RFC3339 string, got %T %v", alpha.Fields["created_at"], alpha.Fields["created_at"])
+	}
+	if _, err := time.Parse(time.RFC3339, createdAt); err != nil {
+		t.Fatalf("created_at not RFC3339: %v (%q)", err, createdAt)
+	}
 
 	filtered, err := NewPostgres(dsn, "sample_rows", "", []string{"label"})
 	if err != nil {
@@ -161,5 +165,47 @@ func TestPostgresImporterIntegration(t *testing.T) {
 	}
 	if filteredGot.PrimaryKey == "" {
 		t.Fatal("expected primary key on filtered record")
+	}
+
+	customQuery, err := NewPostgres(dsn, "", "SELECT label FROM sample_rows WHERE id = 2", nil)
+	if err != nil {
+		t.Fatalf("NewPostgres custom query: %v", err)
+	}
+	defer customQuery.Close()
+
+	customRecords, customErrs := customQuery.Stream(ctx)
+	var customGot Record
+	for rec := range customRecords {
+		customGot = rec
+		break
+	}
+	for err := range customErrs {
+		if err != nil {
+			t.Fatalf("custom query stream error: %v", err)
+		}
+	}
+	if customGot.Fields["label"] != "beta" {
+		t.Fatalf("custom query label=%v, want beta", customGot.Fields["label"])
+	}
+
+	pipe, store := testPipeline(t)
+	stats, err := Run(ctx, src, pipe, Options{Actor: "test"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if stats.Imported != 3 {
+		t.Fatalf("imported=%d, want 3", stats.Imported)
+	}
+
+	content, err := store.Read(ctx, "sample_rows/1.md")
+	if err != nil {
+		t.Fatalf("read imported file: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "label: alpha") {
+		t.Fatalf("missing alpha in frontmatter: %s", s)
+	}
+	if !strings.Contains(s, "_source: sample_rows") {
+		t.Fatalf("missing _source: %s", s)
 	}
 }
