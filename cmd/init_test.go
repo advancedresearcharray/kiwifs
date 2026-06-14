@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kiwifs/kiwifs/internal/memory"
+	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/kiwifs/kiwifs/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -95,6 +98,95 @@ func TestKnowledgeTemplateInit(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
 			t.Errorf("expected %s to NOT exist", p)
 		}
+	}
+}
+
+func TestKnowledgeTemplateMemorySchema(t *testing.T) {
+	t.Parallel()
+	embedded := workspace.EmbeddedTemplates()
+
+	schema, err := fs.ReadFile(embedded, "templates/knowledge/SCHEMA.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"## Memory fields",
+		"`memory_status`",
+		"`valid_from`",
+		"`valid_until`",
+		"`confidence`",
+		"`expires_at`",
+		"`ttl`",
+		"`scope`",
+		"`contradicts`",
+	} {
+		if !strings.Contains(string(schema), want) {
+			t.Errorf("embedded SCHEMA.md missing %q", want)
+		}
+	}
+
+	episode, err := fs.ReadFile(embedded, "templates/knowledge/episodes/example-episode.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"memory_kind: episodic",
+		"scope: user:demo",
+		"confidence: 0.9",
+		"expires_at: 2026-12-31T00:00:00Z",
+	} {
+		if !strings.Contains(string(episode), want) {
+			t.Errorf("embedded example-episode.md missing %q", want)
+		}
+	}
+
+	gettingStarted, err := fs.ReadFile(embedded, "templates/knowledge/pages/getting-started.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(gettingStarted), "## Memory lifecycle") {
+		t.Error("embedded getting-started.md missing Memory lifecycle section")
+	}
+	if !strings.Contains(string(gettingStarted), "merged-from") {
+		t.Error("embedded getting-started.md should mention merged-from in lifecycle")
+	}
+
+	root := filepath.Join(t.TempDir(), "kb")
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "knowledge"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	initEpisode, err := os.ReadFile(filepath.Join(root, "episodes/example-episode.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"episode_id: example-001",
+		"memory_kind: episodic",
+		"scope: user:demo",
+		"confidence: 0.9",
+		"expires_at: 2026-12-31T00:00:00Z",
+	} {
+		if !strings.Contains(string(initEpisode), want) {
+			t.Errorf("initialized example episode missing %q", want)
+		}
+	}
+
+	store, err := storage.NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := memory.Scan(context.Background(), store, memory.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.EpisodicCount != 1 {
+		t.Fatalf("memory report episodic count = %d, want 1", rep.EpisodicCount)
+	}
+	if len(rep.Unmerged) != 1 || rep.Unmerged[0].EpisodeID != "example-001" {
+		t.Fatalf("memory report unmerged = %+v, want example-001 unmerged", rep.Unmerged)
 	}
 }
 

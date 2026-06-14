@@ -56,8 +56,12 @@ Every `.md` file should have YAML frontmatter. Required fields marked *.
 | merged-from     | object[]   |          | Episode paths this page was consolidated from. Each entry: `path`, `episode_id`, `date` |
 | confidence      | float      |          | 0.0–1.0, certainty level of this knowledge  |
 | memory_status   | string     |          | `active` · `contested` · `superseded` · `stale` (default: `active`) |
+| valid_from      | string     |          | RFC3339 timestamp — memory is not valid before this instant |
+| valid_until     | string     |          | RFC3339 timestamp — memory is not valid after this instant |
 | expires_at      | datetime   |          | RFC3339 expiration timestamp for temporary memories |
 | ttl             | string     |          | Relative lifetime from `created` (e.g. `7d`, `24h`) |
+| scope           | string     |          | Memory isolation key, e.g. `user:alice`, `project:kiwifs` |
+| contradicts     | string     |          | Path to a conflicting page (relative to knowledge root) |
 
 ### Episodes (`episodes/*.md`)
 
@@ -67,6 +71,7 @@ Every `.md` file should have YAML frontmatter. Required fields marked *.
 | memory_status   | string     |          | `active` · `contested` · `superseded` · `stale` (default: `active`) |
 | episode_id      | string     | *        | Unique session/episode identifier           |
 | session_id      | string     |          | Groups episodes from the same session       |
+| scope           | string     |          | Memory isolation key, e.g. `user:alice`, `project:kiwifs` |
 | confidence      | float      |          | 0.0–1.0, how certain is this observation    |
 | importance      | integer    |          | 1–5, how critical this observation is (5 = must consolidate) |
 | tags            | string[]   |          | Topic tags                                  |
@@ -75,6 +80,48 @@ Every `.md` file should have YAML frontmatter. Required fields marked *.
 | merged-into     | string[]   |          | Paths of pages this was merged into         |
 | expires_at      | datetime   |          | RFC3339 expiration timestamp for temporary memories |
 | ttl             | string     |          | Relative lifetime from `created` (e.g. `7d`, `24h`) |
+| contradicts     | string     |          | Path to a conflicting page (relative to knowledge root) |
+
+## Memory fields
+
+These frontmatter keys govern agent memory lifecycle, temporal validity,
+and isolation. They apply to both `pages/` and `episodes/` unless noted.
+
+| Field           | Type       | Values / Notes |
+|-----------------|------------|----------------|
+| `memory_status` | string     | `active` · `contested` · `superseded` · `stale` (default: `active`) |
+| `valid_from`    | string     | RFC3339 timestamp — memory is not valid before this instant |
+| `valid_until`   | string     | RFC3339 timestamp — memory is not valid after this instant |
+| `confidence`    | float      | 0.0–1.0 certainty level (higher wins in contradiction resolution) |
+| `expires_at`    | string     | RFC3339 expiration timestamp; past dates are flagged by `kiwifs janitor` |
+| `ttl`           | string     | Relative lifetime from `created` (or file mtime), e.g. `7d`, `24h` |
+| `scope`         | string     | Memory isolation key, e.g. `user:alice`, `project:kiwifs` |
+| `contradicts`   | string     | Path to a conflicting page (relative to knowledge root) |
+
+**`memory_status` lifecycle:**
+
+- `active` — current memory, retrieved normally (default when absent)
+- `contested` — a contradiction was flagged; still retrievable, surfaced in reports
+- `superseded` — replaced by a newer memory; excluded from default search
+- `stale` — aged out or expired; deprioritized in ranking
+
+Pages with `memory_status: superseded` are indexed but omitted from default
+FTS search. Pass `include_superseded=true` on `GET /api/kiwi/search` to
+include them.
+
+**Temporal validity:** `valid_from` and `valid_until` bound when a memory
+should be considered true. Retrieval can filter or down-rank memories outside
+their validity window.
+
+**Expiration:** `expires_at` and `ttl` mark temporary memories. Expired pages
+are flagged for review by `kiwifs janitor`, not auto-deleted.
+
+**Scope:** Use `scope` to partition memories by user, project, or tenant so
+agents only retrieve context for the current isolation boundary.
+
+**Contradictions:** When new information conflicts with an existing page,
+set `contradicts` to the path of the conflicting page and prefer updating
+`memory_status` to `contested` rather than silently overwriting.
 
 ## Memory Governance
 
