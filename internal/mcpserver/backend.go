@@ -35,8 +35,9 @@ type Version struct {
 }
 
 type Backlink struct {
-	Path  string `json:"path"`
-	Count int    `json:"count"`
+	Path     string `json:"path"`
+	Count    int    `json:"count"`
+	Relation string `json:"relation,omitempty"`
 }
 
 type BulkFile struct {

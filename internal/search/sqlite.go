@@ -222,7 +222,8 @@ CREATE TABLE IF NOT EXISTS links (
 	source TEXT NOT NULL,
 	target TEXT NOT NULL,
 	target_lc TEXT NOT NULL,
-	PRIMARY KEY (source, target_lc)
+	relation TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (source, target_lc, relation)
 );
 CREATE INDEX IF NOT EXISTS idx_links_target_lc ON links(target_lc);
 CREATE TABLE IF NOT EXISTS file_meta (
@@ -303,6 +304,8 @@ CREATE TABLE IF NOT EXISTS content_gap_dismissals (
 
 	s.writeDB.ExecContext(ctx, `ALTER TABLE file_meta ADD COLUMN tasks TEXT NOT NULL DEFAULT '[]'`)
 
+	s.migrateLinksRelation(ctx)
+
 	// Migrate legacy page_views rows into page_view_hours. Uses last_seen
 	// truncated to the hour as the bucket. Idempotent: ON CONFLICT merges.
 	s.migratePageViewsToHours(ctx)
@@ -310,6 +313,28 @@ CREATE TABLE IF NOT EXISTS content_gap_dismissals (
 	s.migrateFailedSearchesToHours(ctx)
 
 	return nil
+}
+
+func (s *SQLite) migrateLinksRelation(ctx context.Context) {
+	var colCount int
+	if err := s.writeDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('links') WHERE name='relation'`).Scan(&colCount); err != nil || colCount > 0 {
+		return
+	}
+	_, _ = s.writeDB.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS links_new (
+	source TEXT NOT NULL,
+	target TEXT NOT NULL,
+	target_lc TEXT NOT NULL,
+	relation TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (source, target_lc, relation)
+);
+INSERT INTO links_new(source, target, target_lc, relation)
+SELECT source, target, target_lc, '' FROM links;
+DROP TABLE links;
+ALTER TABLE links_new RENAME TO links;
+CREATE INDEX IF NOT EXISTS idx_links_target_lc ON links(target_lc);
+`)
 }
 
 func (s *SQLite) migratePageViewsToHours(ctx context.Context) {
@@ -981,6 +1006,8 @@ func (s *SQLite) Close() error {
 
 // IndexLinks replaces every link row emitted by `source`. Atomic: either all
 // old rows for this source are gone and all new rows are in, or neither.
+// Wiki links use an empty relation; contradicts frontmatter is indexed
+// separately via indexContradicts during IndexMeta.
 func (s *SQLite) IndexLinks(ctx context.Context, source string, targets []string) error {
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
@@ -988,17 +1015,43 @@ func (s *SQLite) IndexLinks(ctx context.Context, source string, targets []string
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ?`, source); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation = ''`, source); err != nil {
 		return err
 	}
 	if len(targets) > 0 {
-		stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc) VALUES (?, ?, ?)`)
+		stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, '')`)
 		if err != nil {
 			return err
 		}
 		defer stmt.Close()
 		for _, t := range links.Unique(targets) {
 			if _, err := stmt.ExecContext(ctx, source, t, strings.ToLower(t)); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *SQLite) indexContradicts(ctx context.Context, source string, fm map[string]any) error {
+	targets := links.ExtractContradicts(fm)
+	tx, err := s.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation = ?`, source, links.RelationContradicts); err != nil {
+		return err
+	}
+	if len(targets) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, ?)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for _, t := range links.Unique(targets) {
+			if _, err := stmt.ExecContext(ctx, source, t, strings.ToLower(t), links.RelationContradicts); err != nil {
 				return err
 			}
 		}
@@ -1098,6 +1151,10 @@ func (s *SQLite) IndexMeta(ctx context.Context, path string, content []byte) err
 		if err == nil {
 			tasksPayload = string(tb)
 		}
+	}
+
+	if err := s.indexContradicts(ctx, path, fm); err != nil {
+		return err
 	}
 
 	_, err = s.writeDB.ExecContext(ctx,
@@ -1361,7 +1418,7 @@ func (s *SQLite) Backlinks(ctx context.Context, target string) ([]links.Entry, e
 		args[i] = strings.ToLower(f)
 	}
 	q := fmt.Sprintf(
-		`SELECT source, COUNT(*) FROM links WHERE target_lc IN (%s) GROUP BY source ORDER BY source`,
+		`SELECT source, relation, COUNT(*) FROM links WHERE target_lc IN (%s) GROUP BY source, relation ORDER BY source`,
 		placeholders(len(forms)),
 	)
 	rows, err := s.readDB.QueryContext(ctx, q, args...)
@@ -1371,12 +1428,12 @@ func (s *SQLite) Backlinks(ctx context.Context, target string) ([]links.Entry, e
 	defer rows.Close()
 	var out []links.Entry
 	for rows.Next() {
-		var src string
+		var src, rel string
 		var count int
-		if err := rows.Scan(&src, &count); err != nil {
+		if err := rows.Scan(&src, &rel, &count); err != nil {
 			return nil, err
 		}
-		out = append(out, links.Entry{Path: src, Count: count})
+		out = append(out, links.Entry{Path: src, Count: count, Relation: rel})
 	}
 	return out, rows.Err()
 }
@@ -1805,7 +1862,7 @@ func (s *SQLite) reindexLocked(ctx context.Context) (int, error) {
 		if pathStmt, perr = tx.PrepareContext(ctx, `INSERT OR REPLACE INTO doc_paths(rowid, path) VALUES (?, ?)`); perr != nil {
 			return perr
 		}
-		if linkStmt, perr = tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc) VALUES (?, ?, ?)`); perr != nil {
+		if linkStmt, perr = tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, ?)`); perr != nil {
 			return perr
 		}
 		if metaStmt, perr = tx.PrepareContext(ctx, `INSERT OR REPLACE INTO file_meta(path, frontmatter, tasks, updated_at) VALUES (?, ?, ?, ?)`); perr != nil {
@@ -1864,7 +1921,7 @@ func (s *SQLite) reindexLocked(ctx context.Context) (int, error) {
 			return fmt.Errorf("insert doc_path %s: %w", e.Path, err)
 		}
 		for _, t := range links.Unique(links.Extract(content)) {
-			if _, err := linkStmt.ExecContext(ctx, e.Path, t, strings.ToLower(t)); err != nil {
+			if _, err := linkStmt.ExecContext(ctx, e.Path, t, strings.ToLower(t), ""); err != nil {
 				return fmt.Errorf("insert link %s→%s: %w", e.Path, t, err)
 			}
 		}
@@ -1872,6 +1929,11 @@ func (s *SQLite) reindexLocked(ctx context.Context) (int, error) {
 			fm := parsed.Frontmatter
 			if fm == nil {
 				fm = map[string]any{}
+			}
+			for _, t := range links.Unique(links.ExtractContradicts(fm)) {
+				if _, err := linkStmt.ExecContext(ctx, e.Path, t, strings.ToLower(t), links.RelationContradicts); err != nil {
+					return fmt.Errorf("insert contradicts link %s→%s: %w", e.Path, t, err)
+				}
 			}
 			if s.computedFields {
 				body := []byte(markdown.BodyAfterFrontmatter(content))

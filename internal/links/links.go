@@ -16,12 +16,24 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/kiwifs/kiwifs/internal/markdown"
 )
+
+// RelationContradicts is the link relation for frontmatter contradicts: fields.
+const RelationContradicts = "contradicts"
+
+// Link is one indexed outbound reference from a source page.
+type Link struct {
+	Target   string
+	Relation string // empty for [[wiki-links]]
+}
 
 // Entry is a single backlink row: one source page that links to the target.
 type Entry struct {
-	Path  string `json:"path"`
-	Count int    `json:"count"`
+	Path     string `json:"path"`
+	Count    int    `json:"count"`
+	Relation string `json:"relation,omitempty"`
 }
 
 // Edge is a raw (source, target) pair as it appears in the wiki-link index.
@@ -219,6 +231,81 @@ func findClosingBackticks(data []byte, n int) int {
 		}
 	}
 	return -1
+}
+
+// ExtractForIndex returns wiki links from the body plus contradicts from frontmatter.
+func ExtractForIndex(content []byte) []Link {
+	var out []Link
+	for _, t := range Unique(Extract(content)) {
+		out = append(out, Link{Target: t})
+	}
+	fm, _ := markdown.Frontmatter(content)
+	for _, t := range ExtractContradicts(fm) {
+		out = append(out, Link{Target: t, Relation: RelationContradicts})
+	}
+	return UniqueLinks(out)
+}
+
+// ExtractContradicts reads the contradicts frontmatter field (string or sequence).
+// Values may be plain paths or [[wiki-link]] syntax; leading slashes are stripped.
+func ExtractContradicts(fm map[string]any) []string {
+	if fm == nil {
+		return nil
+	}
+	raw, ok := fm["contradicts"]
+	if !ok || raw == nil {
+		return nil
+	}
+	var paths []string
+	switch v := raw.(type) {
+	case string:
+		if t := normalizeContradictTarget(v); t != "" {
+			paths = append(paths, t)
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				if t := normalizeContradictTarget(s); t != "" {
+					paths = append(paths, t)
+				}
+			}
+		}
+	case []string:
+		for _, s := range v {
+			if t := normalizeContradictTarget(s); t != "" {
+				paths = append(paths, t)
+			}
+		}
+	}
+	return paths
+}
+
+func normalizeContradictTarget(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "/")
+	if strings.HasPrefix(s, "[[") && strings.HasSuffix(s, "]]") {
+		inner := strings.TrimSuffix(strings.TrimPrefix(s, "[["), "]]")
+		if i := strings.Index(inner, "|"); i >= 0 {
+			inner = inner[:i]
+		}
+		s = strings.TrimSpace(inner)
+	}
+	return s
+}
+
+// UniqueLinks de-dupes links by (target, relation) case-insensitively on target.
+func UniqueLinks(linkList []Link) []Link {
+	seen := make(map[string]struct{}, len(linkList))
+	out := make([]Link, 0, len(linkList))
+	for _, l := range linkList {
+		k := strings.ToLower(l.Target) + "\x00" + l.Relation
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, l)
+	}
+	return out
 }
 
 // Unique de-dupes a slice of targets case-insensitively while preserving order.

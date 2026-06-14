@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/links"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	_ "modernc.org/sqlite"
 )
@@ -744,5 +745,53 @@ func TestSearchWithOptionsRecencyWeightRanksNewest(t *testing.T) {
 	}
 	if got[0].Score <= got[1].Score {
 		t.Fatalf("newest result should have higher score, got %+v", got)
+	}
+}
+
+func TestIndexMetaContradictsBacklinks(t *testing.T) {
+	s := newTestSQLite(t)
+
+	pageA := []byte(`---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A contradicts B
+`)
+	pageB := []byte(`---
+memory_kind: semantic
+---
+# B
+`)
+
+	if err := s.IndexLinks(ctxBG, "pages/a.md", nil); err != nil {
+		t.Fatalf("IndexLinks a: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/a.md", pageA); err != nil {
+		t.Fatalf("IndexMeta a: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/b.md", pageB); err != nil {
+		t.Fatalf("IndexMeta b: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+	if backlinks[0].Path != "pages/a.md" {
+		t.Fatalf("source path: got %q", backlinks[0].Path)
+	}
+	if backlinks[0].Relation != links.RelationContradicts {
+		t.Fatalf("relation: got %q want contradicts", backlinks[0].Relation)
+	}
+
+	var relCount int
+	if err := s.readDB.QueryRow(`SELECT COUNT(*) FROM links WHERE relation = 'contradicts'`).Scan(&relCount); err != nil {
+		t.Fatalf("count contradicts links: %v", err)
+	}
+	if relCount != 1 {
+		t.Fatalf("contradicts link rows: got %d", relCount)
 	}
 }

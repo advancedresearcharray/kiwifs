@@ -709,7 +709,7 @@ func (b *LocalBackend) Backlinks(ctx context.Context, path string) ([]Backlink, 
 	}
 	out := make([]Backlink, len(entries))
 	for i, e := range entries {
-		out[i] = Backlink{Path: e.Path, Count: e.Count}
+		out[i] = Backlink{Path: e.Path, Count: e.Count, Relation: e.Relation}
 	}
 	return out, nil
 }

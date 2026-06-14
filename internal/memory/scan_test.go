@@ -221,6 +221,58 @@ merged-from:
 	}
 }
 
+func TestScan_contradictions(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("pages/a.md", `---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# a
+`)
+	write("pages/b.md", `---
+memory_kind: semantic
+memory_status: contested
+---
+# b
+`)
+	write("pages/c.md", `---
+memory_kind: semantic
+contradicts:
+  - pages/d.md
+  - pages/e.md
+---
+# c
+`)
+	write("pages/d.md", `---
+memory_kind: semantic
+---
+# d
+`)
+
+	s, err := storage.NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Scan(context.Background(), s, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Contradictions != 3 {
+		t.Fatalf("contradictions: got %d want 3 (a, b contested, c)", rep.Contradictions)
+	}
+}
+
 func TestCoveragePercent(t *testing.T) {
 	t.Parallel()
 	if got := coveragePercent(0, 0); got != 0 {

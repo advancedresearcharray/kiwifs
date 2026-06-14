@@ -78,7 +78,26 @@ Use **`scope`** to partition memories by user, project, or tenant (e.g. `user:al
 
 ## Contradictions: `contradicts`
 
-When new information conflicts with an existing page, set **`contradicts`** to the path of the conflicting page (relative to the knowledge root) and prefer `memory_status: contested` over silently overwriting. Resolve by updating confidence, recency, or merging into a superseding page — then record the outcome in `log.md`.
+When new information conflicts with an existing page, set **`contradicts`** in frontmatter to the path of the conflicting page (string or YAML list) and prefer `memory_status: contested` over silently overwriting. KiwiFS does **not** auto-detect contradictions — it indexes the relationship and surfaces it in backlinks and memory reports.
+
+```yaml
+---
+memory_kind: semantic
+contradicts: pages/auth-policy.md
+---
+```
+
+You may also use a YAML array or wiki-link syntax:
+
+```yaml
+contradicts:
+  - pages/auth-policy.md
+  - [[pages/legacy-auth.md]]
+```
+
+Each value is indexed like a backlink with relation type `contradicts`. The target page's backlinks API response includes the source with `"relation": "contradicts"`. Pages with `contradicts` entries or `memory_status: contested` increment the `contradictions` count in `kiwifs memory report` and `GET /api/kiwi/memory/report`.
+
+Resolve contradictions by updating confidence, recency, or merging into a superseding page — then record the outcome in `log.md`.
 
 ---
 
