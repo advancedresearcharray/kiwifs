@@ -795,3 +795,99 @@ memory_kind: semantic
 		t.Fatalf("contradicts link rows: got %d", relCount)
 	}
 }
+
+func TestIndexMetaClearsContradicts(t *testing.T) {
+	s := newTestSQLite(t)
+
+	withContradicts := []byte(`---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A contradicts B
+`)
+	withoutContradicts := []byte(`---
+memory_kind: semantic
+---
+# A no longer contradicts B
+`)
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withContradicts); err != nil {
+		t.Fatalf("IndexMeta with contradicts: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/b.md", []byte("---\nmemory_kind: semantic\n---\n# B\n")); err != nil {
+		t.Fatalf("IndexMeta b: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != links.RelationContradicts {
+		t.Fatalf("expected contradicts backlink, got %+v", backlinks)
+	}
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withoutContradicts); err != nil {
+		t.Fatalf("IndexMeta without contradicts: %v", err)
+	}
+	backlinks, err = s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks after clear: %v", err)
+	}
+	if len(backlinks) != 0 {
+		t.Fatalf("contradicts should be cleared, got %+v", backlinks)
+	}
+}
+
+func TestReindexContradictsBacklinks(t *testing.T) {
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+
+	pageA := []byte(`---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A contradicts B
+`)
+	pageB := []byte(`---
+memory_kind: semantic
+---
+# B
+`)
+	if err := store.Write(ctxBG, "pages/a.md", pageA); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := store.Write(ctxBG, "pages/b.md", pageB); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+
+	s, err := NewSQLite(dir, store)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer s.Close()
+
+	count, err := s.Reindex(ctxBG)
+	if err != nil {
+		t.Fatalf("Reindex: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("reindexed %d files, want 2", count)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+	if backlinks[0].Path != "pages/a.md" {
+		t.Fatalf("source path: got %q", backlinks[0].Path)
+	}
+	if backlinks[0].Relation != links.RelationContradicts {
+		t.Fatalf("relation: got %q want contradicts", backlinks[0].Relation)
+	}
+}
