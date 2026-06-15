@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent, type ChangeEvent } from "react";
-import { Check, Copy, Play, Loader2, RotateCcw } from "lucide-react";
+import { Check, Copy, Loader2, Play, RotateCcw } from "lucide-react";
 import { getHighlighter } from "@kw/lib/shiki";
 import { getPyodide, type PyodideInterface } from "@kw/lib/pyodide";
 
@@ -179,18 +179,40 @@ export function CodeRunner({ source, lang }: Props) {
 
   return (
     <div className="kiwi-shiki kiwi-code-runner relative group my-4 text-sm rounded-lg overflow-hidden">
-      {/* Header — matches kiwi-code-header style */}
+      {/* Header — language left, actions right, always visible */}
       <div className="kiwi-code-header">
         <span className="kiwi-code-lang">{langLabel}</span>
-        <span className="text-muted-foreground/50 text-[10px] font-normal hidden sm:inline">editable · ⌘↵ to run</span>
-      </div>
-
-      {/* Pyodide loading progress bar */}
-      {pyodideProgress && (
-        <div className="relative h-1 bg-muted/50 overflow-hidden">
-          <div className="absolute inset-0 bg-primary/40 animate-pulse" />
+        <div className="flex items-center gap-1.5">
+          {pyodideProgress && (
+            <span className="text-[10px] text-muted-foreground/70 animate-pulse mr-1">
+              {pyodideProgress}
+            </span>
+          )}
+          {isModified && (
+            <button
+              onClick={handleReset}
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
+              title="Reset to original"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Reset</span>
+            </button>
+          )}
+          <button
+            onClick={handleRun}
+            disabled={runState !== "idle"}
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+            title="Run (⌘↵)"
+          >
+            {runState !== "idle" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Play className="h-3 w-3" />
+            )}
+            <span>{runState === "loading" ? "Loading…" : runState === "running" ? "Running…" : "Run"}</span>
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Editor: highlighted mirror + transparent textarea overlay */}
       <div className="relative">
@@ -204,7 +226,6 @@ export function CodeRunner({ source, lang }: Props) {
               __html: highlightedHtml || escapeHtml(code),
             }}
           />
-          {/* Invisible trailing newline keeps pre height in sync */}
           {"\n"}
         </pre>
         <textarea
@@ -221,51 +242,18 @@ export function CodeRunner({ source, lang }: Props) {
         />
       </div>
 
-      {/* Action buttons — hover to reveal, like ShikiCode's copy button */}
-      <div className="absolute top-[calc(theme(spacing.8)+1px)] right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {isModified && (
-          <button
-            onClick={handleReset}
-            className="p-1.5 rounded-md bg-background/80 border border-border text-muted-foreground hover:text-foreground transition-colors"
-            title="Reset to original"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <button
-          onClick={handleCopy}
-          className="p-1.5 rounded-md bg-background/80 border border-border text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Copy code"
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </button>
-        <button
-          onClick={handleRun}
-          disabled={runState !== "idle"}
-          className="p-1.5 rounded-md bg-primary/90 border border-primary/20 text-primary-foreground hover:bg-primary disabled:opacity-50 transition-colors"
-          title="Run (⌘↵)"
-        >
-          {runState !== "idle" ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
-        </button>
-      </div>
+      {/* Copy button — hover to reveal, same as ShikiCode */}
+      <button
+        onClick={handleCopy}
+        className="absolute top-[calc(theme(spacing.8)+1px)] right-2 p-1.5 rounded-md bg-background/80 border border-border text-muted-foreground hover:text-foreground transition-opacity opacity-0 group-hover:opacity-100"
+        aria-label="Copy code"
+      >
+        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+      </button>
 
-      {/* Output — always reserved space to prevent layout shift */}
+      {/* Output */}
       <div className="border-t border-border">
-        <div className="px-4 py-1.5 flex items-center justify-between">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Output
-          </span>
-          {pyodideProgress && (
-            <span className="text-[10px] text-muted-foreground/70 animate-pulse">
-              {pyodideProgress}
-            </span>
-          )}
-        </div>
-        <pre className="px-4 pb-3 pt-0 text-sm font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed min-h-[1.5rem]">
+        <pre className="px-4 py-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed min-h-[1.5rem]">
           {hasRun ? (
             <>
               {output && <span className="text-foreground">{output}</span>}
@@ -273,8 +261,8 @@ export function CodeRunner({ source, lang }: Props) {
               {error && <span className="text-destructive">{error}</span>}
             </>
           ) : (
-            <span className="text-muted-foreground/40 italic text-xs select-none">
-              Click ▶ or press ⌘↵ to run
+            <span className="text-muted-foreground/30 select-none text-xs">
+              ▸ output appears here
             </span>
           )}
         </pre>
