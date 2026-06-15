@@ -19,6 +19,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/docexport"
 	"github.com/kiwifs/kiwifs/internal/lockdir"
+	"github.com/kiwifs/kiwifs/internal/mcpserver"
 	kiwinfs "github.com/kiwifs/kiwifs/internal/nfs"
 	kiwis3 "github.com/kiwifs/kiwifs/internal/s3"
 	"github.com/kiwifs/kiwifs/internal/spaces"
@@ -156,6 +157,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer stack.Close()
+
+	if err := wireMCPHTTP(stack); err != nil {
+		return err
+	}
 
 	// Log availability of external document export tools (Pandoc, Marp,
 	// MkDocs, etc.) so operators know which export formats are usable.
@@ -413,5 +418,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	log.Printf("shutdown complete")
+	return nil
+}
+
+func wireMCPHTTP(stack *bootstrap.Stack) error {
+	mcpSrv, _, err := mcpserver.New(mcpserver.Options{
+		Backend: mcpserver.NewStackBackend(stack),
+		Emitter: stack.Emitter,
+	})
+	if err != nil {
+		return fmt.Errorf("mcp init: %w", err)
+	}
+	stack.Server.SetMCPHandler(mcpserver.StreamableHTTPHandler(mcpSrv, mcpserver.AuthTokenFromConfig(stack.Config)))
 	return nil
 }
