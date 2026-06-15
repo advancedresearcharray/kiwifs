@@ -507,6 +507,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/file", h.ReadFile)
 	api.GET("/readlink", h.Readlink)
 	api.PUT("/file", h.WriteFile)
+	api.PATCH("/file", h.PatchFile)
 	api.PATCH("/file/frontmatter", h.PatchFrontmatter)
 	api.PATCH("/tree/order", h.PatchTreeOrder)
 	api.DELETE("/file", h.DeleteFile)
