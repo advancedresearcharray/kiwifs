@@ -278,15 +278,6 @@ func shortID(id string) string {
 	return id
 }
 
-// GetTheme godoc
-//
-//	@Summary		Get theme configuration
-//	@Description	Reads and returns the theme configuration from .kiwi/theme.json. Returns empty object if file does not exist.
-//	@Tags			theme
-//	@Security		BearerAuth
-//	@Success		200		{object}	map[string]any
-//	@Failure		500		{object}	map[string]string
-//	@Router			/api/kiwi/theme [get]
 var customCSSScriptTag = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script>`)
 
 func sanitizeCustomCSS(css string) string {
@@ -328,6 +319,15 @@ func (h *Handlers) GetCustomCSS(c echo.Context) error {
 	return c.String(http.StatusOK, sanitizeCustomCSS(string(data)))
 }
 
+// GetTheme godoc
+//
+//	@Summary		Get theme configuration
+//	@Description	Reads and returns the theme configuration from .kiwi/theme.json. Returns empty object if file does not exist.
+//	@Tags			theme
+//	@Security		BearerAuth
+//	@Success		200		{object}	map[string]any
+//	@Failure		500		{object}	map[string]string
+//	@Router			/api/kiwi/theme [get]
 func (h *Handlers) GetTheme(c echo.Context) error {
 	p := filepath.Join(h.root, ".kiwi", "theme.json")
 	data, err := os.ReadFile(p)
