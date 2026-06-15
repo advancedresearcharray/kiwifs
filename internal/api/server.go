@@ -539,6 +539,7 @@ func (s *Server) setupRoutes() {
 	api.PATCH("/comments/:id", h.ResolveComment)
 	api.GET("/theme", h.GetTheme)
 	api.PUT("/theme", h.PutTheme)
+	api.GET("/keybindings", h.GetKeybindings)
 	api.GET("/ui-config", h.UIConfig)
 	api.GET("/janitor", h.Janitor)
 	api.GET("/memory/report", h.MemoryReport)

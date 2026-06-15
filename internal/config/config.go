@@ -183,7 +183,9 @@ func (b BackupConfig) IsRebaseBeforePush() bool {
 
 // UIConfig controls frontend behaviour. Toggled via [ui] in config.toml.
 type UIConfig struct {
-	ThemeLocked bool `toml:"theme_locked"`
+	ThemeLocked     bool              `toml:"theme_locked"`
+	KeybindingsFile string            `toml:"keybindings_file"` // relative path, default .kiwi/keybindings.json
+	Keybindings     map[string]string `toml:"keybindings"`      // inline [ui.keybindings] overrides
 }
 
 // AssetsConfig controls binary upload limits and MIME allowlist. Zero values
