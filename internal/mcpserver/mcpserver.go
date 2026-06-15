@@ -39,13 +39,17 @@ type Options struct {
 	HTTP    bool
 	Port    int
 	Emitter tracing.Emitter
+	Backend Backend
 }
 
 func New(opts Options) (*server.MCPServer, Backend, error) {
 	var backend Backend
-	if opts.Remote != "" {
+	switch {
+	case opts.Backend != nil:
+		backend = opts.Backend
+	case opts.Remote != "":
 		backend = NewRemoteBackend(opts.Remote, opts.APIKey, opts.Space)
-	} else {
+	default:
 		backend = NewLocalBackend(opts.Root)
 	}
 
@@ -2841,21 +2845,35 @@ func httpAuthToken(opts Options) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("load MCP HTTP auth config: %w", err)
 	}
-	if cfg.Auth.Type == "apikey" && cfg.Auth.APIKey != "" {
-		return cfg.Auth.APIKey, nil
-	}
-	return "", nil
+	return AuthTokenFromConfig(cfg), nil
 }
 
-func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) http.Handler {
+// AuthTokenFromConfig returns the bearer token for MCP HTTP when apikey auth is enabled.
+func AuthTokenFromConfig(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.Auth.Type == "apikey" && cfg.Auth.APIKey != "" {
+		return cfg.Auth.APIKey
+	}
+	return ""
+}
+
+// StreamableHTTPHandler returns an http.Handler for MCP Streamable HTTP transport.
+func StreamableHTTPHandler(s *server.MCPServer, authToken string) http.Handler {
 	mcpHandler := server.NewStreamableHTTPServer(
 		s,
 		server.WithEndpointPath("/mcp"),
 		server.WithStateLess(true),
 	)
+	return bearerAuth(authToken, mcpHandler)
+}
+
+func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) http.Handler {
+	mcpHandler := StreamableHTTPHandler(s, authToken)
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", bearerAuth(authToken, mcpHandler))
+	mux.Handle("/mcp", mcpHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

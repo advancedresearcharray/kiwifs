@@ -40,12 +40,36 @@ type LocalBackend struct {
 	dvExec   *dataview.Executor
 	draftMgr *draft.Manager
 
-	once sync.Once
-	err  error
+	once     sync.Once
+	err      error
+	ownStack bool
 }
 
 func NewLocalBackend(root string) *LocalBackend {
-	return &LocalBackend{root: root}
+	return &LocalBackend{root: root, ownStack: true}
+}
+
+// NewStackBackend returns an MCP backend backed by an existing bootstrap.Stack.
+// The caller retains stack lifetime; Close is a no-op.
+func NewStackBackend(stack *bootstrap.Stack) Backend {
+	b := &LocalBackend{root: stack.Root, stack: stack, ownStack: false}
+	b.once.Do(func() {
+		if sq, ok := stack.Searcher.(*search.SQLite); ok {
+			b.dvExec = dataview.NewExecutor(sq.ReadDB())
+			timeout := 5 * time.Second
+			maxRows := 10000
+			if stack.Config != nil {
+				if t, err := time.ParseDuration(stack.Config.Dataview.QueryTimeout); err == nil && t > 0 {
+					timeout = t
+				}
+				if stack.Config.Dataview.MaxScanRows > 0 {
+					maxRows = stack.Config.Dataview.MaxScanRows
+				}
+			}
+			b.dvExec.SetLimits(maxRows, timeout)
+		}
+	})
+	return b
 }
 
 func (b *LocalBackend) init() error {
@@ -826,7 +850,7 @@ func (b *LocalBackend) Health(_ context.Context) error {
 }
 
 func (b *LocalBackend) Close() error {
-	if b.stack != nil {
+	if b.stack != nil && b.ownStack {
 		return b.stack.Close()
 	}
 	return nil
