@@ -41,6 +41,9 @@ type Config struct {
 	// WebhookEntries from [[webhooks_entries]] — config-driven
 	// webhooks that are auto-registered on startup (B.5).
 	WebhookEntries []WebhookEntryConfig `toml:"webhook_entries"`
+	// ValidateWriteRules from [[validate_write]] — config-driven write
+	// guards keyed on existing file frontmatter (append-only, immutable ADRs).
+	ValidateWriteRules []ValidateWriteRuleConfig `toml:"validate_write"`
 }
 
 // B.3 — Audit log config.
@@ -78,6 +81,22 @@ type ImportConfig struct {
 // IsPreferAirbyte returns true unless explicitly set to false.
 func (c ImportConfig) IsPreferAirbyte() bool {
 	return c.PreferAirbyte == nil || *c.PreferAirbyte
+}
+
+// ValidateWriteMatchConfig selects files by a frontmatter field value.
+type ValidateWriteMatchConfig struct {
+	Frontmatter string   `toml:"frontmatter"`
+	Value       string   `toml:"value"`
+	Values      []string `toml:"values"`
+}
+
+// ValidateWriteRuleConfig is one [[validate_write]] stanza. Rules apply only
+// when the existing file's frontmatter matches; new files are unaffected.
+type ValidateWriteRuleConfig struct {
+	Name    string                   `toml:"name"`
+	Match   ValidateWriteMatchConfig `toml:"match"`
+	Reject  string                   `toml:"reject"` // overwrite | body_change
+	Message string                   `toml:"message"`
 }
 
 // B.5 — Config-driven webhook entry (statically declared in config.toml).

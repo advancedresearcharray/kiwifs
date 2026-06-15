@@ -347,3 +347,36 @@ output_name = "last_hidden_state"
 		t.Fatalf("prefixes = %q/%q", emb.QueryPrefix, emb.PassagePrefix)
 	}
 }
+
+func TestLoadValidateWriteRules(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[[validate_write]]
+name = "append-only"
+match = { frontmatter = "append_only", value = "true" }
+reject = "overwrite"
+message = "This file is append-only."
+
+[[validate_write]]
+name = "immutable-after-status"
+match = { frontmatter = "status", values = ["accepted", "deprecated"] }
+reject = "body_change"
+message = "Accepted decisions cannot be edited."
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.ValidateWriteRules) != 2 {
+		t.Fatalf("expected 2 rules, got %d", len(cfg.ValidateWriteRules))
+	}
+	if cfg.ValidateWriteRules[0].Name != "append-only" || cfg.ValidateWriteRules[0].Reject != "overwrite" {
+		t.Fatalf("first rule: %+v", cfg.ValidateWriteRules[0])
+	}
+	if cfg.ValidateWriteRules[1].Match.Values[0] != "accepted" {
+		t.Fatalf("second rule values: %+v", cfg.ValidateWriteRules[1].Match)
+	}
+}
