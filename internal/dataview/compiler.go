@@ -220,6 +220,14 @@ func (c *compiler) writeWhere(sb *strings.Builder) error {
 		c.params = append(c.params, c.plan.From)
 	}
 
+	if c.plan.Flatten != "" {
+		conditions = append(conditions,
+			fmt.Sprintf("json_type(file_meta.frontmatter, '$.%s') = 'array'", c.plan.Flatten))
+		if c.usesFlattenSubfields() {
+			conditions = append(conditions, "json_type(_flat.value) = 'object'")
+		}
+	}
+
 	for _, tf := range c.plan.FromTags {
 		if tf.Negate {
 			conditions = append(conditions,
@@ -290,12 +298,88 @@ func (c *compiler) fieldSpecToSQL(fs FieldSpec) (string, []any, error) {
 	return sql, nil, err
 }
 
+func (c *compiler) flattenFieldSQL(field string) (string, bool) {
+	if c.plan == nil || c.plan.Flatten == "" {
+		return "", false
+	}
+	flat := c.plan.Flatten
+	if field == flat {
+		return "_flat.value", true
+	}
+	prefix := flat + "."
+	if strings.HasPrefix(field, prefix) {
+		sub := field[len(prefix):]
+		if sub == "" || !validFieldRe.MatchString(sub) {
+			return "", false
+		}
+		return fmt.Sprintf("json_extract(_flat.value, '$.%s')", sub), true
+	}
+	return "", false
+}
+
+func (c *compiler) usesFlattenSubfields() bool {
+	if c.plan == nil || c.plan.Flatten == "" {
+		return false
+	}
+	prefix := c.plan.Flatten + "."
+	for _, fs := range c.plan.Fields {
+		if strings.HasPrefix(fs.Expr, prefix) {
+			return true
+		}
+	}
+	if c.plan.Sort != "" && strings.HasPrefix(c.plan.Sort, prefix) {
+		return true
+	}
+	for _, s := range c.plan.Sorts {
+		if strings.HasPrefix(s.Field, prefix) {
+			return true
+		}
+	}
+	if c.plan.GroupBy != "" && strings.HasPrefix(c.plan.GroupBy, prefix) {
+		return true
+	}
+	if c.plan.Where != nil && exprUsesFlattenSubfield(c.plan.Where, prefix) {
+		return true
+	}
+	return false
+}
+
+func exprUsesFlattenSubfield(expr Expr, prefix string) bool {
+	switch e := expr.(type) {
+	case *FieldRef:
+		return strings.HasPrefix(e.Path, prefix)
+	case *BinaryExpr:
+		return exprUsesFlattenSubfield(e.Left, prefix) || exprUsesFlattenSubfield(e.Right, prefix)
+	case *UnaryExpr:
+		return exprUsesFlattenSubfield(e.Expr, prefix)
+	case *FuncCall:
+		for _, arg := range e.Args {
+			if exprUsesFlattenSubfield(arg, prefix) {
+				return true
+			}
+		}
+	case *ListExpr:
+		for _, item := range e.Items {
+			if exprUsesFlattenSubfield(item, prefix) {
+				return true
+			}
+		}
+	case *BetweenExpr:
+		return exprUsesFlattenSubfield(e.Expr, prefix) ||
+			exprUsesFlattenSubfield(e.Low, prefix) ||
+			exprUsesFlattenSubfield(e.High, prefix)
+	case *IsNullExpr:
+		return exprUsesFlattenSubfield(e.Expr, prefix)
+	}
+	return false
+}
+
 func (c *compiler) fieldToSQL(field string) (string, error) {
 	if sql, isImplicit := resolveField(field); isImplicit {
 		return sql, nil
 	}
-	if c.plan.Flatten != "" && field == c.plan.Flatten {
-		return "_flat.value", nil
+	if sql, ok := c.flattenFieldSQL(field); ok {
+		return sql, nil
 	}
 	if err := validateFieldPath(field); err != nil {
 		return "", err
@@ -382,8 +466,8 @@ func (c *compiler) compileFieldRef(e *FieldRef) (string, []any, error) {
 	if sql, isImplicit := resolveField(e.Path); isImplicit {
 		return sql, nil, nil
 	}
-	if c.plan != nil && c.plan.Flatten != "" && e.Path == c.plan.Flatten {
-		return "_flat.value", nil, nil
+	if sql, ok := c.flattenFieldSQL(e.Path); ok {
+		return sql, nil, nil
 	}
 	if err := validateFieldPath(e.Path); err != nil {
 		return "", nil, err
