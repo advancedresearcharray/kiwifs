@@ -583,6 +583,16 @@ export const api = {
     return request(`${kiwiBase()}/theme`);
   },
 
+  async getCustomCSS(): Promise<string> {
+    const res = await fetch(`${kiwiBase()}/custom.css`);
+    if (!res.ok) {
+      if (res.status === 404) return "";
+      const text = await res.text().catch(() => "");
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    return res.text();
+  },
+
   async putTheme(theme: Record<string, unknown>): Promise<Record<string, unknown>> {
     return request(`${kiwiBase()}/theme`, {
       method: "PUT",

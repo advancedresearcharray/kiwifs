@@ -302,6 +302,10 @@ function createMockFetch(overrides: MockOverrides = {}) {
         return jsonResponse({});
       }
 
+      if (url.includes("/custom.css") && method === "GET") {
+        return new Response("", { status: 200, headers: { "Content-Type": "text/css" } });
+      }
+
       if (url.includes("/health")) {
         return jsonResponse({ status: "ok" });
       }

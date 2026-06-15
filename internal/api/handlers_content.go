@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -286,6 +287,47 @@ func shortID(id string) string {
 //	@Success		200		{object}	map[string]any
 //	@Failure		500		{object}	map[string]string
 //	@Router			/api/kiwi/theme [get]
+var customCSSScriptTag = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script>`)
+
+func sanitizeCustomCSS(css string) string {
+	return customCSSScriptTag.ReplaceAllString(css, "")
+}
+
+func (h *Handlers) customCSSRelPath() string {
+	rel := strings.TrimSpace(h.ui.CustomCSS)
+	if rel == "" {
+		return ".kiwi/custom.css"
+	}
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if filepath.IsAbs(rel) || strings.Contains(rel, "..") {
+		return ".kiwi/custom.css"
+	}
+	return rel
+}
+
+// GetCustomCSS godoc
+//
+//	@Summary		Get custom CSS overrides
+//	@Description	Reads and returns the workspace custom CSS file configured via [ui] custom_css (default .kiwi/custom.css). Returns empty body if the file does not exist. Script tags are stripped.
+//	@Tags			theme
+//	@Security		BearerAuth
+//	@Produce		text/css
+//	@Success		200		{string}	string
+//	@Failure		500		{object}	map[string]string
+//	@Router			/api/kiwi/custom.css [get]
+func (h *Handlers) GetCustomCSS(c echo.Context) error {
+	p := filepath.Join(h.root, h.customCSSRelPath())
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.String(http.StatusOK, "")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	c.Response().Header().Set("Content-Type", "text/css; charset=utf-8")
+	return c.String(http.StatusOK, sanitizeCustomCSS(string(data)))
+}
+
 func (h *Handlers) GetTheme(c echo.Context) error {
 	p := filepath.Join(h.root, ".kiwi", "theme.json")
 	data, err := os.ReadFile(p)
