@@ -10,10 +10,17 @@ Fixed kiwifs/kiwifs#314: Cloud MCP endpoint returned 405 on POST and HTML on GET
 
 Changes: `wireMCPHTTP` in `cmd/serve.go`, `SetMCPHandler` route ordering in `internal/api/server.go`, `NewStackBackend` + `StreamableHTTPHandler` in mcpserver.
 
-Tests passed:
-- `go test ./internal/api/ -run TestMCP -count=1` (4 tests)
-- `go test ./internal/mcpserver/ -run 'TestNewStack|TestAuthToken' -count=1`
+Tests passed (hands-on takeover 2026-06-15):
+- `go test ./internal/api/ -run TestMCP -count=1` — 4/4 PASS
+- `go test ./internal/mcpserver/ -run 'TestNewStack|TestAuthToken' -count=1` — 2/2 PASS
+- `go test ./tests/ -run MCP -count=1` — 2/2 PASS
+- `go test ./internal/api/ ./internal/mcpserver/ ./cmd/ -count=1` — all PASS
+
+Peer review (hands-on):
+- `wireMCPHTTP` reuses live stack via `NewStackBackend`; `Close` no-op when `ownStack=false` — correct lifetime
+- `SetMCPHandler` registers `echo.Any("/mcp")` idempotently; route wins over UI `GET /*` (verified by tests)
+- `StreamableHTTPHandler` + `AuthTokenFromConfig` shared between `mcp --http` and colocated serve MCP
+- No issues found; peer review passed
 
 Fix doc: `pages/fixes/kiwifs-kiwifs/issue-314-cloud-mcp-streamable-http.md`
-
-Note: Kiwi MCP gateway unavailable in agent env; remote Kiwi write at CT934 returned `invalid API key`. Docs written to workspace `pages/` and `episodes/` trees directly.
+Kiwi cluster: fix doc indexed at CT934 (`pages/fixes/kiwifs-kiwifs/issue-314-cloud-mcp-endpoint-rejects-streamable-ht.md`)
