@@ -76,6 +76,38 @@ merged-from:
 	}
 }
 
+func TestMemoryReportContradictions(t *testing.T) {
+	s, _ := buildSQLiteTestServer(t)
+
+	mustPutFile(t, s, "pages/a.md", `---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A
+`)
+	mustPutFile(t, s, "pages/b.md", `---
+memory_kind: semantic
+memory_status: contested
+---
+# B
+`)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/memory/report", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /memory/report: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var rep memory.Report
+	if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if rep.Contradictions != 2 {
+		t.Fatalf("contradictions want 2 got %d", rep.Contradictions)
+	}
+}
+
 func TestMemoryReportEpisodesPrefixQuery(t *testing.T) {
 	s, dir := buildSQLiteTestServer(t)
 

@@ -39,6 +39,7 @@ func (r *Report) WriteHealthMetrics(w io.Writer) {
 	fmt.Fprintf(w, "avg age (active pages):  %.1f days\n", r.AvgAgeDays)
 	fmt.Fprintf(w, "expired pages:           %d\n", r.ExpiredCount)
 	fmt.Fprintf(w, "contested pages:         %d\n", r.ContestedCount)
+	fmt.Fprintf(w, "contradictions:          %d\n", r.Contradictions)
 	if len(r.ScopeCounts) == 0 {
 		fmt.Fprintln(w, "scope breakdown:         (none)")
 		return

@@ -8,6 +8,72 @@ import (
 	"time"
 )
 
+func TestExtractContradicts(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		fm   map[string]any
+		want []string
+	}{
+		{
+			name: "string path",
+			fm:   map[string]any{"contradicts": "pages/b.md"},
+			want: []string{"pages/b.md"},
+		},
+		{
+			name: "leading slash stripped",
+			fm:   map[string]any{"contradicts": "/pages/b.md"},
+			want: []string{"pages/b.md"},
+		},
+		{
+			name: "wiki link syntax",
+			fm:   map[string]any{"contradicts": "[[pages/b.md|legacy]]"},
+			want: []string{"pages/b.md"},
+		},
+		{
+			name: "string array",
+			fm:   map[string]any{"contradicts": []any{"pages/b.md", "pages/c.md"}},
+			want: []string{"pages/b.md", "pages/c.md"},
+		},
+		{
+			name: "native string slice",
+			fm:   map[string]any{"contradicts": []string{"pages/d.md"}},
+			want: []string{"pages/d.md"},
+		},
+		{
+			name: "absent",
+			fm:   map[string]any{"title": "x"},
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ExtractContradicts(tc.fm)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtractForIndex(t *testing.T) {
+	t.Parallel()
+	content := []byte(`---
+contradicts: pages/b.md
+---
+See [[foo]] and [[bar|label]].
+`)
+	got := ExtractForIndex(content)
+	want := []Link{
+		{Target: "foo"},
+		{Target: "bar"},
+		{Target: "pages/b.md", Relation: RelationContradicts},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
 func TestExtractAndUnique(t *testing.T) {
 	body := []byte("see [[foo]] and [[bar|label]] and [[foo]] again\n")
 	got := Extract(body)

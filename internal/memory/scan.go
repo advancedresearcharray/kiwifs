@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/links"
 	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"gopkg.in/yaml.v3"
@@ -16,7 +17,8 @@ import (
 type Report struct {
 	EpisodicCount int `json:"episodic_count"`
 	TotalEpisodic int `json:"total_episodic"`
-	TotalUnmerged int `json:"total_unmerged"`
+	TotalUnmerged  int `json:"total_unmerged"`
+	Contradictions int `json:"contradictions"`
 	// Cumulative merged-from entries seen across the tree (duplicates count).
 	MergedFromRefs int `json:"merged_from_refs"`
 	// CoveragePct is the percentage of episodic files referenced by merged-from.
@@ -137,7 +139,17 @@ func processFile(path string, b []byte, modTime time.Time, prefix string, rep *R
 		rep.Warnings = append(rep.Warnings, w...)
 		rep.Episodes = append(rep.Episodes, ef)
 	}
+	if pageHasContradiction(fm) {
+		rep.Contradictions++
+	}
 	return nil
+}
+
+func pageHasContradiction(fm map[string]any) bool {
+	if MemoryStatus(fm) == StatusContested {
+		return true
+	}
+	return len(links.ExtractContradicts(fm)) > 0
 }
 
 func finishReport(r *Report, opt Options) *Report {
