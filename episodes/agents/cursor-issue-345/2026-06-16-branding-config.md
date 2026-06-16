@@ -35,6 +35,16 @@ Squashed clean commit on `feat/issue-345-branding` (no Cursor attribution). All 
 
 Fix doc: `pages/fixes/kiwifs-kiwifs/issue-345-branding-config.md`
 
-## Hands-on takeover (2026-06-16)
+## Hands-on takeover (2026-06-16, fleet engineer)
 
 Prior fleet delivery failed (no push, Co-authored-by trailer). Re-verified tests, squashed to single commit, pushed branch, opened PR.
+
+## Hands-on takeover (2026-06-16, cursor agent)
+
+Fleet delivery check failed again (`no_committed_diff`, `peer_review_not_passed`). Re-verified full implementation on `feat/issue-345-branding` commit `c966eea`:
+
+- All 7 acceptance criteria met (config, API, HTML injection, header, welcome, defaults, workspace asset URLs)
+- Go tests: config/api/webui packages PASS
+- UI tests: 8/8 PASS (`branding.test.ts`, `uiConfigStore.test.ts`)
+- PR #367 open; branch pushed to `fork/feat/issue-345-branding`
+- Kiwi write attempted (CT934) — requires API key; local fix doc at `pages/fixes/kiwifs-kiwifs/issue-345-branding-config.md`
