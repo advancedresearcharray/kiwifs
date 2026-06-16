@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_KEYBINDINGS,
+  buildChordIndex,
   eventMatchesChord,
   formatChordDisplay,
   matchBoundAction,
@@ -80,6 +81,18 @@ describe("matchBoundAction", () => {
       altKey: false,
     } as KeyboardEvent;
     expect(matchBoundAction(e, bindings)).toBe("graph");
+  });
+});
+
+describe("buildChordIndex", () => {
+  it("groups actions by normalized chord", () => {
+    const bindings = mergeKeybindings({
+      bindings: { search: "mod+k", new_page: "mod+k" },
+      defaults: DEFAULT_KEYBINDINGS,
+      conflicts: [],
+    });
+    const index = buildChordIndex(bindings);
+    expect(index.get("mod+k")?.sort()).toEqual(["new_page", "search"]);
   });
 });
 
