@@ -87,7 +87,6 @@ export function CodeRunner({ source, lang }: Props) {
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
   const [runState, setRunState] = useState<RunState>("idle");
-  const [pyodideProgress, setPyodideProgress] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLPreElement>(null);
@@ -121,14 +120,11 @@ export function CodeRunner({ source, lang }: Props) {
     if (isPython) {
       if (!pyodideRef.current) {
         setRunState("loading");
-        setPyodideProgress("Downloading Python runtime…");
         try {
           pyodideRef.current = await getPyodide();
-          setPyodideProgress(null);
         } catch (e: unknown) {
           setError(e instanceof Error ? e.message : "Failed to load Python runtime");
           setRunState("idle");
-          setPyodideProgress(null);
           return;
         }
       }
@@ -182,16 +178,19 @@ export function CodeRunner({ source, lang }: Props) {
       {/* Header — language left, actions right, always visible */}
       <div className="kiwi-code-header">
         <span className="kiwi-code-lang">{langLabel}</span>
-        <div className="flex items-center gap-1.5">
-          {pyodideProgress && (
-            <span className="text-[10px] text-muted-foreground/70 animate-pulse mr-1">
-              {pyodideProgress}
-            </span>
-          )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopy}
+            className="inline-flex items-center text-muted-foreground/50 hover:text-foreground transition-colors"
+            aria-label="Copy code"
+            title="Copy"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
           {isModified && (
             <button
               onClick={handleReset}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
               title="Reset to original"
             >
               <RotateCcw className="h-3 w-3" />
@@ -241,15 +240,6 @@ export function CodeRunner({ source, lang }: Props) {
           style={{ tabSize: 4, WebkitTextFillColor: "transparent" }}
         />
       </div>
-
-      {/* Copy button — hover to reveal, same as ShikiCode */}
-      <button
-        onClick={handleCopy}
-        className="absolute top-[calc(theme(spacing.8)+1px)] right-2 p-1.5 rounded-md bg-background/80 border border-border text-muted-foreground hover:text-foreground transition-opacity opacity-0 group-hover:opacity-100"
-        aria-label="Copy code"
-      >
-        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-      </button>
 
       {/* Output */}
       <div className="border-t border-border">
