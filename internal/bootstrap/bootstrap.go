@@ -212,7 +212,7 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 	var schemaReload func()
 	if cfg.Schema.Enforce {
 		sv := schema.NewValidator(root)
-		pipe.ValidateWrite = func(path string, content []byte) error {
+		pipe.ValidateWrite = func(ctx context.Context, path string, content []byte, _ pipeline.WriteKind) error {
 			fm, ferr := markdown.Frontmatter(content)
 			if ferr != nil || fm == nil {
 				return nil
@@ -226,14 +226,29 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		log.Printf("%sschema validation enabled", prefix)
 	}
 
+	if len(cfg.ValidateWriteRules) > 0 {
+		wv := pipeline.NewWriteRuleValidator(pipe.Store, cfg.ValidateWriteRules)
+		existingValidate := pipe.ValidateWrite
+		pipe.ValidateWrite = func(ctx context.Context, path string, content []byte, kind pipeline.WriteKind) error {
+			if err := wv.Validate(ctx, path, content, kind); err != nil {
+				return err
+			}
+			if existingValidate != nil {
+				return existingValidate(ctx, path, content, kind)
+			}
+			return nil
+		}
+		log.Printf("%svalidate_write rules enabled (%d)", prefix, len(cfg.ValidateWriteRules))
+	}
+
 	// Extend ValidateWrite to reject markdown with error-severity lint
 	// issues (runs after auto-format has cleaned cosmetic issues).
 	if cfg.Lint.IsRejectErrors() {
 		existingValidate := pipe.ValidateWrite
-		pipe.ValidateWrite = func(path string, content []byte) error {
+		pipe.ValidateWrite = func(ctx context.Context, path string, content []byte, kind pipeline.WriteKind) error {
 			// Run existing schema validation first.
 			if existingValidate != nil {
-				if err := existingValidate(path, content); err != nil {
+				if err := existingValidate(ctx, path, content, kind); err != nil {
 					return err
 				}
 			}

@@ -92,8 +92,9 @@ type Pipeline struct {
 
 	// ValidateWrite, when set, is called before writing content. If it
 	// returns a non-nil error, the write is rejected. Used for schema
-	// validation of frontmatter against JSON Schema definitions.
-	ValidateWrite func(path string, content []byte) error
+	// validation of frontmatter against JSON Schema definitions and
+	// config-driven validate_write rules.
+	ValidateWrite func(ctx context.Context, path string, content []byte, kind WriteKind) error
 
 	// writeMu serialises the whole Store.Write → Versioner.Commit sequence
 	// across concurrent Write / BulkWrite / Delete / Observe* callers.
@@ -145,6 +146,19 @@ var ErrTransitionDenied = fmt.Errorf("transition denied")
 // ErrValidationFailed is returned when content fails schema validation.
 // Mapped to HTTP 422 by the REST handler.
 var ErrValidationFailed = fmt.Errorf("validation failed")
+
+// ErrWriteRejected is returned when a config-driven validate_write rule
+// blocks the operation. Mapped to HTTP 409 by the REST handler.
+var ErrWriteRejected = fmt.Errorf("write rejected")
+
+// WriteKind distinguishes full replace writes from appends for validate_write
+// rules (e.g. append-only files allow append but reject overwrite).
+type WriteKind int
+
+const (
+	WriteKindPut WriteKind = iota
+	WriteKindAppend
+)
 
 // WriteOpts carries the optional knobs that don't fit Write's hot signature.
 // Today only IfMatch is set; new fields go here so callers don't churn.
@@ -609,8 +623,8 @@ func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byt
 	}
 
 	if p.ValidateWrite != nil {
-		if err := p.ValidateWrite(path, content); err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrValidationFailed, err)
+		if err := p.ValidateWrite(ctx, path, content, WriteKindPut); err != nil {
+			return Result{}, wrapValidateWriteErr(err)
 		}
 	}
 	// Mark before the disk write so the fsnotify event fires while the
@@ -730,8 +744,8 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 	}
 
 	if p.ValidateWrite != nil {
-		if err := p.ValidateWrite(path, newContent); err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrValidationFailed, err)
+		if err := p.ValidateWrite(ctx, path, newContent, WriteKindAppend); err != nil {
+			return Result{}, wrapValidateWriteErr(err)
 		}
 	}
 
@@ -777,8 +791,8 @@ func (p *Pipeline) BulkWrite(ctx context.Context, files []struct {
 	}
 	if p.ValidateWrite != nil {
 		for i, f := range files {
-			if err := p.ValidateWrite(f.Path, f.Content); err != nil {
-				return nil, fmt.Errorf("%w: files[%d] (%s): %v", ErrValidationFailed, i, f.Path, err)
+			if err := p.ValidateWrite(ctx, f.Path, f.Content, WriteKindPut); err != nil {
+				return nil, fmt.Errorf("files[%d] (%s): %w", i, f.Path, wrapValidateWriteErr(err))
 			}
 		}
 	}
