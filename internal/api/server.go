@@ -682,6 +682,7 @@ func (s *Server) setupRoutes() {
 		s.echo.Any("/mcp", echo.WrapHandler(s.mcpHandler))
 	}
 
+	webui.SetBranding(s.cfg.UI.Branding)
 	uiHandler := webui.Handler()
 	s.echo.GET("/", uiHandler)
 	s.echo.GET("/*", uiHandler)

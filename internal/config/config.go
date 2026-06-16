@@ -206,6 +206,75 @@ type UIConfig struct {
 	CustomCSS       string            `toml:"custom_css"`       // relative path, default .kiwi/custom.css
 	KeybindingsFile string            `toml:"keybindings_file"` // relative path, default .kiwi/keybindings.json
 	Keybindings     map[string]string `toml:"keybindings"`      // inline [ui.keybindings] overrides
+	Branding        BrandingConfig    `toml:"branding"`
+}
+
+// BrandingConfig controls white-label app name, logo, favicon, and welcome copy.
+type BrandingConfig struct {
+	Name           string `toml:"name"`
+	LogoURL        string `toml:"logo_url"`
+	FaviconURL     string `toml:"favicon_url"`
+	WelcomeTitle   string `toml:"welcome_title"`
+	WelcomeMessage string `toml:"welcome_message"`
+}
+
+const (
+	DefaultBrandingName           = "KiwiFS"
+	DefaultBrandingLogoURL        = "/kiwifs.png"
+	DefaultBrandingFaviconURL     = "/favicon.svg"
+	DefaultBrandingWelcomeTitle   = "Welcome to KiwiFS"
+	DefaultBrandingWelcomeMessage = "Your knowledge base is ready. Get started by creating a page or exploring existing content."
+)
+
+func (b BrandingConfig) ResolvedName() string {
+	if b.Name != "" {
+		return b.Name
+	}
+	return DefaultBrandingName
+}
+
+func (b BrandingConfig) ResolvedLogoURL() string {
+	if b.LogoURL != "" {
+		return ResolveBrandingAssetURL(b.LogoURL)
+	}
+	return DefaultBrandingLogoURL
+}
+
+func (b BrandingConfig) ResolvedFaviconURL() string {
+	if b.FaviconURL != "" {
+		return ResolveBrandingAssetURL(b.FaviconURL)
+	}
+	return DefaultBrandingFaviconURL
+}
+
+func (b BrandingConfig) ResolvedWelcomeTitle() string {
+	if b.WelcomeTitle != "" {
+		return b.WelcomeTitle
+	}
+	return DefaultBrandingWelcomeTitle
+}
+
+func (b BrandingConfig) ResolvedWelcomeMessage() string {
+	if b.WelcomeMessage != "" {
+		return b.WelcomeMessage
+	}
+	return DefaultBrandingWelcomeMessage
+}
+
+// HasCustomLogo reports whether [ui.branding] logo_url is set (hides welcome mascot).
+func (b BrandingConfig) HasCustomLogo() bool {
+	return b.LogoURL != ""
+}
+
+// ResolveBrandingAssetURL maps workspace-relative paths to /raw/ URLs.
+func ResolveBrandingAssetURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+		return u
+	}
+	return "/raw/" + strings.TrimPrefix(u, "./")
 }
 
 // AssetsConfig controls binary upload limits and MIME allowlist. Zero values

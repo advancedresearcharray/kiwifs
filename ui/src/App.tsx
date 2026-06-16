@@ -49,9 +49,10 @@ import {
 } from "./components/ui/tooltip";
 import { api, getCurrentSpace, setCurrentSpace, sseUrl, type TreeEntry } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
-import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
+import { isMarkdown, isCanvasFile, isExcalidrawFile, titleize } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
+import { useUIConfigStore } from "./lib/uiConfigStore";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -144,6 +145,16 @@ export default function App() {
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
   const { bindings, conflicts } = useKeybindings();
+  const branding = useUIConfigStore((s) => s.branding);
+
+  useEffect(() => {
+    if (!activePath) {
+      document.title = branding.name;
+    } else {
+      document.title = `${titleize(activePath)} · ${branding.name}`;
+    }
+  }, [activePath, branding.name]);
+
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
@@ -514,8 +525,8 @@ const handleSpaceSwitch = useCallback(() => {
                 : <PanelLeftOpen className="h-4 w-4" />}
             </ToolbarButton>
             <div className="flex items-center gap-2">
-              <img src="/kiwifs.png" alt="KiwiFS" className="h-7 w-7 shrink-0" />
-              <span className="font-semibold text-sm hidden sm:inline">KiwiFS</span>
+              <img src={branding.logoUrl} alt={branding.name} className="h-7 w-7 shrink-0" />
+              <span className="font-semibold text-sm hidden sm:inline">{branding.name}</span>
             </div>
           </div>
 
@@ -732,6 +743,7 @@ const handleSpaceSwitch = useCallback(() => {
               </div>
             ) : (
               <WelcomeScreen
+                branding={branding}
                 bindings={bindings}
                 onNewPage={() => { setNewFolder(undefined); setNewOpen(true); }}
                 onSearch={() => setSearchOpen(true)}
@@ -781,11 +793,13 @@ const handleSpaceSwitch = useCallback(() => {
 /* ── Welcome Screen ── */
 
 function WelcomeScreen({
+  branding,
   bindings,
   onNewPage,
   onSearch,
   onData,
 }: {
+  branding: { name: string; logoUrl: string; welcomeTitle: string; welcomeMessage: string; hasCustomLogo: boolean };
   bindings: Record<KeybindingAction, string>;
   onNewPage: () => void;
   onSearch: () => void;
@@ -797,12 +811,16 @@ function WelcomeScreen({
   return (
     <div className="grid place-items-center h-full text-muted-foreground">
       <div className="text-center max-w-md">
-        <img src="/kiwi-mascot.png" alt="KiwiFS" className="h-24 mx-auto mb-4" />
+        {branding.hasCustomLogo ? (
+          <img src={branding.logoUrl} alt={branding.name} className="h-24 mx-auto mb-4 object-contain" />
+        ) : (
+          <img src="/kiwi-mascot.png" alt={branding.name} className="h-24 mx-auto mb-4" />
+        )}
         <div className="text-2xl font-semibold mb-2 text-foreground">
-          Welcome to KiwiFS
+          {branding.welcomeTitle}
         </div>
         <div className="text-sm mb-6">
-          Your knowledge base is ready. Get started by creating a page or exploring existing content.
+          {branding.welcomeMessage}
         </div>
         <div className="flex flex-col gap-2 items-center">
           <Button onClick={onNewPage} className="gap-2">

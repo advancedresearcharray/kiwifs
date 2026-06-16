@@ -423,3 +423,71 @@ new_page = "Ctrl+Shift+N"
 		t.Fatalf("search binding = %q", cfg.UI.Keybindings["search"])
 	}
 }
+
+func TestUIConfigBranding(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui.branding]
+name = "Acme Knowledge Base"
+logo_url = ".kiwi/assets/logo.png"
+favicon_url = ".kiwi/assets/favicon.svg"
+welcome_title = "Welcome to Acme KB"
+welcome_message = "Search or create a page to get started."
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	b := cfg.UI.Branding
+	if b.Name != "Acme Knowledge Base" {
+		t.Fatalf("name = %q", b.Name)
+	}
+	if b.LogoURL != ".kiwi/assets/logo.png" {
+		t.Fatalf("logo_url = %q", b.LogoURL)
+	}
+	if b.ResolvedLogoURL() != "/raw/.kiwi/assets/logo.png" {
+		t.Fatalf("resolved logo = %q", b.ResolvedLogoURL())
+	}
+	if b.ResolvedFaviconURL() != "/raw/.kiwi/assets/favicon.svg" {
+		t.Fatalf("resolved favicon = %q", b.ResolvedFaviconURL())
+	}
+	if !b.HasCustomLogo() {
+		t.Fatal("expected HasCustomLogo true")
+	}
+}
+
+func TestBrandingDefaults(t *testing.T) {
+	var b BrandingConfig
+	if b.ResolvedName() != DefaultBrandingName {
+		t.Fatalf("name default = %q", b.ResolvedName())
+	}
+	if b.ResolvedLogoURL() != DefaultBrandingLogoURL {
+		t.Fatalf("logo default = %q", b.ResolvedLogoURL())
+	}
+	if b.ResolvedFaviconURL() != DefaultBrandingFaviconURL {
+		t.Fatalf("favicon default = %q", b.ResolvedFaviconURL())
+	}
+	if b.HasCustomLogo() {
+		t.Fatal("expected HasCustomLogo false")
+	}
+}
+
+func TestResolveBrandingAssetURL(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"/logo.png", "/logo.png"},
+		{"https://cdn.example/logo.png", "https://cdn.example/logo.png"},
+		{".kiwi/assets/logo.png", "/raw/.kiwi/assets/logo.png"},
+		{"./assets/icon.svg", "/raw/assets/icon.svg"},
+	}
+	for _, tc := range tests {
+		if got := ResolveBrandingAssetURL(tc.in); got != tc.want {
+			t.Fatalf("ResolveBrandingAssetURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

@@ -295,7 +295,7 @@ function createMockFetch(overrides: MockOverrides = {}) {
       }
 
       if (url.includes("/ui-config")) {
-        return jsonResponse({ themeLocked: false });
+        return jsonResponse({ themeLocked: false, branding: {} });
       }
 
       if (url.includes("/theme") && method === "GET") {

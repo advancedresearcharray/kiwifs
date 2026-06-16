@@ -345,20 +345,37 @@ func (h *Handlers) GetTheme(c echo.Context) error {
 }
 
 type uiConfigResponse struct {
-	ThemeLocked bool `json:"themeLocked"`
+	ThemeLocked bool                   `json:"themeLocked"`
+	Branding    brandingConfigResponse `json:"branding"`
+}
+
+type brandingConfigResponse struct {
+	Name           string `json:"name"`
+	LogoURL        string `json:"logoUrl"`
+	FaviconURL     string `json:"faviconUrl"`
+	WelcomeTitle   string `json:"welcomeTitle"`
+	WelcomeMessage string `json:"welcomeMessage"`
 }
 
 // UIConfig godoc
 //
 //	@Summary		Get UI configuration
-//	@Description	Returns current UI configurations, including whether theme editing is locked.
+//	@Description	Returns current UI configurations, including whether theme editing is locked and workspace branding.
 //	@Tags			theme
 //	@Security		BearerAuth
 //	@Success		200		{object}	uiConfigResponse
 //	@Router			/api/kiwi/ui-config [get]
 func (h *Handlers) UIConfig(c echo.Context) error {
+	b := h.ui.Branding
 	return c.JSON(http.StatusOK, uiConfigResponse{
 		ThemeLocked: h.ui.ThemeLocked,
+		Branding: brandingConfigResponse{
+			Name:           b.Name,
+			LogoURL:        b.LogoURL,
+			FaviconURL:     b.FaviconURL,
+			WelcomeTitle:   b.WelcomeTitle,
+			WelcomeMessage: b.WelcomeMessage,
+		},
 	})
 }
 

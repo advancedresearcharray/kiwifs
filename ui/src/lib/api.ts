@@ -575,7 +575,16 @@ export const api = {
     });
   },
 
-  async getUIConfig(): Promise<{ themeLocked: boolean }> {
+  async getUIConfig(): Promise<{
+    themeLocked: boolean;
+    branding?: {
+      name?: string;
+      logoUrl?: string;
+      faviconUrl?: string;
+      welcomeTitle?: string;
+      welcomeMessage?: string;
+    };
+  }> {
     return request(`${kiwiBase()}/ui-config`);
   },
 
