@@ -609,6 +609,7 @@ const handleSpaceSwitch = useCallback(() => {
             treeSortMode={treeSortMode}
             refreshKey={refreshKey}
             kanbanOpen={kanbanOpen}
+            sidebarConfig={uiConfig.sidebar}
             starred={starred}
             pinned={pinned}
             recent={recent}
