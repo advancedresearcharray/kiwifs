@@ -38,6 +38,8 @@ import { dispatchPageChanged } from "./lib/hostConfig";
 import { useRecentPages } from "./hooks/useRecentPages";
 import { useStarredPages } from "./hooks/useStarredPages";
 import { usePinnedPages } from "./hooks/usePinnedPages";
+import { useKeybindings } from "./hooks/useKeybindings";
+import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -121,6 +123,14 @@ export default function App() {
     if (typeof window !== "undefined" && window.innerWidth < 768) return false;
     try { return localStorage.getItem("kiwifs-sidebar") !== "collapsed"; } catch { return true; }
   });
+
+  const toggleSidebar = useCallback((open: boolean) => {
+    setSidebarOpen(open);
+    if (!isMobile) {
+      try { localStorage.setItem("kiwifs-sidebar", open ? "open" : "collapsed"); } catch {}
+    }
+  }, [isMobile]);
+
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const saved = localStorage.getItem("kiwifs-sidebar-width");
@@ -133,6 +143,7 @@ export default function App() {
   const { recent, recordVisit } = useRecentPages(currentSpace);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
+  const { bindings, conflicts } = useKeybindings();
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
@@ -224,59 +235,95 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      const mod = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
-      if (mod && key === "k") {
-        e.preventDefault();
-        setSearchOpen((v) => !v);
-      } else if (mod && key === "n") {
-        e.preventDefault();
-        setNewFolder(undefined);
-        setNewOpen(true);
-      } else if (mod && key === "e") {
-        const { activePath, graphOpen, historyOpen, dataOpen } = stateRef.current;
-        if (!activePath || graphOpen || historyOpen || dataOpen) return;
-        e.preventDefault();
-        setEditing((v) => !v);
-      } else if (mod && key === "s") {
-        if (!stateRef.current.editing) return;
-        e.preventDefault();
-        editorRef.current?.save().catch(() => {});
-      } else if (mod && e.shiftKey && key === "e") {
-        if (!stateRef.current.editing) return;
-        e.preventDefault();
-        editorRef.current?.toggleMode?.();
-      } else if (mod && e.shiftKey && key === "b") {
-        e.preventDefault();
-        setBasesOpen((v) => !v);
-      } else if (mod && e.shiftKey && key === "t") {
-        e.preventDefault();
-        setTimelineOpen((v) => !v);
-      } else if (mod && e.shiftKey && key === "w") {
-        e.preventDefault();
-        setKanbanOpen((v) => !v);
-      } else if (mod && (key === "/" || key === "?")) {
-        e.preventDefault();
-        setShortcutsOpen((v) => !v);
-      } else if (mod && key === "z" && !e.shiftKey) {
-        if (stateRef.current.editing) return;
-        e.preventDefault();
-        undoFileOp()
-          .then((msg) => {
-            if (msg) setRefreshKey((k) => k + 1);
-          })
-          .catch(() => {});
-      } else if (mod && e.altKey && key === "f") {
-        e.preventDefault();
-        treeFilterRef.current?.focus();
-        treeFilterRef.current?.select();
-      } else if (e.key === "Escape") {
-        setSearchOpen(false);
+      const action = matchBoundAction(e, bindings);
+      if (!action) return;
+
+      const state = stateRef.current;
+      switch (action) {
+        case "search":
+          e.preventDefault();
+          setSearchOpen((v) => !v);
+          break;
+        case "new_page":
+          e.preventDefault();
+          setNewFolder(undefined);
+          setNewOpen(true);
+          break;
+        case "toggle_editor": {
+          const { activePath, graphOpen, historyOpen, dataOpen } = state;
+          if (!activePath || graphOpen || historyOpen || dataOpen) return;
+          e.preventDefault();
+          setEditing((v) => !v);
+          break;
+        }
+        case "save":
+          if (!state.editing) return;
+          e.preventDefault();
+          editorRef.current?.save().catch(() => {});
+          break;
+        case "toggle_mode":
+          if (!state.editing) return;
+          e.preventDefault();
+          editorRef.current?.toggleMode?.();
+          break;
+        case "toggle_sidebar":
+          e.preventDefault();
+          toggleSidebar(!sidebarOpen);
+          break;
+        case "graph": {
+          e.preventDefault();
+          const next = !state.graphOpen;
+          closeAllViews();
+          setGraphOpen(next);
+          break;
+        }
+        case "toggle_bases": {
+          e.preventDefault();
+          const next = !state.basesOpen;
+          closeAllViews();
+          setBasesOpen(next);
+          break;
+        }
+        case "toggle_timeline": {
+          e.preventDefault();
+          const next = !state.timelineOpen;
+          closeAllViews();
+          setTimelineOpen(next);
+          break;
+        }
+        case "toggle_kanban": {
+          e.preventDefault();
+          const next = !state.kanbanOpen;
+          closeAllViews();
+          setKanbanOpen(next);
+          break;
+        }
+        case "shortcuts_help":
+          e.preventDefault();
+          setShortcutsOpen((v) => !v);
+          break;
+        case "undo":
+          if (state.editing) return;
+          e.preventDefault();
+          undoFileOp()
+            .then((msg) => {
+              if (msg) setRefreshKey((k) => k + 1);
+            })
+            .catch(() => {});
+          break;
+        case "focus_tree_filter":
+          e.preventDefault();
+          treeFilterRef.current?.focus();
+          treeFilterRef.current?.select();
+          break;
+        case "close_overlay":
+          setSearchOpen(false);
+          break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar]);
 
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
@@ -450,13 +497,6 @@ const handleSpaceSwitch = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
-  const toggleSidebar = useCallback((open: boolean) => {
-    setSidebarOpen(open);
-    if (!isMobile) {
-      try { localStorage.setItem("kiwifs-sidebar", open ? "open" : "collapsed"); } catch {}
-    }
-  }, [isMobile]);
-
   return (
     <TooltipProvider delayDuration={250}>
       <KanbanDragProvider>
@@ -489,14 +529,14 @@ const handleSpaceSwitch = useCallback(() => {
               <SearchIcon className="h-3.5 w-3.5 shrink-0" />
               <span className="flex-1 text-left truncate hidden sm:inline">Search pages…</span>
               <kbd className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono hidden sm:inline">
-                {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}K
+                {formatChordDisplay(bindings.search)}
               </kbd>
             </button>
           </div>
 
           {/* Right zone: actions */}
           <div className="flex items-center gap-0.5">
-            <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label="New page (⌘N)">
+            <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label={`New page (${formatChordDisplay(bindings.new_page)})`}>
               <Plus className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
@@ -692,6 +732,7 @@ const handleSpaceSwitch = useCallback(() => {
               </div>
             ) : (
               <WelcomeScreen
+                bindings={bindings}
                 onNewPage={() => { setNewFolder(undefined); setNewOpen(true); }}
                 onSearch={() => setSearchOpen(true)}
                 onGraph={() => setGraphOpen(true)}
@@ -730,6 +771,8 @@ const handleSpaceSwitch = useCallback(() => {
       <KeyboardShortcuts
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
+        bindings={bindings}
+        conflicts={conflicts}
       />
     </TooltipProvider>
   );
@@ -738,10 +781,12 @@ const handleSpaceSwitch = useCallback(() => {
 /* ── Welcome Screen ── */
 
 function WelcomeScreen({
+  bindings,
   onNewPage,
   onSearch,
   onData,
 }: {
+  bindings: Record<KeybindingAction, string>;
   onNewPage: () => void;
   onSearch: () => void;
   onGraph?: () => void;
@@ -768,7 +813,7 @@ function WelcomeScreen({
             <SearchIcon className="h-4 w-4" />
             Search pages
             <kbd className="ml-1 text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-              {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}K
+              {formatChordDisplay(bindings.search)}
             </kbd>
           </Button>
           <Button variant="ghost" onClick={onData} className="gap-2 text-muted-foreground">
@@ -777,9 +822,9 @@ function WelcomeScreen({
           </Button>
         </div>
         <div className="mt-8 text-xs space-y-1">
-          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">⌘N</kbd> New page</div>
-          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">⌘E</kbd> Toggle editor</div>
-          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">⌘/</kbd> Keyboard shortcuts</div>
+          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{formatChordDisplay(bindings.new_page)}</kbd> New page</div>
+          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{formatChordDisplay(bindings.toggle_editor)}</kbd> Toggle editor</div>
+          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{formatChordDisplay(bindings.shortcuts_help)}</kbd> Keyboard shortcuts</div>
         </div>
       </div>
     </div>

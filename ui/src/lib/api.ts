@@ -593,6 +593,14 @@ export const api = {
     return res.text();
   },
 
+  async getKeybindings(): Promise<{
+    bindings: Record<string, string>;
+    defaults: Record<string, string>;
+    conflicts: { chord: string; actions: string[] }[];
+  }> {
+    return request(`${kiwiBase()}/keybindings`);
+  },
+
   async putTheme(theme: Record<string, unknown>): Promise<Record<string, unknown>> {
     return request(`${kiwiBase()}/theme`, {
       method: "PUT",

@@ -398,3 +398,28 @@ custom_css = ".kiwi/brand.css"
 		t.Fatalf("want custom_css path, got %q", cfg.UI.CustomCSS)
 	}
 }
+
+func TestUIConfigKeybindings(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui]
+keybindings_file = ".kiwi/keys.json"
+
+[ui.keybindings]
+search = "Ctrl+J"
+new_page = "Ctrl+Shift+N"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.UI.KeybindingsFile != ".kiwi/keys.json" {
+		t.Fatalf("want keybindings_file path, got %q", cfg.UI.KeybindingsFile)
+	}
+	if cfg.UI.Keybindings["search"] != "Ctrl+J" {
+		t.Fatalf("search binding = %q", cfg.UI.Keybindings["search"])
+	}
+}

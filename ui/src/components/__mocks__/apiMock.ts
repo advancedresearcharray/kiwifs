@@ -306,6 +306,29 @@ function createMockFetch(overrides: MockOverrides = {}) {
         return new Response("", { status: 200, headers: { "Content-Type": "text/css" } });
       }
 
+      if (url.includes("/keybindings") && method === "GET") {
+        return jsonResponse({
+          bindings: {
+            search: "mod+k",
+            new_page: "mod+n",
+            toggle_editor: "mod+e",
+            save: "mod+s",
+            toggle_sidebar: "mod+b",
+            graph: "mod+g",
+            toggle_bases: "mod+shift+b",
+            toggle_timeline: "mod+shift+t",
+            toggle_kanban: "mod+shift+w",
+            toggle_mode: "mod+shift+e",
+            shortcuts_help: "mod+/",
+            undo: "mod+z",
+            focus_tree_filter: "mod+alt+f",
+            close_overlay: "escape",
+          },
+          defaults: {},
+          conflicts: [],
+        });
+      }
+
       if (url.includes("/health")) {
         return jsonResponse({ status: "ok" });
       }
