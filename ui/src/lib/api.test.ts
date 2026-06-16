@@ -17,15 +17,17 @@ describe("api error handling", () => {
 
     await api.patchFrontmatter("doc.md", { order: 2 }, '"etag-1"');
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/kiwi/file?path=doc.md&merge=frontmatter");
-    expect(init.method).toBe("PATCH");
-    expect(init.headers).toMatchObject({
-      "Content-Type": "application/json",
-      "If-Match": '"etag-1"',
-    });
-    expect(init.body).toBe(JSON.stringify({ order: 2 }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/kiwi/file?path=doc.md&merge=frontmatter",
+      expect.objectContaining({
+        method: "PATCH",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "If-Match": '"etag-1"',
+        }),
+        body: JSON.stringify({ order: 2 }),
+      })
+    );
   });
 
   it("preserves status and response body for failed frontmatter patches", async () => {
