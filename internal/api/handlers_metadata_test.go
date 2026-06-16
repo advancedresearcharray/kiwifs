@@ -328,6 +328,32 @@ func TestPatchFileUnsupportedMergeMode(t *testing.T) {
 	}
 }
 
+func TestPatchFileMergeFrontmatterRejectsEmptyFields(t *testing.T) {
+	s := buildTestServer(t)
+	mustPutFile(t, s, "doc.md", "---\ntitle: Doc\n---\n# Doc\n")
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/kiwi/file?path=doc.md&merge=frontmatter", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty frontmatter fields, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPatchFileMergeFrontmatterRejectsNonMarkdown(t *testing.T) {
+	s := buildTestServer(t)
+	mustPutFile(t, s, "data.json", `{"key":"value"}`)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/kiwi/file?path=data.json&merge=frontmatter", strings.NewReader(`{"order":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-markdown frontmatter patch, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPatchFrontmatterRejectsNonMarkdown(t *testing.T) {
 	s := buildTestServer(t)
 	mustPutFile(t, s, "data.json", `{"key":"value"}`)
