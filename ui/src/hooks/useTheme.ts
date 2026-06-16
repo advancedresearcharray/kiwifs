@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   applyKiwiTheme,
+  applyKiwiCustomCSS,
   removeKiwiTheme,
   type KiwiThemeOverrides,
 } from "../lib/kiwiTheme";
@@ -163,6 +164,17 @@ export function useTheme(): {
       removeKiwiTheme();
     }
   }, [preset]);
+
+  // Workspace custom CSS loads after theme tokens and applies on every boot/reload.
+  useEffect(() => {
+    api.getCustomCSS().then(applyKiwiCustomCSS).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    return onSpaceChange(() => {
+      api.getCustomCSS().then(applyKiwiCustomCSS).catch(() => {});
+    });
+  }, []);
 
   useEffect(() => {
     return onSpaceChange(() => {

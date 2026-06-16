@@ -23,6 +23,7 @@
  *  3. localStorage custom theme
  *  4. Server theme (GET /api/kiwi/theme)
  *  5. Built-in CSS (kiwi-theme.css)
+ *  6. Server custom CSS (GET /api/kiwi/custom.css) — after theme tokens
  */
 
 export interface KiwiTokens {
@@ -99,6 +100,9 @@ export interface KiwiThemeOverrides {
 }
 
 const STYLE_ID = "kiwi-theme-overrides";
+const CUSTOM_CSS_STYLE_ID = "kiwi-custom-css";
+
+const customCSSScriptTag = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
 
 // When set, CSS custom-property overrides are scoped to this selector instead
 // of :root / .dark.  The cloud app sets this so presets don't leak into the
@@ -180,6 +184,26 @@ export function applyKiwiTheme(overrides: KiwiThemeOverrides): void {
 
 export function removeKiwiTheme(): void {
   document.getElementById(STYLE_ID)?.remove();
+}
+
+/** Strip script tags from custom CSS (defense in depth; server also sanitizes). */
+export function sanitizeCustomCSS(css: string): string {
+  return css.replace(customCSSScriptTag, "");
+}
+
+/** Inject workspace custom CSS after theme token overrides. */
+export function applyKiwiCustomCSS(css: string): void {
+  const sanitized = sanitizeCustomCSS(css);
+  document.getElementById(CUSTOM_CSS_STYLE_ID)?.remove();
+  if (!sanitized.trim()) return;
+  const style = document.createElement("style");
+  style.id = CUSTOM_CSS_STYLE_ID;
+  style.textContent = sanitized;
+  document.head.appendChild(style);
+}
+
+export function removeKiwiCustomCSS(): void {
+  document.getElementById(CUSTOM_CSS_STYLE_ID)?.remove();
 }
 
 export function applyKiwiThemeFromUrl(): boolean {

@@ -380,3 +380,21 @@ message = "Accepted decisions cannot be edited."
 		t.Fatalf("second rule values: %+v", cfg.ValidateWriteRules[1].Match)
 	}
 }
+
+func TestUIConfigCustomCSS(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui]
+custom_css = ".kiwi/brand.css"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.UI.CustomCSS != ".kiwi/brand.css" {
+		t.Fatalf("want custom_css path, got %q", cfg.UI.CustomCSS)
+	}
+}
