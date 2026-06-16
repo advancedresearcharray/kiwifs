@@ -39,6 +39,7 @@ import { useRecentPages } from "./hooks/useRecentPages";
 import { useStarredPages } from "./hooks/useStarredPages";
 import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
+import { usePreferences } from "./hooks/usePreferences";
 import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
 import { Button } from "./components/ui/button";
 import {
@@ -124,12 +125,21 @@ export default function App() {
     try { return localStorage.getItem("kiwifs-sidebar") !== "collapsed"; } catch { return true; }
   });
 
+  const { prefs, loaded: prefsLoaded, updatePreferences } = usePreferences();
+
+  useEffect(() => {
+    if (!prefsLoaded || prefs.sidebar_collapsed === undefined) return;
+    if (typeof window !== "undefined" && window.innerWidth < 768) return;
+    setSidebarOpen(!prefs.sidebar_collapsed);
+  }, [prefsLoaded, prefs.sidebar_collapsed]);
+
   const toggleSidebar = useCallback((open: boolean) => {
     setSidebarOpen(open);
     if (!isMobile) {
       try { localStorage.setItem("kiwifs-sidebar", open ? "open" : "collapsed"); } catch {}
+      updatePreferences({ sidebar_collapsed: !open });
     }
-  }, [isMobile]);
+  }, [isMobile, updatePreferences]);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
@@ -138,7 +148,10 @@ export default function App() {
     } catch { return 272; }
   });
   const resizing = useRef(false);
-  const { theme, toggleTheme, themeLocked } = useTheme();
+  const { theme, toggleTheme, themeLocked } = useTheme({
+    serverPrefs: prefsLoaded ? prefs : null,
+    onPresetChange: (preset) => updatePreferences({ theme: preset }),
+  });
   const currentSpace = getCurrentSpace() || "default";
   const { recent, recordVisit } = useRecentPages(currentSpace);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
@@ -690,6 +703,10 @@ const handleSpaceSwitch = useCallback(() => {
                 path={activePath}
                 tree={tree}
                 saveRef={editorRef}
+                editorModePref={prefs.default_view}
+                onEditorModeChange={(mode) =>
+                  updatePreferences({ default_view: mode === "source" ? "source" : "editor" })
+                }
                 onClose={() => setEditing(false)}
                 onNavigate={navigate}
                 onSaved={() => {

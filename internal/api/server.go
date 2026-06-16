@@ -541,6 +541,8 @@ func (s *Server) setupRoutes() {
 	api.PUT("/theme", h.PutTheme)
 	api.GET("/custom.css", h.GetCustomCSS)
 	api.GET("/keybindings", h.GetKeybindings)
+	api.GET("/preferences", h.GetPreferences)
+	api.PUT("/preferences", h.PutPreferences)
 	api.GET("/ui-config", h.UIConfig)
 	api.GET("/janitor", h.Janitor)
 	api.GET("/memory/report", h.MemoryReport)
