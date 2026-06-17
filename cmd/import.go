@@ -20,6 +20,7 @@ var importCmd = &cobra.Command{
   kiwifs import --from json --file data.json
   kiwifs import --from jsonl --file data.jsonl
   kiwifs import --from yaml --file data.yaml
+  kiwifs import --from bibtex --file references.bib
   kiwifs import --from excel --file students.xlsx --sheet "Sheet1"
   kiwifs import --from sqlite --db /path/to/data.db --table students
   kiwifs import --from postgres --dsn "postgres://user:pass@host/db" --table students
@@ -41,7 +42,7 @@ var importCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(importCmd)
 
-	importCmd.Flags().String("from", "", "source type: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch")
+	importCmd.Flags().String("from", "", "source type: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, bibtex, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch")
 	importCmd.MarkFlagRequired("from")
 
 	importCmd.Flags().StringP("root", "r", "./knowledge", "knowledge root directory")
@@ -280,6 +281,13 @@ func buildSource(cmd *cobra.Command, from string) (importer.Source, error) {
 		}
 		return importer.NewYAML(filePath)
 
+	case "bibtex":
+		filePath, _ := cmd.Flags().GetString("file")
+		if filePath == "" {
+			return nil, fmt.Errorf("--file is required for bibtex")
+		}
+		return importer.NewBibTeX(filePath)
+
 	case "markdown":
 		path, _ := cmd.Flags().GetString("path")
 		if path == "" {
@@ -349,7 +357,7 @@ func buildSource(cmd *cobra.Command, from string) (importer.Source, error) {
 		return importer.NewElasticsearch(esURL, index, nil)
 
 	default:
-		return nil, fmt.Errorf("unknown source type: %s (supported: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch)", from)
+		return nil, fmt.Errorf("unknown source type: %s (supported: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, bibtex, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch)", from)
 	}
 }
 
