@@ -726,13 +726,23 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 	}
 
 	contentToAppend := content
+	sequenceAllocated := false
 	if p.Sequences != nil && p.Sequences.AppliesTo(path) {
 		seq, err := p.Sequences.Next()
 		if err != nil {
 			return Result{}, fmt.Errorf("sequence: %w", err)
 		}
 		contentToAppend = InjectSequence(content, seq)
+		sequenceAllocated = true
 	}
+	appendSucceeded := false
+	defer func() {
+		if !appendSucceeded && sequenceAllocated && p.Sequences != nil {
+			if err := p.Sequences.Revert(); err != nil {
+				log.Printf("pipeline: sequence revert after failed append(%s): %v", path, err)
+			}
+		}
+	}()
 
 	var newContent []byte
 	var oldStatus string
@@ -775,6 +785,7 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 		p.OnTransition(path, "status", oldStatus, newStatus, actor)
 	}
 
+	appendSucceeded = true
 	return Result{Path: path, ETag: etag}, nil
 }
 

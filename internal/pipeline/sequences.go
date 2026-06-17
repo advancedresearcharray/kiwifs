@@ -155,6 +155,21 @@ func (s *SequenceStore) Next() (int, error) {
 	return seq, nil
 }
 
+// Revert undoes the last Next allocation when an append fails before the
+// sequence marker is persisted in content.
+func (s *SequenceStore) Revert() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.counter <= 0 {
+		return nil
+	}
+	s.counter--
+	return s.saveLocked()
+}
+
 // SequenceMarker returns the HTML comment injected before appended content.
 func SequenceMarker(seq int) string {
 	return fmt.Sprintf("<!-- seq:%d -->", seq)
