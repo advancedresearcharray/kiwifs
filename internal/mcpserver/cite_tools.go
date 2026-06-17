@@ -21,9 +21,15 @@ const (
 	defaultCrossrefWorksURL = "https://api.crossref.org/works/"
 	defaultArxivQueryURL    = "https://export.arxiv.org/api/query"
 	defaultCiteUserAgent    = "kiwifs/1.0 (mailto:support@kiwifs.io)"
+	maxCiteIdentifierLen    = 256
 )
 
-var arxivIDPattern = regexp.MustCompile(`(?i)(?:arxiv:/)?(\d{4}\.\d{4,5})(?:v\d+)?`)
+var (
+	arxivIDPattern = regexp.MustCompile(`(?i)(?:arxiv:/)?(\d{4}\.\d{4,5})(?:v\d+)?`)
+	// DOI suffix allows the Crossref-registered character set; reject path/query injection.
+	doiPattern = regexp.MustCompile(`(?i)^10\.\d{4,9}/[-._;()/:a-z0-9]+$`)
+	unsafeCiteChars = regexp.MustCompile(`[\x00-\x1f\x7f\\]`)
+)
 
 type paperMetadata struct {
 	Title     string
@@ -53,20 +59,53 @@ func newDefaultCiteHTTPClient() *citeHTTPClient {
 	}
 }
 
-func normalizeDOI(raw string) string {
+func sanitizeCiteInput(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", fmt.Errorf("identifier is required")
+	}
+	if len(s) > maxCiteIdentifierLen {
+		return "", fmt.Errorf("identifier exceeds maximum length of %d", maxCiteIdentifierLen)
+	}
+	if unsafeCiteChars.MatchString(s) {
+		return "", fmt.Errorf("identifier contains invalid characters")
+	}
+	// Allow https:// in URL forms; reject bare path traversal sequences.
+	if !strings.Contains(s, "://") && (strings.Contains(s, "..") || strings.Contains(s, "//")) {
+		return "", fmt.Errorf("identifier contains unsafe path sequences")
+	}
+	return s, nil
+}
+
+func normalizeDOI(raw string) string {
+	s, err := sanitizeCiteInput(raw)
+	if err != nil {
+		return ""
+	}
 	s = strings.TrimPrefix(s, "doi:")
 	s = strings.TrimPrefix(s, "DOI:")
 	if u, err := url.Parse(s); err == nil && u.Host != "" {
 		if strings.EqualFold(u.Host, "doi.org") {
-			return strings.TrimPrefix(u.Path, "/")
+			s = strings.TrimPrefix(u.Path, "/")
+		} else {
+			return ""
 		}
+	}
+	if !isValidDOI(s) {
+		return ""
 	}
 	return s
 }
 
+func isValidDOI(doi string) bool {
+	return doiPattern.MatchString(doi)
+}
+
 func normalizeArxivID(raw string) string {
-	s := strings.TrimSpace(raw)
+	s, err := sanitizeCiteInput(raw)
+	if err != nil {
+		return ""
+	}
 	if m := arxivIDPattern.FindStringSubmatch(s); len(m) > 1 {
 		return m[1]
 	}
@@ -85,6 +124,23 @@ func normalizeArxivID(raw string) string {
 	return ""
 }
 
+func isValidArxivID(id string) bool {
+	return arxivIDPattern.MatchString(id)
+}
+
+func validateBibtexKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("empty bibtex key")
+	}
+	if strings.Contains(key, "/") || strings.Contains(key, "\\") || strings.Contains(key, "..") {
+		return fmt.Errorf("unsafe bibtex key")
+	}
+	if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`).MatchString(key) {
+		return fmt.Errorf("invalid bibtex key")
+	}
+	return nil
+}
+
 func isArxivIdentifier(raw string) bool {
 	return normalizeArxivID(raw) != ""
 }
@@ -98,13 +154,30 @@ func citeErrorResult(query, msg string) *mcp.CallToolResult {
 	return mcp.NewToolResultError(string(payload))
 }
 
+func (c *citeHTTPClient) assertCrossrefURL(reqURL string) error {
+	if strings.HasPrefix(c.crossrefURL, defaultCrossrefWorksURL) {
+		return assertCiteRequestURL(reqURL, "api.crossref.org")
+	}
+	return nil
+}
+
+func (c *citeHTTPClient) assertArxivURL(reqURL string) error {
+	if strings.HasPrefix(c.arxivURL, defaultArxivQueryURL) {
+		return assertCiteRequestURL(reqURL, "export.arxiv.org")
+	}
+	return nil
+}
+
 func (c *citeHTTPClient) fetchDOI(ctx context.Context, doi string) (*paperMetadata, error) {
 	doi = normalizeDOI(doi)
 	if doi == "" {
-		return nil, fmt.Errorf("invalid DOI")
+		return nil, fmt.Errorf("invalid DOI format")
 	}
 
 	reqURL := c.crossrefURL + url.PathEscape(doi)
+	if err := c.assertCrossrefURL(reqURL); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
@@ -193,13 +266,31 @@ func (c *citeHTTPClient) fetchDOI(ctx context.Context, doi string) (*paperMetada
 	return meta, nil
 }
 
+func assertCiteRequestURL(rawURL, expectedHost string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid request URL: %w", err)
+	}
+	host := strings.ToLower(u.Hostname())
+	if host != expectedHost {
+		return fmt.Errorf("refusing request to unexpected host %q", host)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("refusing request with scheme %q", u.Scheme)
+	}
+	return nil
+}
+
 func (c *citeHTTPClient) fetchArxiv(ctx context.Context, arxivID string) (*paperMetadata, error) {
 	arxivID = normalizeArxivID(arxivID)
-	if arxivID == "" {
-		return nil, fmt.Errorf("invalid arXiv ID")
+	if arxivID == "" || !isValidArxivID(arxivID) {
+		return nil, fmt.Errorf("invalid arXiv ID format")
 	}
 
 	reqURL := c.arxivURL + "?id_list=" + url.QueryEscape(arxivID)
+	if err := c.assertArxivURL(reqURL); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
@@ -444,6 +535,9 @@ func handleCite(b Backend, client *citeHTTPClient) server.ToolHandlerFunc {
 		if query == "" {
 			return citeErrorResult("", "identifier, doi, or arxiv_id is required"), nil
 		}
+		if _, err := sanitizeCiteInput(query); err != nil {
+			return citeErrorResult(query, err.Error()), nil
+		}
 
 		actor := stringArg(args, "actor")
 		if actor == "" {
@@ -456,8 +550,14 @@ func handleCite(b Backend, client *citeHTTPClient) server.ToolHandlerFunc {
 		)
 		arxivID := normalizeArxivID(stringArg(args, "arxiv_id"))
 		doi := normalizeDOI(stringArg(args, "doi"))
+		rawArxiv := strings.TrimSpace(stringArg(args, "arxiv_id"))
+		rawDOI := strings.TrimSpace(stringArg(args, "doi"))
 
 		switch {
+		case rawArxiv != "" && arxivID == "":
+			return citeErrorResult(query, "invalid arXiv ID format"), nil
+		case rawDOI != "" && doi == "":
+			return citeErrorResult(query, "invalid DOI format"), nil
 		case arxivID != "":
 			meta, err = client.fetchArxiv(ctx, arxivID)
 		case doi != "":
@@ -469,6 +569,9 @@ func handleCite(b Backend, client *citeHTTPClient) server.ToolHandlerFunc {
 		}
 		if err != nil {
 			return citeErrorResult(query, err.Error()), nil
+		}
+		if err := validateBibtexKey(meta.BibtexKey); err != nil {
+			return citeErrorResult(query, fmt.Sprintf("generated bibtex key: %v", err)), nil
 		}
 
 		path := "papers/" + meta.BibtexKey + ".md"
