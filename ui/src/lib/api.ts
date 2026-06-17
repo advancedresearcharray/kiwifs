@@ -607,6 +607,22 @@ export const api = {
     return request(`${kiwiBase()}/theme`);
   },
 
+  async getThemePresets(): Promise<{
+    presets: {
+      id: string;
+      name: string;
+      description?: string;
+      light: Record<string, string>;
+      dark: Record<string, string>;
+      source: string;
+    }[];
+    builtin: string[];
+    allowed?: string[];
+    errors?: { file: string; message: string }[];
+  }> {
+    return request(`${kiwiBase()}/theme/presets`);
+  },
+
   async getEditorSlashCommands(): Promise<{
     commands: {
       id: string;
