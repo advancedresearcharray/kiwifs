@@ -30,6 +30,7 @@ type Config struct {
 	Workflow   WorkflowConfig   `toml:"workflow"`
 	Drafts     DraftsConfig     `toml:"drafts"`
 	Audit      AuditConfig      `toml:"audit"`
+	Sequences  SequencesConfig  `toml:"sequences"`
 	Import     ImportConfig     `toml:"import"`
 	// Space holds per-space settings (visibility, etc.) loaded from
 	// the space's own .kiwi/config.toml [space] section.
@@ -46,6 +47,12 @@ type Config struct {
 // B.3 — Audit log config.
 type AuditConfig struct {
 	Enabled bool `toml:"enabled"` // default false
+}
+
+// SequencesConfig assigns monotonic sequence numbers to appends under
+// configured directories (event logs, audit trails).
+type SequencesConfig struct {
+	Directories []string `toml:"directories"`
 }
 
 // ImportConfig controls the data import subsystem — Airbyte integration,

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kiwifs/kiwifs/internal/checkcmd"
 	"github.com/spf13/cobra"
 )
 
@@ -48,4 +49,5 @@ func init() {
 	rootCmd.AddCommand(logoutCmd)
 	rootCmd.AddCommand(whoamiCmd)
 	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(checkcmd.Command)
 }
