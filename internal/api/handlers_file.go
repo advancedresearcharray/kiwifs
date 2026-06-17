@@ -328,7 +328,7 @@ func normalizeFrontmatterPatchValue(v any) any {
 func (h *Handlers) Readlink(c echo.Context) error {
 	path, err := requirePath(c)
 	if err != nil {
-		return err
+		return pipelineWriteHTTPError(err)
 	}
 	root := h.store.AbsPath("")
 	abs, err := storage.GuardPath(root, path)
@@ -432,19 +432,7 @@ func (h *Handlers) WriteFile(c echo.Context) error {
 
 	res, err := h.pipe.WriteWithOpts(c.Request().Context(), path, body, actor, pipeline.WriteOpts{IfMatch: ifMatch})
 	if err != nil {
-		if errors.Is(err, storage.ErrPathDenied) {
-			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-		}
-		if errors.Is(err, pipeline.ErrConflict) {
-			return echo.NewHTTPError(http.StatusConflict, "file modified since last read — re-fetch and retry")
-		}
-		if errors.Is(err, pipeline.ErrTransitionDenied) {
-			return echo.NewHTTPError(http.StatusConflict, err.Error())
-		}
-		if errors.Is(err, pipeline.ErrValidationFailed) {
-			return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return pipelineWriteHTTPError(err)
 	}
 
 	c.Response().Header().Set("ETag", fmt.Sprintf(`"%s"`, res.ETag))
@@ -524,16 +512,7 @@ func (h *Handlers) BulkWrite(c echo.Context) error {
 	}
 	pipeResults, err := h.pipe.BulkWrite(c.Request().Context(), files, actor, req.Message)
 	if err != nil {
-		if errors.Is(err, storage.ErrPathDenied) {
-			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-		}
-		if errors.Is(err, pipeline.ErrTransitionDenied) {
-			return echo.NewHTTPError(http.StatusConflict, err.Error())
-		}
-		if errors.Is(err, pipeline.ErrValidationFailed) {
-			return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return pipelineWriteHTTPError(err)
 	}
 
 	results := make([]bulkResult, len(pipeResults))

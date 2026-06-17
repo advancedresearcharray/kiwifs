@@ -522,6 +522,9 @@ func (p *Pipeline) WriteStream(ctx context.Context, path string, body io.Reader,
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	if err := rejectAppendOnlyOverwrite(ctx, p.Store, path); err != nil {
+		return Result{}, err
+	}
 	p.markInflight(path)
 	if content != nil {
 		if err := p.Store.Write(ctx, path, content); err != nil {
@@ -605,6 +608,10 @@ func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byt
 		if err := p.ValidateTransition(path, oldStatus, newStatus); err != nil {
 			return Result{}, fmt.Errorf("%w: %v", ErrTransitionDenied, err)
 		}
+	}
+
+	if err := rejectAppendOnlyOverwrite(ctx, p.Store, path); err != nil {
+		return Result{}, err
 	}
 
 	// Auto-format (normalize) before validation.
@@ -804,6 +811,11 @@ func (p *Pipeline) BulkWrite(ctx context.Context, files []struct {
 			if err := p.ValidateWrite(f.Path, f.Content); err != nil {
 				return nil, fmt.Errorf("%w: files[%d] (%s): %v", ErrValidationFailed, i, f.Path, err)
 			}
+		}
+	}
+	for i, f := range files {
+		if err := rejectAppendOnlyOverwrite(ctx, p.Store, f.Path); err != nil {
+			return nil, fmt.Errorf("%w: files[%d] (%s)", err, i, f.Path)
 		}
 	}
 	p.writeMu.Lock()
