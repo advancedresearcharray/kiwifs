@@ -72,7 +72,7 @@ export type BacklinkEntry = {
 };
 
 export type GraphNode = { path: string; tags?: string[] };
-export type GraphEdge = { source: string; target: string };
+export type GraphEdge = { source: string; target: string; relation?: string };
 export type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] };
 
 export type CommentAnchor = {
@@ -379,12 +379,22 @@ export const api = {
     });
   },
 
-  async patchFrontmatter(path: string, fields: Record<string, unknown>): Promise<{ path: string; etag: string }> {
-    const qs = new URLSearchParams({ path });
-    return request(`${kiwiBase()}/file/frontmatter?${qs}`, {
+  async patchFrontmatter(
+    path: string,
+    fields: Record<string, unknown>,
+    etag?: string | null
+  ): Promise<{ path: string; etag: string }> {
+    const qs = new URLSearchParams({ path, merge: "frontmatter" });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Actor": actor(),
+      ..._extraHeaders,
+    };
+    if (etag) headers["If-Match"] = etag;
+    return request(`${kiwiBase()}/file?${qs}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "X-Actor": actor(), ..._extraHeaders },
-      body: JSON.stringify({ fields }),
+      headers,
+      body: JSON.stringify(fields),
     });
   },
 
@@ -575,12 +585,99 @@ export const api = {
     });
   },
 
-  async getUIConfig(): Promise<{ themeLocked: boolean }> {
+  async getRecentPages(limit = 10): Promise<{ pages: RecentPageEntry[] }> {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    return request(`${kiwiBase()}/recent-pages?${qs}`);
+  },
+
+  async getUIConfig(): Promise<{
+    themeLocked: boolean;
+    startPage: string;
+    sidebar?: {
+      pinned: string[];
+      hidden: string[];
+      sections: { label: string; paths: string[] }[];
+    };
+    branding?: {
+      name?: string;
+      logoUrl?: string;
+      faviconUrl?: string;
+      welcomeTitle?: string;
+      welcomeMessage?: string;
+    };
+    features?: Partial<Record<
+      "graph" | "kanban" | "canvas" | "whiteboard" | "timeline" | "bases" | "data_sources",
+      boolean
+    >>;
+  }> {
     return request(`${kiwiBase()}/ui-config`);
   },
 
   async getTheme(): Promise<Record<string, unknown>> {
     return request(`${kiwiBase()}/theme`);
+  },
+
+  async getEditorSlashCommands(): Promise<{
+    commands: {
+      id: string;
+      label: string;
+      icon: string;
+      description: string;
+      template: string;
+    }[];
+  }> {
+    return request(`${kiwiBase()}/editor/slash-commands`);
+  },
+
+  async getCustomCSS(): Promise<string> {
+    const res = await fetch(`${kiwiBase()}/custom.css`);
+    if (!res.ok) {
+      if (res.status === 404) return "";
+      const text = await res.text().catch(() => "");
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    return res.text();
+  },
+
+  async getKeybindings(): Promise<{
+    bindings: Record<string, string>;
+    defaults: Record<string, string>;
+    conflicts: { chord: string; actions: string[] }[];
+  }> {
+    return request(`${kiwiBase()}/keybindings`);
+  },
+
+  async getPreferences(): Promise<{
+    theme?: string;
+    sidebar_collapsed?: boolean;
+    default_view?: "editor" | "source";
+    font_size?: "base" | "sm" | "lg";
+    editor_line_numbers?: boolean;
+    vim_mode?: boolean;
+  }> {
+    return request(`${kiwiBase()}/preferences`);
+  },
+
+  async putPreferences(prefs: {
+    theme?: string;
+    sidebar_collapsed?: boolean;
+    default_view?: "editor" | "source";
+    font_size?: "base" | "sm" | "lg";
+    editor_line_numbers?: boolean;
+    vim_mode?: boolean;
+  }): Promise<{
+    theme?: string;
+    sidebar_collapsed?: boolean;
+    default_view?: "editor" | "source";
+    font_size?: "base" | "sm" | "lg";
+    editor_line_numbers?: boolean;
+    vim_mode?: boolean;
+  }> {
+    return request(`${kiwiBase()}/preferences`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(prefs),
+    });
   },
 
   async putTheme(theme: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -996,6 +1093,15 @@ export const api = {
       body: JSON.stringify({ connection_id: connectionId }),
     });
   },
+};
+
+// --- Recent pages (startup view) ---
+
+export type RecentPageEntry = {
+  path: string;
+  title: string;
+  actor: string;
+  timestamp: string;
 };
 
 // --- Timeline types ---

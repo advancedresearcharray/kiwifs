@@ -3,6 +3,7 @@ package importer
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -18,7 +19,11 @@ type DynamoSource struct {
 
 func NewDynamoDB(region, tableName string) (*DynamoSource, error) {
 	ctx := context.Background()
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
+	loadOpts := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(region)}
+	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
+		loadOpts = append(loadOpts, awsconfig.WithBaseEndpoint(endpoint))
+	}
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, loadOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("aws config: %w", err)
 	}

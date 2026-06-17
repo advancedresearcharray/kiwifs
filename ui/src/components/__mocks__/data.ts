@@ -582,6 +582,8 @@ export const mockGraphNodesLarge: GraphNode[] = [
 ];
 
 export const mockGraphEdgesLarge: GraphEdge[] = [
+  { source: "pages/frontmatter.md", target: "pages/wikilinks.md", relation: "cites" },
+  { source: "engineering/architecture.md", target: "engineering/api-design.md", relation: "contradicts" },
   { source: "index.md", target: "welcome.md" },
   { source: "welcome.md", target: "pages/frontmatter.md" },
   { source: "welcome.md", target: "pages/wikilinks.md" },
