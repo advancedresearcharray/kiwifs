@@ -21,7 +21,6 @@ type simpleFuncDef struct {
 var simpleFuncs = map[string]simpleFuncDef{
 	"lower":      {arity: 1, template: "lower(%s)"},
 	"upper":      {arity: 1, template: "upper(%s)"},
-	"date":       {arity: 1, template: "date(%s)"},
 	"typeof":     {arity: 1, template: "typeof(%s)"},
 	"number":     {arity: 1, template: "CAST(%s AS REAL)"},
 	"string":     {arity: 1, template: "CAST(%s AS TEXT)"},
@@ -62,6 +61,7 @@ var funcRegistry = map[string]FuncCompiler{
 	"contains":   compileContains,
 	"length":     compileLength,
 	"now":        compileNow,
+	"date":       compileDate,
 	"choice":     compileChoice,
 	"substring":  compileSubstring,
 	"regextest":  compileRegexTest,
@@ -110,7 +110,17 @@ func compileNow(args []compiledArg) (string, []any, error) {
 	if len(args) != 0 {
 		return "", nil, fmt.Errorf("now() takes no arguments")
 	}
-	return "datetime('now')", nil, nil
+	// ISO-8601 UTC so comparisons work with frontmatter timestamps like 2026-06-16T12:00:00Z.
+	return "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')", nil, nil
+}
+
+func compileDate(args []compiledArg) (string, []any, error) {
+	if len(args) != 1 {
+		return "", nil, fmt.Errorf("date() requires 1 argument")
+	}
+	// SQLite date() accepts ISO date strings and normalizes to YYYY-MM-DD.
+	sql := fmt.Sprintf("date(%s)", args[0].SQL)
+	return sql, args[0].Params, nil
 }
 
 func compileChoice(args []compiledArg) (string, []any, error) {
