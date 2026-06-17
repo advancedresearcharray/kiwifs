@@ -32,6 +32,8 @@ import {
 } from "@kw/lib/editorMode";
 import { formatDistanceToNow } from "date-fns";
 import { MarkdownSourceEditor } from "./editor/MarkdownSourceEditor";
+import { blockNoteSlashItems, loadSlashCommandTemplate } from "@kw/lib/editorSlashCommands";
+import { useEditorSlashCommands } from "../hooks/useEditorSlashCommands";
 import {
   Dialog,
   DialogContent,
@@ -422,6 +424,9 @@ function EditorInner({
   const [lastEdit, setLastEdit] = useState<{ author: string; date: string } | null>(null);
 
   const wikiPages = useMemo(() => wikiPagesFromTree(tree), [tree]);
+  const customSlashCommands = useEditorSlashCommands();
+  const onSlashTemplateError = useCallback((message: string) => setError(message), [setError]);
+  const loadSlashTemplate = useCallback((templatePath: string) => loadSlashCommandTemplate(templatePath), []);
 
   useEffect(() => {
     syncedMdRef.current = initialMd;
@@ -824,6 +829,9 @@ function EditorInner({
                 onSaveShortcut={() => onSaveRef.current({ close: true })}
                 pages={wikiPages}
                 minHeight="60vh"
+                customSlashCommands={customSlashCommands}
+                loadSlashTemplate={loadSlashTemplate}
+                onSlashTemplateError={onSlashTemplateError}
               />
             ) : visualParseError ? (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
@@ -857,6 +865,11 @@ function EditorInner({
                             [
                               ...getDefaultReactSlashMenuItems(editor as BlockNoteEditor),
                               ...kiwiSlashItems(editor as BlockNoteEditor),
+                              ...blockNoteSlashItems(
+                                editor as BlockNoteEditor,
+                                customSlashCommands,
+                                onSlashTemplateError,
+                              ),
                             ],
                             query,
                           )

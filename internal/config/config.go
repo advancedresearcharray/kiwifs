@@ -212,6 +212,21 @@ type UIConfig struct {
 	Sidebar   UISidebarConfig `toml:"sidebar"`
 	Branding  BrandingConfig  `toml:"branding"`
 	Features  UIFeaturesConfig `toml:"features"`
+	Editor    UIEditorConfig  `toml:"editor"`
+}
+
+// UIEditorConfig holds editor customization (slash commands, etc.).
+type UIEditorConfig struct {
+	SlashCommands []SlashCommandConfig `toml:"slash_commands"`
+}
+
+// SlashCommandConfig is one [[ui.editor.slash_commands]] entry.
+type SlashCommandConfig struct {
+	ID          string `toml:"id"`
+	Label       string `toml:"label"`
+	Icon        string `toml:"icon"`
+	Description string `toml:"description"`
+	Template    string `toml:"template"` // workspace-relative markdown path
 }
 
 // BrandingConfig controls white-label app name, logo, favicon, and welcome copy.

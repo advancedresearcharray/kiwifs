@@ -497,3 +497,38 @@ func TestUIConfigSidebarResolvedSectionsSkipsEmptyLabels(t *testing.T) {
 		t.Fatalf("sections = %+v", sections)
 	}
 }
+
+func TestUIConfigEditorSlashCommands(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[[ui.editor.slash_commands]]
+id = "adr"
+label = "ADR"
+icon = "FileCheck"
+description = "Insert ADR template"
+template = "templates/adr.md"
+
+[[ui.editor.slash_commands]]
+id = "runbook"
+label = "Runbook Step"
+icon = "Zap"
+description = "Insert runbook step block"
+template = "templates/runbook-step.md"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.UI.Editor.SlashCommands) != 2 {
+		t.Fatalf("slash_commands = %+v", cfg.UI.Editor.SlashCommands)
+	}
+	if cfg.UI.Editor.SlashCommands[0].ID != "adr" || cfg.UI.Editor.SlashCommands[0].Template != "templates/adr.md" {
+		t.Fatalf("first command = %+v", cfg.UI.Editor.SlashCommands[0])
+	}
+	if cfg.UI.Editor.SlashCommands[1].Icon != "Zap" {
+		t.Fatalf("second command = %+v", cfg.UI.Editor.SlashCommands[1])
+	}
+}

@@ -356,6 +356,10 @@ function createMockFetch(overrides: MockOverrides = {}) {
         });
       }
 
+      if (url.includes("/editor/slash-commands") && method === "GET") {
+        return jsonResponse({ commands: [] });
+      }
+
       if (url.includes("/health")) {
         return jsonResponse({ status: "ok" });
       }
