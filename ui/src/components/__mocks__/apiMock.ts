@@ -322,6 +322,7 @@ function createMockFetch(overrides: MockOverrides = {}) {
             bases: true,
             data_sources: true,
           },
+          toolbarViews: null,
         });
       }
 

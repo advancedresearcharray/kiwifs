@@ -609,6 +609,7 @@ export const api = {
       "graph" | "kanban" | "canvas" | "whiteboard" | "timeline" | "bases" | "data_sources",
       boolean
     >>;
+    toolbarViews?: string[] | null;
   }> {
     return request(`${kiwiBase()}/ui-config`);
   },

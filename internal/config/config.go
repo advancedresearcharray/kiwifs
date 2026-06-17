@@ -215,6 +215,15 @@ func (b BackupConfig) IsRebaseBeforePush() bool {
 	return b.RebaseBeforePush == nil || *b.RebaseBeforePush
 }
 
+// ToolbarConfig controls which built-in header view buttons appear and in what order.
+// Example:
+//
+//	[ui.toolbar]
+//	views = ["graph", "kanban", "bases"]
+type ToolbarConfig struct {
+	Views []string `toml:"views"`
+}
+
 // UIConfig controls frontend behaviour. Toggled via [ui] in config.toml.
 type UIConfig struct {
 	ThemeLocked     bool              `toml:"theme_locked"`
@@ -227,6 +236,7 @@ type UIConfig struct {
 	Sidebar   UISidebarConfig `toml:"sidebar"`
 	Branding  BrandingConfig  `toml:"branding"`
 	Features  UIFeaturesConfig `toml:"features"`
+	Toolbar   ToolbarConfig   `toml:"toolbar"`
 	Editor    UIEditorConfig  `toml:"editor"`
 }
 
