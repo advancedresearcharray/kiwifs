@@ -27,8 +27,10 @@ const (
 var (
 	arxivIDPattern = regexp.MustCompile(`(?i)(?:arxiv:/)?(\d{4}\.\d{4,5})(?:v\d+)?`)
 	// DOI suffix allows the Crossref-registered character set; reject path/query injection.
-	doiPattern = regexp.MustCompile(`(?i)^10\.\d{4,9}/[-._;()/:a-z0-9]+$`)
+	doiPattern      = regexp.MustCompile(`(?i)^10\.\d{4,9}/[-._;()/:a-z0-9]+$`)
 	unsafeCiteChars = regexp.MustCompile(`[\x00-\x1f\x7f\\]`)
+	bibtexKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
+	htmlTagPattern   = regexp.MustCompile(`<[^>]+>`)
 )
 
 type paperMetadata struct {
@@ -135,7 +137,7 @@ func validateBibtexKey(key string) error {
 	if strings.Contains(key, "/") || strings.Contains(key, "\\") || strings.Contains(key, "..") {
 		return fmt.Errorf("unsafe bibtex key")
 	}
-	if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`).MatchString(key) {
+	if !bibtexKeyPattern.MatchString(key) {
 		return fmt.Errorf("invalid bibtex key")
 	}
 	return nil
@@ -390,8 +392,7 @@ func stripHTML(s string) string {
 	if s == "" {
 		return ""
 	}
-	re := regexp.MustCompile(`<[^>]+>`)
-	return strings.TrimSpace(re.ReplaceAllString(s, ""))
+	return strings.TrimSpace(htmlTagPattern.ReplaceAllString(s, ""))
 }
 
 func slugWord(s string) string {
