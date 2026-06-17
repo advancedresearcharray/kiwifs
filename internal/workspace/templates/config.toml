@@ -45,3 +45,6 @@ type = "none"
 # save = "Ctrl+S"
 # toggle_sidebar = "Ctrl+B"
 # shortcuts_help = "Ctrl+/"
+
+# [links]
+# typed_fields = ["supersedes", "superseded_by", "variant_of", "cites", "extends", "services", "contradicts"]

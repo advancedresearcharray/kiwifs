@@ -497,3 +497,38 @@ func TestUIConfigSidebarResolvedSectionsSkipsEmptyLabels(t *testing.T) {
 		t.Fatalf("sections = %+v", sections)
 	}
 }
+
+func TestLinksConfigTypedLinkFields(t *testing.T) {
+	t.Parallel()
+	if got := (LinksConfig{}).TypedLinkFields(); len(got) != 1 || got[0] != "contradicts" {
+		t.Fatalf("default: %+v", got)
+	}
+	cfg := LinksConfig{TypedFields: []string{"cites", "extends"}}
+	if got := cfg.TypedLinkFields(); len(got) != 2 || got[0] != "cites" || got[1] != "extends" {
+		t.Fatalf("configured: %+v", got)
+	}
+}
+
+func TestLoadLinksTypedFields(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[links]
+typed_fields = ["supersedes", "cites"]
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"supersedes", "cites"}
+	if len(cfg.Links.TypedFields) != len(want) {
+		t.Fatalf("got %+v want %+v", cfg.Links.TypedFields, want)
+	}
+	for i := range want {
+		if cfg.Links.TypedFields[i] != want[i] {
+			t.Fatalf("got %+v want %+v", cfg.Links.TypedFields, want)
+		}
+	}
+}
