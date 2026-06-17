@@ -34,3 +34,14 @@ strategy = "git"
 [auth]
 type = "none"
 # type = "apikey" / "perspace" / "oidc" ...
+
+# [ui]
+# keybindings_file = ".kiwi/keybindings.json"
+#
+# [ui.keybindings]
+# search = "Ctrl+J"
+# new_page = "Ctrl+N"
+# graph = "Ctrl+G"
+# save = "Ctrl+S"
+# toggle_sidebar = "Ctrl+B"
+# shortcuts_help = "Ctrl+/"

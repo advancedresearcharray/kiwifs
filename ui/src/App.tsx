@@ -40,6 +40,7 @@ import { useStarredPages } from "./hooks/useStarredPages";
 import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
 import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
+import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -150,8 +151,36 @@ export default function App() {
   const treeReconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLocalTreeMutationAtRef = useRef(0);
   const suppressTreeEventsUntilRef = useRef(0);
-  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen });
-  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen };
+  const stateRef = useRef({
+    editing,
+    activePath,
+    shortcutsOpen,
+    newOpen,
+    searchOpen,
+    graphOpen,
+    historyOpen,
+    dataOpen,
+    basesOpen,
+    canvasOpen,
+    whiteboardOpen,
+    timelineOpen,
+    kanbanOpen,
+  });
+  stateRef.current = {
+    editing,
+    activePath,
+    shortcutsOpen,
+    newOpen,
+    searchOpen,
+    graphOpen,
+    historyOpen,
+    dataOpen,
+    basesOpen,
+    canvasOpen,
+    whiteboardOpen,
+    timelineOpen,
+    kanbanOpen,
+  };
 
   useEffect(() => {
     dispatchPageChanged(activePath);
@@ -316,9 +345,47 @@ export default function App() {
           treeFilterRef.current?.focus();
           treeFilterRef.current?.select();
           break;
-        case "close_overlay":
-          setSearchOpen(false);
+        case "close_overlay": {
+          const overlay = resolveOverlayDismiss(stateRef.current);
+          if (!overlay) return;
+          e.preventDefault();
+          switch (overlay) {
+            case "shortcuts":
+              setShortcutsOpen(false);
+              break;
+            case "new":
+              setNewOpen(false);
+              break;
+            case "search":
+              setSearchOpen(false);
+              break;
+            case "graph":
+              setGraphOpen(false);
+              break;
+            case "history":
+              setHistoryOpen(false);
+              break;
+            case "data":
+              setDataOpen(false);
+              break;
+            case "bases":
+              setBasesOpen(false);
+              break;
+            case "canvas":
+              setCanvasOpen(false);
+              break;
+            case "whiteboard":
+              setWhiteboardOpen(false);
+              break;
+            case "timeline":
+              setTimelineOpen(false);
+              break;
+            case "kanban":
+              setKanbanOpen(false);
+              break;
+          }
           break;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
