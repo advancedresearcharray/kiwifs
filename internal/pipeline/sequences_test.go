@@ -177,6 +177,35 @@ func TestCheckSequencesGapDetection(t *testing.T) {
 	}
 }
 
+func TestCheckSequencesDuplicateDetection(t *testing.T) {
+	dir := t.TempDir()
+	eventsDir := filepath.Join(dir, "events")
+	if err := os.MkdirAll(eventsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	dup := "<!-- seq:1 -->\nfirst\n<!-- seq:1 -->\nduplicate\n"
+	if err := os.WriteFile(filepath.Join(eventsDir, "log.md"), []byte(dup), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	result, err := CheckSequences(dir, []string{"events/"})
+	if err != nil {
+		t.Fatalf("CheckSequences: %v", err)
+	}
+	if !result.HasIssues() {
+		t.Fatal("expected duplicate issue, got clean result")
+	}
+	foundDup := false
+	for _, iss := range result.Issues {
+		if iss.Kind == "duplicate" {
+			foundDup = true
+		}
+	}
+	if !foundDup {
+		t.Fatalf("expected duplicate issue, got: %+v", result.Issues)
+	}
+}
+
 func TestCheckSequencesClean(t *testing.T) {
 	dir := t.TempDir()
 	store, err := storage.NewLocal(dir)
