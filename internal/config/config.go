@@ -30,6 +30,7 @@ type Config struct {
 	Workflow   WorkflowConfig   `toml:"workflow"`
 	Drafts     DraftsConfig     `toml:"drafts"`
 	Audit      AuditConfig      `toml:"audit"`
+	Sequences  SequencesConfig  `toml:"sequences"`
 	Import     ImportConfig     `toml:"import"`
 	Links      LinksConfig      `toml:"links"`
 	// Space holds per-space settings (visibility, etc.) loaded from
@@ -64,6 +65,12 @@ func (l LinksConfig) TypedLinkFields() []string {
 		return l.TypedFields
 	}
 	return []string{"contradicts"}
+}
+
+// SequencesConfig assigns monotonic sequence numbers to appends under
+// configured directories (event logs, audit trails).
+type SequencesConfig struct {
+	Directories []string `toml:"directories"`
 }
 
 // ImportConfig controls the data import subsystem — Airbyte integration,

@@ -284,6 +284,16 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		log.Printf("%sworkflow transition enforcement enabled", prefix)
 	}
 
+	if len(cfg.Sequences.Directories) > 0 {
+		seqStore, serr := pipeline.NewSequenceStore(root, cfg.Sequences.Directories)
+		if serr != nil {
+			log.Printf("%ssequence numbering disabled (%v)", prefix, serr)
+		} else {
+			pipe.Sequences = seqStore
+			log.Printf("%ssequence numbering enabled for %v", prefix, cfg.Sequences.Directories)
+		}
+	}
+
 	cstore, err := comments.New(root)
 	if err != nil {
 		if vectors != nil {

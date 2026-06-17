@@ -127,6 +127,10 @@ type Pipeline struct {
 	// Versioner.Commit; the index catches up within the batch window
 	// (~200ms). Set via pipeline.New options or injected by bootstrap.
 	AsyncIdx *AsyncIndexer
+
+	// Sequences, when set, assigns monotonic sequence numbers to appends
+	// under configured directories (event logs, audit trails).
+	Sequences *SequenceStore
 }
 
 // Result is returned from Write so callers can set ETag headers, log, etc.
@@ -721,15 +725,24 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 		return Result{}, err
 	}
 
+	contentToAppend := content
+	if p.Sequences != nil && p.Sequences.AppliesTo(path) {
+		seq, err := p.Sequences.Next()
+		if err != nil {
+			return Result{}, fmt.Errorf("sequence: %w", err)
+		}
+		contentToAppend = InjectSequence(content, seq)
+	}
+
 	var newContent []byte
 	var oldStatus string
 	if existing, err := p.Store.Read(ctx, path); err == nil && len(existing) > 0 {
 		if p.OnTransition != nil || p.ValidateTransition != nil {
 			oldStatus = extractStatus(existing)
 		}
-		newContent = append(existing, []byte(separator+content)...)
+		newContent = append(existing, []byte(separator+contentToAppend)...)
 	} else {
-		newContent = []byte(content)
+		newContent = []byte(contentToAppend)
 	}
 
 	if len(newContent) > maxFileSize {
