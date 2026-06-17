@@ -238,3 +238,176 @@ func TestNormalizeDOIAndArxiv(t *testing.T) {
 		t.Fatalf("normalizeArxivID url = %q", got)
 	}
 }
+
+func TestValidateCiteIdentifiers(t *testing.T) {
+	invalidDOIs := []string{
+		"",
+		"not-a-doi",
+		"10.1234",
+		"10.1234/",
+		"10.1234/../evil",
+		"10.1234/foo//bar",
+		"https://evil.example/10.1234/foo",
+		strings.Repeat("a", 300),
+	}
+	for _, raw := range invalidDOIs {
+		if got := normalizeDOI(raw); got != "" {
+			t.Fatalf("normalizeDOI(%q) = %q, want empty", raw, got)
+		}
+	}
+
+	invalidArxiv := []string{
+		"not-arxiv",
+		"99.12345",
+		"2301.12",
+		"2301.12345/../../../etc",
+	}
+	for _, raw := range invalidArxiv {
+		if got := normalizeArxivID(raw); got != "" {
+			t.Fatalf("normalizeArxivID(%q) = %q, want empty", raw, got)
+		}
+	}
+
+	if _, err := sanitizeCiteInput("10.1234/evil\ninjection"); err == nil {
+		t.Fatal("expected sanitize error for newline injection")
+	}
+	if _, err := sanitizeCiteInput("10.1234/evil\\path"); err == nil {
+		t.Fatal("expected sanitize error for backslash")
+	}
+}
+
+func TestHandleCiteInvalidDOI(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+	client := setupMockCiteClient(t, http.StatusOK, http.StatusOK, sampleCrossrefJSON, sampleArxivXML)
+
+	res, err := callCiteTool(t, b, client, map[string]any{"doi": "not-a-valid-doi"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error for invalid DOI")
+	}
+	text := res.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "invalid DOI") {
+		t.Fatalf("unexpected error text: %s", text)
+	}
+}
+
+func TestHandleCiteInvalidArxiv(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+	client := setupMockCiteClient(t, http.StatusOK, http.StatusOK, sampleCrossrefJSON, sampleArxivXML)
+
+	res, err := callCiteTool(t, b, client, map[string]any{"arxiv_id": "bad-id"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error for invalid arXiv ID")
+	}
+	text := res.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "invalid arXiv") {
+		t.Fatalf("unexpected error text: %s", text)
+	}
+}
+
+func TestHandleCiteArxivNotFound(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+	emptyFeed := `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>`
+	client := setupMockCiteClient(t, http.StatusOK, http.StatusOK, sampleCrossrefJSON, emptyFeed)
+
+	res, err := callCiteTool(t, b, client, map[string]any{"arxiv_id": "2301.12345"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error for missing arXiv entry")
+	}
+	text := res.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "not found") {
+		t.Fatalf("unexpected error text: %s", text)
+	}
+}
+
+func TestHandleCiteNetworkError(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+	client := &citeHTTPClient{
+		http:        &http.Client{Timeout: 1},
+		userAgent:   "kiwifs-test",
+		crossrefURL: "http://127.0.0.1:1/works/",
+		arxivURL:    defaultArxivQueryURL,
+	}
+
+	res, err := callCiteTool(t, b, client, map[string]any{"doi": "10.1234/example"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error for network failure")
+	}
+	text := res.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "crossref request failed") {
+		t.Fatalf("unexpected error text: %s", text)
+	}
+}
+
+func TestHandleCiteCrossrefBadJSON(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+	client := setupMockCiteClient(t, http.StatusOK, http.StatusOK, `{not json`, sampleArxivXML)
+
+	res, err := callCiteTool(t, b, client, map[string]any{"doi": "10.1234/example"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error for malformed Crossref response")
+	}
+	text := res.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "parse Crossref response") {
+		t.Fatalf("unexpected error text: %s", text)
+	}
+}
+
+func TestHandleCiteMaliciousIdentifier(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+	client := setupMockCiteClient(t, http.StatusOK, http.StatusOK, sampleCrossrefJSON, sampleArxivXML)
+
+	cases := []map[string]any{
+		{"identifier": "10.1234/evil/../../../admin"},
+		{"identifier": "10.1234/foo?bar=baz"},
+		{"identifier": "10.1234/evil\nheader: injection"},
+	}
+	for _, args := range cases {
+		res, err := callCiteTool(t, b, client, args)
+		if err != nil {
+			t.Fatalf("call %v: %v", args, err)
+		}
+		if !res.IsError {
+			t.Fatalf("expected rejection for malicious input %v", args)
+		}
+	}
+}
+
+func TestValidateBibtexKey(t *testing.T) {
+	if err := validateBibtexKey("vaswani2017attention"); err != nil {
+		t.Fatalf("valid key rejected: %v", err)
+	}
+	for _, key := range []string{"", "../evil", "bad/key", "UPPER"} {
+		if err := validateBibtexKey(key); err == nil {
+			t.Fatalf("expected rejection for key %q", key)
+		}
+	}
+}
+
+func TestAssertCiteRequestURLRejectsUnexpectedHost(t *testing.T) {
+	client := newDefaultCiteHTTPClient()
+	reqURL := "https://evil.example/works/10.1234/foo"
+	if err := client.assertCrossrefURL(reqURL); err == nil {
+		t.Fatal("expected host validation failure")
+	}
+}
