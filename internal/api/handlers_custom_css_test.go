@@ -103,6 +103,71 @@ func TestGetCustomCSS_ConfigurablePath(t *testing.T) {
 	}
 }
 
+func TestGetCustomCSS_RejectsPathTraversal(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	kiwiDir := filepath.Join(dir, ".kiwi")
+	if err := os.MkdirAll(kiwiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	safeCSS := ".safe { color: green; }\n"
+	if err := os.WriteFile(filepath.Join(kiwiDir, "custom.css"), []byte(safeCSS), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// File outside workspace root — must never be served via custom_css config.
+	outsideCSS := "body { display: none; /* leaked */ }\n"
+	outsidePath := filepath.Join(filepath.Dir(dir), "outside.css")
+	if err := os.WriteFile(outsidePath, []byte(outsideCSS), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(outsidePath) })
+
+	tests := []struct {
+		name       string
+		customCSS  string
+		wantBody   string
+		wantAbsent string
+	}{
+		{
+			name:       "parent traversal",
+			customCSS:  "../outside.css",
+			wantBody:   safeCSS,
+			wantAbsent: "leaked",
+		},
+		{
+			name:       "nested traversal",
+			customCSS:  ".kiwi/../../outside.css",
+			wantBody:   safeCSS,
+			wantAbsent: "leaked",
+		},
+		{
+			name:       "absolute path",
+			customCSS:  outsidePath,
+			wantBody:   safeCSS,
+			wantAbsent: "leaked",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Storage.Root = dir
+			cfg.UI.CustomCSS = tc.customCSS
+			s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/kiwi/custom.css", nil)
+			rec := httptest.NewRecorder()
+			s.echo.ServeHTTP(rec, req)
+
+			body := rec.Body.String()
+			if body != tc.wantBody {
+				t.Errorf("body = %q, want %q", body, tc.wantBody)
+			}
+			if strings.Contains(body, tc.wantAbsent) {
+				t.Errorf("body leaked outside workspace content: %q", body)
+			}
+		})
+	}
+}
+
 func TestSanitizeCustomCSS_CaseInsensitive(t *testing.T) {
 	in := "a{}<SCRIPT>x</SCRIPT>b{}"
 	out := sanitizeCustomCSS(in)
