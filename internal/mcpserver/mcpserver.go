@@ -570,6 +570,17 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 			Handler: handleTaskProgress(b),
 		},
 		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_cite",
+				mcp.WithDescription("Fetch bibliographic metadata for a DOI or arXiv ID and create a literature note at papers/{bibtex_key}.md with structured frontmatter."),
+				mcp.WithString("identifier", mcp.Description("DOI or arXiv ID (e.g. 10.1234/example or 2301.12345)")),
+				mcp.WithString("doi", mcp.Description("Explicit DOI when not using identifier")),
+				mcp.WithString("arxiv_id", mcp.Description("Explicit arXiv ID when not using identifier")),
+				mcp.WithString("actor", mcp.Description("Git commit actor (default mcp-agent)")),
+				mcp.WithDestructiveHintAnnotation(true),
+			),
+			Handler: handleCite(b, nil),
+		},
+		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_release",
 				mcp.WithDescription("Release a previously claimed task so other agents can work on it."),
 				mcp.WithString("path", mcp.Required(), mcp.Description("Path to task file")),
