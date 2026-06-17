@@ -18,6 +18,9 @@ todolist2.md
 *.key
 secrets/
 
+# Overlay git metadata (worktree uses gitdir: .git-writable)
+.git-writable/
+
 # Claude Code / Cursor local settings
 .claude/
 

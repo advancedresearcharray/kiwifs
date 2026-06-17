@@ -1,6 +1,8 @@
-import { autocompletion, type Completion, type CompletionContext } from "@codemirror/autocomplete";
+import { autocompletion, type Completion, type CompletionContext, type CompletionSource } from "@codemirror/autocomplete";
 import { type Extension } from "@codemirror/state";
 import { type EditorView } from "@codemirror/view";
+import type { EditorSlashCommandConfig } from "@kw/lib/editorSlashCommands";
+import { filterSlashCommands, templateLoadErrorMessage } from "@kw/lib/editorSlashCommands";
 
 export type MarkdownSlashCommandName = "table" | "todo" | "code" | "quote" | "frontmatter";
 
@@ -17,6 +19,8 @@ export type SlashTriggerRange = {
   from: number;
   to: number;
 };
+
+export type CustomSlashCommandLoader = (templatePath: string) => Promise<string>;
 
 const frontmatterFieldInsert = "key: \n";
 
@@ -159,6 +163,54 @@ function slashCompletionSource(context: CompletionContext) {
     to: trigger.to,
     options,
     validFor: /^\/[\w-]*$/,
+  };
+}
+
+function insertCustomTemplate(
+  view: EditorView,
+  trigger: SlashTriggerRange,
+  content: string,
+): void {
+  const currentDoc = view.state.doc.toString();
+  const nextDoc = `${currentDoc.slice(0, trigger.from)}${content}${currentDoc.slice(trigger.to)}`;
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: nextDoc },
+    selection: { anchor: trigger.from + content.length },
+    userEvent: "input.complete",
+  });
+}
+
+export function customSlashCompletionSource(
+  commands: EditorSlashCommandConfig[],
+  loadTemplate: CustomSlashCommandLoader,
+  onError: (message: string) => void,
+): CompletionSource {
+  return (context: CompletionContext) => {
+    const trigger = slashTriggerBeforeCursor(context);
+    if (!trigger) return null;
+
+    const query = context.state.doc.sliceString(trigger.from + 1, trigger.to).toLowerCase();
+    const filtered = filterSlashCommands(commands, query);
+    if (filtered.length === 0) return null;
+
+    const options: Completion[] = filtered.map((cmd) => ({
+      label: `/${cmd.id}`,
+      displayLabel: `/${cmd.label || cmd.id}`,
+      type: "keyword",
+      detail: cmd.description || `Insert from ${cmd.template}`,
+      apply: (view: EditorView) => {
+        void loadTemplate(cmd.template)
+          .then((content) => insertCustomTemplate(view, trigger, content))
+          .catch((err) => onError(templateLoadErrorMessage(cmd.template, err)));
+      },
+    }));
+
+    return {
+      from: trigger.from,
+      to: trigger.to,
+      options,
+      validFor: /^\/[\w-]*$/,
+    };
   };
 }
 

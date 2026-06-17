@@ -617,6 +617,18 @@ export const api = {
     return request(`${kiwiBase()}/theme`);
   },
 
+  async getEditorSlashCommands(): Promise<{
+    commands: {
+      id: string;
+      label: string;
+      icon: string;
+      description: string;
+      template: string;
+    }[];
+  }> {
+    return request(`${kiwiBase()}/editor/slash-commands`);
+  },
+
   async getCustomCSS(): Promise<string> {
     const res = await fetch(`${kiwiBase()}/custom.css`);
     if (!res.ok) {
