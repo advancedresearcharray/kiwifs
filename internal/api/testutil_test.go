@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -93,6 +94,32 @@ func buildTestServerWithAssets(t *testing.T, assets config.AssetsConfig) *Server
 	cfg := &config.Config{Assets: assets}
 	cfg.Storage.Root = dir
 	return NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+}
+
+func buildTestServerWithGit(t *testing.T) (*Server, string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	git, err := versioning.NewGit(dir)
+	if err != nil {
+		t.Fatalf("git: %v", err)
+	}
+	searcher := search.NewGrep(dir)
+	hub := events.NewHub()
+	pipe := pipeline.New(store, git, searcher, nil, hub, nil, "")
+	cstore, err := comments.New(dir)
+	if err != nil {
+		t.Fatalf("comments: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	return NewServer(cfg, pipe, nil, cstore, nil, nil, nil), dir
 }
 
 func buildTestServerWithPublicURL(t *testing.T, publicURL string) *Server {

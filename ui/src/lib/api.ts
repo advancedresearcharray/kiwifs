@@ -379,12 +379,22 @@ export const api = {
     });
   },
 
-  async patchFrontmatter(path: string, fields: Record<string, unknown>): Promise<{ path: string; etag: string }> {
-    const qs = new URLSearchParams({ path });
-    return request(`${kiwiBase()}/file/frontmatter?${qs}`, {
+  async patchFrontmatter(
+    path: string,
+    fields: Record<string, unknown>,
+    etag?: string | null
+  ): Promise<{ path: string; etag: string }> {
+    const qs = new URLSearchParams({ path, merge: "frontmatter" });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Actor": actor(),
+      ..._extraHeaders,
+    };
+    if (etag) headers["If-Match"] = etag;
+    return request(`${kiwiBase()}/file?${qs}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "X-Actor": actor(), ..._extraHeaders },
-      body: JSON.stringify({ fields }),
+      headers,
+      body: JSON.stringify(fields),
     });
   },
 

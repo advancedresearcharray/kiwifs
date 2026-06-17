@@ -259,36 +259,77 @@ type patchFrontmatterRequest struct {
 	Fields map[string]any `json:"fields"`
 }
 
+// PatchFile godoc
+//
+//	@Summary		Partially update a file
+//	@Description	Applies a partial update to a file. With merge=frontmatter, merges YAML frontmatter fields into an existing markdown file while preserving the body byte-for-byte.
+//	@Tags			files
+//	@Security		BearerAuth
+//	@Param			path		query		string	true	"Path of the file to patch (must start with '/')"
+//	@Param			merge		query		string	true	"Merge mode; only frontmatter is supported"
+//	@Param			body		body		object	true	"Frontmatter fields to merge (e.g. {\"last_executed\":\"2026-06-15\",\"execution_count\":5})"
+//	@Param			If-Match	header		string	false	"ETag to check for conflict (prevents update if the file changed)"
+//	@Param			X-Actor		header		string	false	"Actor identity performing the write"
+//	@Success		200			{object}	map[string]string
+//	@Failure		400			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string
+//	@Failure		409			{object}	map[string]string
+//	@Failure		422			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/kiwi/file [patch]
+func (h *Handlers) PatchFile(c echo.Context) error {
+	if c.QueryParam("merge") != "frontmatter" {
+		return echo.NewHTTPError(http.StatusBadRequest, "unsupported merge mode; only merge=frontmatter is supported")
+	}
+	path, err := requirePath(c)
+	if err != nil {
+		return err
+	}
+	var fields map[string]any
+	if err := bindJSON(c, &fields); err != nil {
+		return err
+	}
+	return h.patchFrontmatterFields(c, path, fields)
+}
+
 func (h *Handlers) PatchFrontmatter(c echo.Context) error {
 	path, err := requirePath(c)
 	if err != nil {
 		return err
 	}
-	if !storage.IsKnowledgeFile(path) {
-		return echo.NewHTTPError(http.StatusBadRequest, "frontmatter patch requires a markdown file")
-	}
 	var req patchFrontmatterRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
-	if len(req.Fields) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "fields is required")
+	return h.patchFrontmatterFields(c, path, req.Fields)
+}
+
+func (h *Handlers) patchFrontmatterFields(c echo.Context, path string, fields map[string]any) error {
+	if !storage.IsKnowledgeFile(path) {
+		return echo.NewHTTPError(http.StatusBadRequest, "frontmatter patch requires a markdown file")
+	}
+	if len(fields) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "at least one frontmatter field is required")
 	}
 	content, err := readFileOr404(c.Request().Context(), h.store, path)
 	if err != nil {
 		return err
 	}
-	for key, value := range req.Fields {
+	for key, value := range fields {
 		content, err = markdown.SetFrontmatterField(content, key, normalizeFrontmatterPatchValue(value))
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 	}
 	actor := sanitizeActor(c.Request().Header.Get("X-Actor"))
-	res, err := h.pipe.Write(c.Request().Context(), path, content, actor)
+	ifMatch := strings.Trim(c.Request().Header.Get("If-Match"), `"`)
+	res, err := h.pipe.WriteWithOpts(c.Request().Context(), path, content, actor, pipeline.WriteOpts{IfMatch: ifMatch})
 	if err != nil {
 		if errors.Is(err, storage.ErrPathDenied) {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		if errors.Is(err, pipeline.ErrConflict) {
+			return echo.NewHTTPError(http.StatusConflict, "file modified since last read — re-fetch and retry")
 		}
 		if errors.Is(err, pipeline.ErrTransitionDenied) {
 			return echo.NewHTTPError(http.StatusConflict, err.Error())

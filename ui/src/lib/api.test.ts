@@ -7,6 +7,29 @@ describe("api error handling", () => {
     vi.restoreAllMocks();
   });
 
+  it("uses canonical merge=frontmatter PATCH with flat JSON body", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ path: "doc.md", etag: "abc123" })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    setBaseOverride("/api/kiwi");
+
+    await api.patchFrontmatter("doc.md", { order: 2 }, '"etag-1"');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/kiwi/file?path=doc.md&merge=frontmatter",
+      expect.objectContaining({
+        method: "PATCH",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "If-Match": '"etag-1"',
+        }),
+        body: JSON.stringify({ order: 2 }),
+      })
+    );
+  });
+
   it("preserves status and response body for failed frontmatter patches", async () => {
     vi.stubGlobal(
       "fetch",
@@ -28,3 +51,10 @@ describe("api error handling", () => {
     });
   });
 });
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
