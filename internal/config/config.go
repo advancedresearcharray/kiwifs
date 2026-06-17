@@ -206,6 +206,7 @@ type UIConfig struct {
 	CustomCSS       string            `toml:"custom_css"`       // relative path, default .kiwi/custom.css
 	KeybindingsFile string            `toml:"keybindings_file"` // relative path, default .kiwi/keybindings.json
 	Keybindings     map[string]string `toml:"keybindings"`      // inline [ui.keybindings] overrides
+	Features        UIFeaturesConfig  `toml:"features"`
 }
 
 // AssetsConfig controls binary upload limits and MIME allowlist. Zero values

@@ -295,7 +295,18 @@ function createMockFetch(overrides: MockOverrides = {}) {
       }
 
       if (url.includes("/ui-config")) {
-        return jsonResponse({ themeLocked: false });
+        return jsonResponse({
+          themeLocked: false,
+          features: {
+            graph: true,
+            kanban: true,
+            canvas: true,
+            whiteboard: true,
+            timeline: true,
+            bases: true,
+            data_sources: true,
+          },
+        });
       }
 
       if (url.includes("/theme") && method === "GET") {

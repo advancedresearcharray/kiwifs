@@ -52,6 +52,12 @@ import { useTheme } from "./hooks/useTheme";
 import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
+import { useUIConfigStore } from "./lib/uiConfigStore";
+import {
+  isViewRouteAllowed,
+  type UIFeatureKey,
+  viewFeatureFromPathname,
+} from "./lib/uiFeatures";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -111,6 +117,45 @@ export default function App() {
     setHistoryOpen(false);
   }, []);
 
+  const features = useUIConfigStore((s) => s.features);
+
+  const openFeatureView = useCallback((feature: UIFeatureKey) => {
+    closeAllViews();
+    switch (feature) {
+      case "graph":
+        setGraphOpen(true);
+        break;
+      case "bases":
+        setBasesOpen(true);
+        break;
+      case "canvas":
+        setCanvasOpen(true);
+        break;
+      case "whiteboard":
+        setWhiteboardOpen(true);
+        break;
+      case "timeline":
+        setTimelineOpen(true);
+        break;
+      case "kanban":
+        setKanbanOpen(true);
+        break;
+      case "data_sources":
+        setDataOpen(true);
+        break;
+    }
+  }, [closeAllViews]);
+
+  useEffect(() => {
+    if (!features.graph) setGraphOpen(false);
+    if (!features.bases) setBasesOpen(false);
+    if (!features.canvas) setCanvasOpen(false);
+    if (!features.whiteboard) setWhiteboardOpen(false);
+    if (!features.timeline) setTimelineOpen(false);
+    if (!features.kanban) setKanbanOpen(false);
+    if (!features.data_sources) setDataOpen(false);
+  }, [features]);
+
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -144,6 +189,8 @@ export default function App() {
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
   const { bindings, conflicts } = useKeybindings();
+  const featuresRef = useRef(features);
+  featuresRef.current = features;
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
@@ -271,6 +318,7 @@ export default function App() {
           toggleSidebar(!sidebarOpen);
           break;
         case "graph": {
+          if (!featuresRef.current.graph) return;
           e.preventDefault();
           const next = !state.graphOpen;
           closeAllViews();
@@ -278,6 +326,7 @@ export default function App() {
           break;
         }
         case "toggle_bases": {
+          if (!featuresRef.current.bases) return;
           e.preventDefault();
           const next = !state.basesOpen;
           closeAllViews();
@@ -285,6 +334,7 @@ export default function App() {
           break;
         }
         case "toggle_timeline": {
+          if (!featuresRef.current.timeline) return;
           e.preventDefault();
           const next = !state.timelineOpen;
           closeAllViews();
@@ -292,6 +342,7 @@ export default function App() {
           break;
         }
         case "toggle_kanban": {
+          if (!featuresRef.current.kanban) return;
           e.preventDefault();
           const next = !state.kanbanOpen;
           closeAllViews();
@@ -392,6 +443,19 @@ const handleSpaceSwitch = useCallback(() => {
 
   const isCloudMode = typeof window !== "undefined" && (window as any).__kiwi_cloud_mode__;
   const fromPopState = useRef(false);
+
+  useEffect(() => {
+    if (isCloudMode) return;
+    const pathname = window.location.pathname;
+    const feature = viewFeatureFromPathname(pathname);
+    if (!feature) return;
+    if (!isViewRouteAllowed(pathname, features)) {
+      window.history.replaceState(null, "", "/");
+      return;
+    }
+    openFeatureView(feature);
+  }, [features, isCloudMode, openFeatureView]);
+
   useEffect(() => {
     if (isCloudMode) return;
     if (!activePath) {
@@ -432,6 +496,20 @@ const handleSpaceSwitch = useCallback(() => {
         setCanvasOpen(false);
         setTimelineOpen(false);
         setKanbanOpen(false);
+      } else if (pathname.startsWith("/view/")) {
+        fromPopState.current = true;
+        if (!isViewRouteAllowed(pathname, features)) {
+          window.history.replaceState(null, "", "/");
+          setActivePath(null);
+          closeAllViews();
+          return;
+        }
+        const feature = viewFeatureFromPathname(pathname);
+        if (feature) {
+          setActivePath(null);
+          setEditing(false);
+          openFeatureView(feature);
+        }
       } else if (pathname === "/") {
         fromPopState.current = true;
         setActivePath(null);
@@ -439,7 +517,7 @@ const handleSpaceSwitch = useCallback(() => {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [isCloudMode]);
+  }, [closeAllViews, features, isCloudMode, openFeatureView]);
 
   function revealActivePageInTree() {
     if (!activePath) return;
@@ -455,6 +533,12 @@ const handleSpaceSwitch = useCallback(() => {
       return;
     }
     if (isCanvasFile(path)) {
+      if (!features.canvas) {
+        window.history.replaceState(null, "", "/");
+        setActivePath(null);
+        if (isMobile) setSidebarOpen(false);
+        return;
+      }
       closeAllViews();
       setInitialCanvasPath(path);
       setCanvasOpen(true);
@@ -462,6 +546,12 @@ const handleSpaceSwitch = useCallback(() => {
       return;
     }
     if (isExcalidrawFile(path)) {
+      if (!features.whiteboard) {
+        window.history.replaceState(null, "", "/");
+        setActivePath(null);
+        if (isMobile) setSidebarOpen(false);
+        return;
+      }
       closeAllViews();
       setInitialWhiteboardPath(path);
       setWhiteboardOpen(true);
@@ -539,27 +629,41 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label={`New page (${formatChordDisplay(bindings.new_page)})`}>
               <Plus className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
-              <Network className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !basesOpen; closeAllViews(); setBasesOpen(next); }} label="Bases">
-              <LayoutGrid className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasOpen(next); }} label="Canvas">
-              <Presentation className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !whiteboardOpen; closeAllViews(); setWhiteboardOpen(next); }} label="Whiteboard">
-              <PenTool className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !timelineOpen; closeAllViews(); setTimelineOpen(next); }} label="Timeline">
-              <Clock4 className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !kanbanOpen; closeAllViews(); setKanbanOpen(next); }} label="Kanban">
-              <Columns3 className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
-              <Database className="h-4 w-4" />
-            </ToolbarButton>
+            {features.graph && (
+              <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
+                <Network className="h-4 w-4" />
+              </ToolbarButton>
+            )}
+            {features.bases && (
+              <ToolbarButton onClick={() => { const next = !basesOpen; closeAllViews(); setBasesOpen(next); }} label="Bases">
+                <LayoutGrid className="h-4 w-4" />
+              </ToolbarButton>
+            )}
+            {features.canvas && (
+              <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasOpen(next); }} label="Canvas">
+                <Presentation className="h-4 w-4" />
+              </ToolbarButton>
+            )}
+            {features.whiteboard && (
+              <ToolbarButton onClick={() => { const next = !whiteboardOpen; closeAllViews(); setWhiteboardOpen(next); }} label="Whiteboard">
+                <PenTool className="h-4 w-4" />
+              </ToolbarButton>
+            )}
+            {features.timeline && (
+              <ToolbarButton onClick={() => { const next = !timelineOpen; closeAllViews(); setTimelineOpen(next); }} label="Timeline">
+                <Clock4 className="h-4 w-4" />
+              </ToolbarButton>
+            )}
+            {features.kanban && (
+              <ToolbarButton onClick={() => { const next = !kanbanOpen; closeAllViews(); setKanbanOpen(next); }} label="Kanban">
+                <Columns3 className="h-4 w-4" />
+              </ToolbarButton>
+            )}
+            {features.data_sources && (
+              <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
+                <Database className="h-4 w-4" />
+              </ToolbarButton>
+            )}
             <HostToolbarActions />
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -635,39 +739,39 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
-            {basesOpen ? (
+          <main className={`flex-1 relative ${(features.bases && basesOpen) || (features.canvas && canvasOpen) || (features.whiteboard && whiteboardOpen) || (features.timeline && timelineOpen) || (features.kanban && kanbanOpen) || (features.data_sources && dataOpen) || (features.graph && graphOpen) ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+            {features.bases && basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
                 onNavigate={(p) => { setBasesOpen(false); navigate(p); }}
               />
-            ) : canvasOpen ? (
+            ) : features.canvas && canvasOpen ? (
               <KiwiCanvasScreen
                 initialCanvasPath={initialCanvasPath}
                 onClose={() => { setCanvasOpen(false); setInitialCanvasPath(null); }}
                 onNavigate={(p) => { setCanvasOpen(false); setInitialCanvasPath(null); navigate(p); }}
                 onTreeRefresh={() => setRefreshKey((k) => k + 1)}
               />
-            ) : whiteboardOpen ? (
+            ) : features.whiteboard && whiteboardOpen ? (
               <KiwiWhiteboardScreen
                 initialPath={initialWhiteboardPath}
                 onClose={() => { setWhiteboardOpen(false); setInitialWhiteboardPath(null); }}
                 onNavigate={(p) => { setWhiteboardOpen(false); setInitialWhiteboardPath(null); navigate(p); }}
                 onTreeRefresh={() => setRefreshKey((k) => k + 1)}
               />
-            ) : timelineOpen ? (
+            ) : features.timeline && timelineOpen ? (
               <KiwiTimeline
                 onClose={() => setTimelineOpen(false)}
                 onNavigate={(p) => { setTimelineOpen(false); navigate(p); }}
               />
-            ) : kanbanOpen ? (
+            ) : features.kanban && kanbanOpen ? (
               <KiwiKanban
                 onClose={() => setKanbanOpen(false)}
                 onNavigate={(p) => { setKanbanOpen(false); navigate(p); }}
               />
-            ) : dataOpen ? (
+            ) : features.data_sources && dataOpen ? (
               <KiwiData onClose={() => setDataOpen(false)} />
-            ) : graphOpen ? (
+            ) : features.graph && graphOpen ? (
               <KiwiGraph
                 tree={tree}
                 activePath={activePath}
@@ -735,10 +839,10 @@ const handleSpaceSwitch = useCallback(() => {
                 bindings={bindings}
                 onNewPage={() => { setNewFolder(undefined); setNewOpen(true); }}
                 onSearch={() => setSearchOpen(true)}
-                onGraph={() => setGraphOpen(true)}
-                onData={() => setDataOpen(true)}
-                onBases={() => setBasesOpen(true)}
-                onTimeline={() => setTimelineOpen(true)}
+                onGraph={features.graph ? () => openFeatureView("graph") : undefined}
+                onData={features.data_sources ? () => openFeatureView("data_sources") : undefined}
+                onBases={features.bases ? () => openFeatureView("bases") : undefined}
+                onTimeline={features.timeline ? () => openFeatureView("timeline") : undefined}
               />
             )}
           </main>
@@ -790,7 +894,7 @@ function WelcomeScreen({
   onNewPage: () => void;
   onSearch: () => void;
   onGraph?: () => void;
-  onData: () => void;
+  onData?: () => void;
   onBases?: () => void;
   onTimeline?: () => void;
 }) {
@@ -816,10 +920,12 @@ function WelcomeScreen({
               {formatChordDisplay(bindings.search)}
             </kbd>
           </Button>
-          <Button variant="ghost" onClick={onData} className="gap-2 text-muted-foreground">
-            <Database className="h-4 w-4" />
-            Import from a source
-          </Button>
+          {onData && (
+            <Button variant="ghost" onClick={onData} className="gap-2 text-muted-foreground">
+              <Database className="h-4 w-4" />
+              Import from a source
+            </Button>
+          )}
         </div>
         <div className="mt-8 text-xs space-y-1">
           <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{formatChordDisplay(bindings.new_page)}</kbd> New page</div>

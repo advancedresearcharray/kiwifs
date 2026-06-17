@@ -345,7 +345,8 @@ func (h *Handlers) GetTheme(c echo.Context) error {
 }
 
 type uiConfigResponse struct {
-	ThemeLocked bool `json:"themeLocked"`
+	ThemeLocked bool            `json:"themeLocked"`
+	Features    map[string]bool `json:"features"`
 }
 
 // UIConfig godoc
@@ -359,6 +360,7 @@ type uiConfigResponse struct {
 func (h *Handlers) UIConfig(c echo.Context) error {
 	return c.JSON(http.StatusOK, uiConfigResponse{
 		ThemeLocked: h.ui.ThemeLocked,
+		Features:    h.ui.Features.Resolved(),
 	})
 }
 

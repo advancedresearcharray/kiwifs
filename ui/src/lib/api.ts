@@ -575,7 +575,13 @@ export const api = {
     });
   },
 
-  async getUIConfig(): Promise<{ themeLocked: boolean }> {
+  async getUIConfig(): Promise<{
+    themeLocked: boolean;
+    features?: Partial<Record<
+      "graph" | "kanban" | "canvas" | "whiteboard" | "timeline" | "bases" | "data_sources",
+      boolean
+    >>;
+  }> {
     return request(`${kiwiBase()}/ui-config`);
   },
 

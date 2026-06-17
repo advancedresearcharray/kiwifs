@@ -423,3 +423,28 @@ new_page = "Ctrl+Shift+N"
 		t.Fatalf("search binding = %q", cfg.UI.Keybindings["search"])
 	}
 }
+
+func TestUIConfigFeatures(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui.features]
+graph = true
+kanban = false
+canvas = false
+data_sources = false
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	f := cfg.UI.Features.Resolved()
+	if !f["graph"] || f["kanban"] || f["canvas"] || f["data_sources"] {
+		t.Fatalf("unexpected features: %+v", f)
+	}
+	if !f["bases"] || !f["timeline"] || !f["whiteboard"] {
+		t.Fatalf("unspecified features should default true: %+v", f)
+	}
+}
