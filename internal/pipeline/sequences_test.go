@@ -302,3 +302,83 @@ func TestSequenceStorePersistsAcrossInstances(t *testing.T) {
 		t.Fatalf("sequences.json=%q", raw)
 	}
 }
+
+func TestSequenceStoreRevert(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewSequenceStore(dir, []string{"events/"})
+	if err != nil {
+		t.Fatalf("NewSequenceStore: %v", err)
+	}
+	if seq, err := s.Next(); err != nil || seq != 1 {
+		t.Fatalf("Next()=%d err=%v", seq, err)
+	}
+	if err := s.Revert(); err != nil {
+		t.Fatalf("Revert: %v", err)
+	}
+	if s.Counter() != 0 {
+		t.Fatalf("counter=%d after revert, want 0", s.Counter())
+	}
+}
+
+func TestCheckSequencesCounterMismatch(t *testing.T) {
+	dir := t.TempDir()
+	eventsDir := filepath.Join(dir, "events")
+	if err := os.MkdirAll(eventsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(eventsDir, "log.md"),
+		[]byte("<!-- seq:1 -->\nfirst\n<!-- seq:2 -->\nsecond\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	stateDir := filepath.Join(dir, ".kiwi", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("mkdir state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "sequences.json"),
+		[]byte("{\n  \"counter\": 1\n}\n"), 0o644); err != nil {
+		t.Fatalf("write sequences.json: %v", err)
+	}
+
+	result, err := CheckSequences(dir, []string{"events/"})
+	if err != nil {
+		t.Fatalf("CheckSequences: %v", err)
+	}
+	foundMismatch := false
+	for _, iss := range result.Issues {
+		if iss.Kind == "counter_mismatch" {
+			foundMismatch = true
+		}
+	}
+	if !foundMismatch {
+		t.Fatalf("expected counter_mismatch, issues: %+v", result.Issues)
+	}
+}
+
+func TestSequenceRevertOnAppendFailure(t *testing.T) {
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	seqStore, err := NewSequenceStore(dir, []string{"events/"})
+	if err != nil {
+		t.Fatalf("NewSequenceStore: %v", err)
+	}
+	p := New(store, versioning.NewNoop(), search.NewGrep(dir), nil, nil, nil, dir)
+	p.Sequences = seqStore
+	p.ValidateWrite = func(path string, content []byte) error {
+		return fmt.Errorf("blocked")
+	}
+
+	_, err = p.Append(context.Background(), "events/log.md", "entry", "\n", "tester")
+	if err == nil {
+		t.Fatal("expected append failure")
+	}
+	if seqStore.Counter() != 0 {
+		t.Fatalf("counter=%d after failed append, want 0", seqStore.Counter())
+	}
+	data, err := store.Read(context.Background(), "events/log.md")
+	if err == nil && seqMarkerRe.Match(data) {
+		t.Fatalf("unexpected marker written on failed append: %s", data)
+	}
+}
