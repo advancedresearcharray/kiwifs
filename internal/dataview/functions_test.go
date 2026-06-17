@@ -28,3 +28,39 @@ func TestParseDaysAgoExpr(t *testing.T) {
 		t.Fatalf("expected *FuncCall, got %T", expr)
 	}
 }
+
+func TestNowCompiler(t *testing.T) {
+	fn, ok := funcRegistry["now"]
+	if !ok {
+		t.Fatal("now not registered")
+	}
+	sql, _, err := fn(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')") {
+		t.Fatalf("unexpected SQL: %s", sql)
+	}
+}
+
+func TestDateCompiler(t *testing.T) {
+	fn, ok := funcRegistry["date"]
+	if !ok {
+		t.Fatal("date not registered")
+	}
+	sql, _, err := fn([]compiledArg{{SQL: "?", Params: []any{"2026-01-01"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, "date(?)") {
+		t.Fatalf("unexpected SQL: %s", sql)
+	}
+}
+
+func TestParseTemporalFuncCaseInsensitive(t *testing.T) {
+	for _, input := range []string{"NOW()", "Date(\"2026-01-01\")", "DAYS_AGO(3)"} {
+		if _, err := ParseExpr(input); err != nil {
+			t.Fatalf("ParseExpr(%q): %v", input, err)
+		}
+	}
+}
