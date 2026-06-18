@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "title", "model", "label"],
+  "properties": {
+    "type": { "const": "prompt" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+    },
+    "label": {
+      "type": "string",
+      "enum": ["production", "staging"]
+    },
+    "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+    "max_tokens": { "type": "integer", "minimum": 1, "maximum": 200000 },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "usage_count": { "type": "integer", "minimum": 0 },
+    "eval_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "variant_of": { "type": "string", "minLength": 1 },
+    "last_tested": { "type": "string", "format": "date" }
+  },
+  "additionalProperties": true
+}
