@@ -366,7 +366,7 @@ func TestSequenceRevertOnAppendFailure(t *testing.T) {
 	}
 	p := New(store, versioning.NewNoop(), search.NewGrep(dir), nil, nil, nil, dir)
 	p.Sequences = seqStore
-	p.ValidateWrite = func(path string, content []byte) error {
+	p.ValidateWrite = func(ctx context.Context, path string, content []byte, kind WriteKind) error {
 		return fmt.Errorf("blocked")
 	}
 
