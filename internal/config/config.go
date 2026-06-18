@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kiwifs/kiwifs/internal/links"
 )
 
 type Config struct {
@@ -58,12 +59,12 @@ type LinksConfig struct {
 }
 
 // TypedLinkFields returns configured typed-link frontmatter fields.
-// When unset, defaults to ["contradicts"] for backward compatibility.
+// When unset, defaults to contradicts plus ADR supersession fields.
 func (l LinksConfig) TypedLinkFields() []string {
 	if len(l.TypedFields) > 0 {
 		return l.TypedFields
 	}
-	return []string{"contradicts"}
+	return links.DefaultTypedLinkFields()
 }
 
 // ImportConfig controls the data import subsystem — Airbyte integration,
