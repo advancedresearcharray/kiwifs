@@ -286,6 +286,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// single-space mode. The default space is registered first (fallback
 	// for non-prefixed requests) so existing clients keep working.
 	spaceMgr := spaces.NewManager(cfg)
+	spaceMgr.OnStackCreated = func(s *bootstrap.Stack) {
+		mcpSrv, _, err := mcpserver.New(mcpserver.Options{
+			Backend: mcpserver.NewStackBackend(s),
+			Emitter: s.Emitter,
+		})
+		if err != nil {
+			log.Printf("mcp init for space: %v", err)
+			return
+		}
+		s.Server.SetMCPHandler(mcpserver.StreamableHTTPHandler(mcpSrv, mcpserver.AuthTokenFromConfig(s.Config)))
+	}
 	if err := spaceMgr.RegisterStack("default", root, stack); err != nil {
 		return fmt.Errorf("register default space: %w", err)
 	}
