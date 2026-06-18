@@ -180,6 +180,7 @@ func NewSQLiteWithTypedFields(root string, store storage.Storage, typedLinkField
 	if len(typedLinkFields) == 0 {
 		typedLinkFields = links.DefaultTypedLinkFields()
 	}
+	typedLinkFields = links.SanitizeTypedLinkFields(typedLinkFields)
 	s := &SQLite{root: abs, store: store, writeDB: writeDB, readDB: readDB, computedFields: true, customComputedFields: ccf, typedLinkFields: typedLinkFields}
 
 	// Construction has no caller ctx — the schema bootstrap and initial
@@ -1048,6 +1049,16 @@ func (s *SQLite) indexTypedFields(ctx context.Context, source string, fm map[str
 	}
 	defer tx.Rollback()
 
+	// Clear every typed (non-wiki) link for this source before re-inserting.
+	// Per-field deletes alone leave stale edges when a field drops out of
+	// [links] typed_fields or when frontmatter no longer sets the field.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation != ''`, source); err != nil {
+		return err
+	}
+	if len(s.typedLinkFields) == 0 {
+		return tx.Commit()
+	}
+
 	stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return err
@@ -1055,9 +1066,6 @@ func (s *SQLite) indexTypedFields(ctx context.Context, source string, fm map[str
 	defer stmt.Close()
 
 	for _, field := range s.typedLinkFields {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation = ?`, source, field); err != nil {
-			return err
-		}
 		for _, t := range links.Unique(links.ExtractTypedField(fm, field)) {
 			if _, err := stmt.ExecContext(ctx, source, t, strings.ToLower(t), field); err != nil {
 				return err

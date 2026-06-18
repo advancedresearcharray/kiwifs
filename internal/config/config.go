@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kiwifs/kiwifs/internal/links"
 )
 
 type Config struct {
@@ -61,7 +62,7 @@ type LinksConfig struct {
 // When unset, defaults to ["contradicts"] for backward compatibility.
 func (l LinksConfig) TypedLinkFields() []string {
 	if len(l.TypedFields) > 0 {
-		return l.TypedFields
+		return links.SanitizeTypedLinkFields(l.TypedFields)
 	}
 	return []string{"contradicts"}
 }

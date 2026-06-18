@@ -700,3 +700,28 @@ See [[foo]].
 		t.Fatalf("got %v want %v", got, want)
 	}
 }
+
+func TestValidTypedFieldName(t *testing.T) {
+	t.Parallel()
+	valid := []string{"cites", "supersedes", "superseded_by", "variant_of", "extends", "services", "contradicts"}
+	for _, name := range valid {
+		if !ValidTypedFieldName(name) {
+			t.Fatalf("%q should be valid", name)
+		}
+	}
+	invalid := []string{"", "cites; DROP TABLE links", "field.name", "field-name", "123", "a b"}
+	for _, name := range invalid {
+		if ValidTypedFieldName(name) {
+			t.Fatalf("%q should be invalid", name)
+		}
+	}
+}
+
+func TestSanitizeTypedLinkFields(t *testing.T) {
+	t.Parallel()
+	got := SanitizeTypedLinkFields([]string{"cites", "bad;injection", "extends", ""})
+	want := []string{"cites", "extends"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
