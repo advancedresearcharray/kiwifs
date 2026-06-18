@@ -199,14 +199,28 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 	}
 
 	// Auto-format markdown on write (enabled by default).
+	var formatHooks []func(path string, content []byte) []byte
 	if cfg.Lint.IsAutoFormat() {
-		pipe.FormatWrite = func(path string, content []byte) []byte {
+		formatHooks = append(formatHooks, func(path string, content []byte) []byte {
 			if !strings.HasSuffix(strings.ToLower(path), ".md") {
 				return content
 			}
 			return markdown.Format(content)
-		}
+		})
 		log.Printf("%smarkdown auto-format enabled", prefix)
+	}
+	if cfg.FormatHooks.AutoSequence.Directory != "" && cfg.FormatHooks.AutoSequence.Field != "" {
+		if mq, ok := searcher.(pipeline.MetaMaxQuerier); ok {
+			seq := pipeline.NewAutoSequencer(cfg.FormatHooks.AutoSequence, mq)
+			formatHooks = append(formatHooks, seq.FormatWrite)
+			log.Printf("%sauto-sequence hook enabled (%s → %s)", prefix,
+				cfg.FormatHooks.AutoSequence.Directory, cfg.FormatHooks.AutoSequence.Field)
+		} else {
+			log.Printf("%sauto-sequence hook disabled (sqlite search required)", prefix)
+		}
+	}
+	if pipe.FormatWrite = pipeline.ChainFormatWrite(formatHooks...); pipe.FormatWrite != nil {
+		// logged above per hook
 	}
 
 	var schemaReload func()
