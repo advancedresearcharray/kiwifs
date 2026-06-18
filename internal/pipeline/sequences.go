@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -68,17 +69,25 @@ func normalizeSequenceDirs(dirs []string) []string {
 	return out
 }
 
+// normalizeSequencePath matches storage path cleaning so AppliesTo agrees with
+// Store.Read/Write (API paths may include a leading slash).
+func normalizeSequencePath(userPath string) string {
+	slash := strings.ReplaceAll(userPath, "\\", "/")
+	clean := path.Clean("/" + slash)
+	return strings.TrimPrefix(clean, "/")
+}
+
 // AppliesTo reports whether path is under a configured sequenced directory.
-func (s *SequenceStore) AppliesTo(path string) bool {
+func (s *SequenceStore) AppliesTo(userPath string) bool {
 	if s == nil || len(s.directories) == 0 {
 		return false
 	}
-	path = filepath.ToSlash(path)
+	userPath = normalizeSequencePath(userPath)
 	for _, dir := range s.directories {
-		if strings.HasPrefix(path, dir) {
+		if strings.HasPrefix(userPath, dir) {
 			return true
 		}
-		if path == strings.TrimSuffix(dir, "/") {
+		if userPath == strings.TrimSuffix(dir, "/") {
 			return true
 		}
 	}

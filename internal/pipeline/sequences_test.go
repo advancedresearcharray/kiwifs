@@ -262,15 +262,50 @@ func TestNormalizeSequenceDirs(t *testing.T) {
 func TestSequenceAppliesTo(t *testing.T) {
 	s := &SequenceStore{directories: normalizeSequenceDirs([]string{"events/", "audit/"})}
 	cases := map[string]bool{
-		"events/log.md":  true,
-		"audit/trail.md": true,
-		"notes/x.md":     false,
-		"events":         true,
+		"events/log.md":        true,
+		"/events/log.md":       true,
+		"./events/log.md":      true,
+		"audit/trail.md":       true,
+		"notes/x.md":           false,
+		"events":               true,
+		"events-other/log.md":  false,
+		"events_backup/log.md": false,
 	}
 	for path, want := range cases {
 		if got := s.AppliesTo(path); got != want {
 			t.Fatalf("AppliesTo(%q)=%v, want %v", path, got, want)
 		}
+	}
+}
+
+func TestSequenceAppendWithLeadingSlashPath(t *testing.T) {
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	seqStore, err := NewSequenceStore(dir, []string{"events/"})
+	if err != nil {
+		t.Fatalf("NewSequenceStore: %v", err)
+	}
+	p := New(store, versioning.NewNoop(), search.NewGrep(dir), nil, nil, nil, dir)
+	p.Sequences = seqStore
+
+	ctx := context.Background()
+	_, err = p.Append(ctx, "/events/log.md", "entry", "\n", "tester")
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	data, err := store.Read(ctx, "events/log.md")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !seqMarkerRe.Match(data) {
+		t.Fatalf("expected sequence marker for leading-slash path, got: %s", data)
+	}
+	if seqStore.Counter() != 1 {
+		t.Fatalf("counter=%d, want 1", seqStore.Counter())
 	}
 }
 
