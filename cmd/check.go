@@ -82,10 +82,21 @@ type checkOutput struct {
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
+	code := runCheckWithCode(cmd, args)
+	if code != 0 {
+		os.Exit(code)
+	}
+	return nil
+}
+
+// runCheckWithCode runs hygiene + sequence checks and returns an exit code
+// (0 ok, 1 issues found, 2 scan failure). Tests use this instead of runCheck
+// to avoid os.Exit.
+func runCheckWithCode(cmd *cobra.Command, args []string) int {
 	result, abs, _, asJSON, err := runKnowledgeScan(cmd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 
 	directories := []string(nil)
@@ -99,7 +110,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		seqResult, err = pipeline.CheckSequences(abs, directories)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
+			return 2
 		}
 	}
 
@@ -114,7 +125,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(out); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
+			return 2
 		}
 	} else {
 		fmt.Print(result.Summary())
@@ -126,7 +137,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	janitorFailed := result.HasErrors() || (failOnWarn && result.HasWarnings())
 	seqFailed := seqResult != nil && seqResult.HasIssues()
 	if janitorFailed || seqFailed {
-		os.Exit(1)
+		return 1
 	}
-	return nil
+	return 0
 }

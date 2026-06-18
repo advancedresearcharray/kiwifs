@@ -101,3 +101,53 @@ func TestCheckCommandNoSequencesConfigured(t *testing.T) {
 		t.Fatalf("expected clean scan, got %+v", result.Issues)
 	}
 }
+
+func TestRunCheckWithCode_SequenceGapFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".kiwi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `[sequences]
+directories = ["events/"]
+`
+	if err := os.WriteFile(filepath.Join(dir, ".kiwi", "config.toml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eventsDir := filepath.Join(dir, "events")
+	if err := os.MkdirAll(eventsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(eventsDir, "log.md"),
+		[]byte("<!-- seq:1 -->\na\n<!-- seq:3 -->\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(dir, ".kiwi", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "sequences.json"),
+		[]byte("{\n  \"counter\": 3\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	checkCmd.SetContext(context.Background())
+	checkCmd.SetArgs([]string{"--root", dir})
+	if err := checkCmd.ParseFlags([]string{"--root", dir}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if code := runCheckWithCode(checkCmd, nil); code != 1 {
+		t.Fatalf("runCheckWithCode=%d, want 1 for sequence gap", code)
+	}
+}
+
+func TestRunCheckWithCode_CleanWhenSequencesDisabled(t *testing.T) {
+	dir := t.TempDir()
+	checkCmd.SetContext(context.Background())
+	checkCmd.SetArgs([]string{"--root", dir})
+	if err := checkCmd.ParseFlags([]string{"--root", dir}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if code := runCheckWithCode(checkCmd, nil); code != 0 {
+		t.Fatalf("runCheckWithCode=%d, want 0", code)
+	}
+}
