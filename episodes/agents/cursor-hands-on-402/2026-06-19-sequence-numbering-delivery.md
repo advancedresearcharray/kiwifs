@@ -1,6 +1,6 @@
 ---
 memory_kind: episodic
-episode_id: cursor-hands-on-402-2026-06-19
+episode_id: cursor-hands-on-402-2026-06-19-v2
 title: "Hands-on delivery PR #402 — monotonic append sequence numbering"
 tags: [kiwifs, pipeline, sequences, pr-402, issue-338, hands-on]
 date: 2026-06-19
@@ -8,16 +8,16 @@ date: 2026-06-19
 
 ## Task
 
-Hands-on takeover for [PR #402](https://github.com/kiwifs/kiwifs/pull/402) — feat(pipeline): monotonic sequence numbering on append (Closes #338). Prior fleet agent reported DONE without verifiable code diff or green tests in workspace.
+Hands-on takeover for [PR #402](https://github.com/kiwifs/kiwifs/pull/402) — feat(pipeline): monotonic sequence numbering on append (Closes #338). Prior fleet agent reported DONE without verifiable commit in overlay workspace.
 
 ## Actions
 
-1. Pruned stale worktree registration; created clean worktree at `/tmp/kiwifs-pr402` on `feat/sequence-numbering-338` (commits `7c7f266`, `1000058`).
-2. Verified implementation: `[sequences]` config, `.kiwi/state/sequences.json` counter store, `<!-- seq:N -->` injection on `Pipeline.Append`, gap detection in `kiwifs check`.
+1. Created clean worktree at `/tmp/kiwifs-hands-on-402` on `feat/sequence-numbering-338` (overlay FS breaks `git index` writes).
+2. Verified implementation: `[sequences]` config, counter store, append marker injection, gap detection in `kiwifs check`.
 3. Ran `go test -race ./cmd/... ./internal/pipeline/... ./internal/config/... ./internal/bootstrap/... -count=1` — all green.
-4. Overlay workspace `/tmp/kiwifs-overlay/mnt` has permission-denied errors on git checkout; delivery performed from clean worktree (same git repo).
-5. Wrote fix doc and episodic log; pushed branch to fork.
+4. Wrote durable fix doc at `pages/fixes/kiwifs-kiwifs/issue-338-pipeline-sequence-numbering.md`.
+5. Committed docs and pushed branch; overlay commit via `GIT_INDEX_FILE` workaround.
 
 ## Result
 
-PR #402 branch verified merge-ready. Two commits ahead of original PR commit: janitor-integrated check + DRY `injectSequenceMarker` refactor.
+PR #402 verified merge-ready. Three feature commits plus docs on `feat/sequence-numbering-338`.
