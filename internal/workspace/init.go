@@ -32,6 +32,7 @@ var templateLabels = map[string]string{
 	"research":       "Research",
 	"tasks":          "Tasks",
 	"prompt-library": "Prompt Library",
+	"adr":            "Architecture Decision Records",
 	"blank":          "Blank",
 }
 
@@ -42,6 +43,7 @@ var templateDescriptions = map[string]string{
 	"research":       "Research notes, hypotheses, and literature tracking",
 	"tasks":          "Task tracking with priorities and status workflows",
 	"prompt-library": "Versioned prompt registry with schemas, eval rubrics, and DQL metrics",
+	"adr":            "Architecture Decision Records with MADR format, status workflow, and JSON schema",
 	"blank":          "Empty workspace with Kiwi config only",
 }
 
@@ -112,7 +114,7 @@ func Init(root, template string) error {
 	}
 
 	switch template {
-	case "knowledge", "wiki", "runbook", "research", "tasks", "prompt-library":
+	case "knowledge", "wiki", "runbook", "research", "tasks", "prompt-library", "adr":
 		if err := copyEmbedDir("templates/"+template, root); err != nil {
 			return err
 		}

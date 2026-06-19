@@ -1,0 +1,16 @@
+{
+  "name": "adr",
+  "states": [
+    { "name": "proposed", "color": "#3b82f6" },
+    { "name": "accepted", "color": "#22c55e" },
+    { "name": "deprecated", "color": "#f59e0b" },
+    { "name": "superseded", "color": "#6b7280", "terminal": true }
+  ],
+  "transitions": [
+    { "from": "proposed", "to": "accepted" },
+    { "from": "proposed", "to": "deprecated" },
+    { "from": "accepted", "to": "deprecated" },
+    { "from": "accepted", "to": "superseded" },
+    { "from": "deprecated", "to": "superseded" }
+  ]
+}

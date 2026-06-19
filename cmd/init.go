@@ -18,7 +18,7 @@ var initCmd = &cobra.Command{
 
 func init() {
 	initCmd.Flags().StringP("root", "r", "./knowledge", "directory to initialize")
-	initCmd.Flags().String("template", "knowledge", "template: knowledge | wiki | runbook | research | tasks | prompt-library | blank")
+	initCmd.Flags().String("template", "knowledge", "template: knowledge | wiki | runbook | research | tasks | prompt-library | adr | blank")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
