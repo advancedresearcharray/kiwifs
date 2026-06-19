@@ -26,21 +26,23 @@ var nonSpaceDirs = map[string]bool{
 }
 
 var templateLabels = map[string]string{
-	"knowledge": "Knowledge Base",
-	"wiki":      "Wiki",
-	"runbook":   "Runbook",
-	"research":  "Research",
-	"tasks":     "Tasks",
-	"blank":     "Blank",
+	"knowledge":      "Knowledge Base",
+	"wiki":           "Wiki",
+	"runbook":        "Runbook",
+	"research":       "Research",
+	"tasks":          "Tasks",
+	"prompt-library": "Prompt Library",
+	"blank":          "Blank",
 }
 
 var templateDescriptions = map[string]string{
-	"knowledge": "LLM-maintained knowledge base with schema, episodes, and agent playbook",
-	"wiki":      "Wiki with onboarding, ADRs, processes, and reference docs",
-	"runbook":   "Operational runbooks and incident response procedures",
-	"research":  "Research notes, hypotheses, and literature tracking",
-	"tasks":     "Task tracking with priorities and status workflows",
-	"blank":     "Empty workspace with Kiwi config only",
+	"knowledge":      "LLM-maintained knowledge base with schema, episodes, and agent playbook",
+	"wiki":           "Wiki with onboarding, ADRs, processes, and reference docs",
+	"runbook":        "Operational runbooks and incident response procedures",
+	"research":       "Research notes, hypotheses, and literature tracking",
+	"tasks":          "Task tracking with priorities and status workflows",
+	"prompt-library": "Versioned prompt registry with schemas, eval rubrics, and DQL metrics",
+	"blank":          "Empty workspace with Kiwi config only",
 }
 
 // EmbeddedTemplates returns the embedded template filesystem (for tests).
@@ -110,7 +112,7 @@ func Init(root, template string) error {
 	}
 
 	switch template {
-	case "knowledge", "wiki", "runbook", "research", "tasks":
+	case "knowledge", "wiki", "runbook", "research", "tasks", "prompt-library":
 		if err := copyEmbedDir("templates/"+template, root); err != nil {
 			return err
 		}

@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "title", "status"],
+  "properties": {
+    "type": { "const": "rubric" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "prompt": { "type": "string", "minLength": 1 },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "active", "archived"]
+    }
+  },
+  "additionalProperties": true
+}
