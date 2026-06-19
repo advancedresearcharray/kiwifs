@@ -34,6 +34,8 @@ go test ./internal/webui/... -run 'InjectBranding' -count=1                     
 cd ui && npm test -- --run src/lib/pageTitle.test.ts src/lib/branding.test.ts src/lib/uiConfigStore.test.ts  # PASS (11)
 ```
 
-## Branch
+## Branch / PR
 
-`feat/issue-345-branding-config` — commit local only (fleet publishes PR).
+- Branch: `feat/issue-345-branding-config`
+- Commit: `8dcf8ab`
+- PR: https://github.com/kiwifs/kiwifs/pull/404 (Closes #345)
