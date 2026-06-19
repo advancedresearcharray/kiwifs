@@ -57,8 +57,25 @@ func TestAppendSequenceNumbersLeadingSlashPath(t *testing.T) {
 	}
 }
 
+func TestAppendSequenceNumbersSkipsOtherDirectories(t *testing.T) {
+	p, store, _ := newTestPipeline(t)
+	p.SequenceDirs = []string{"events/"}
+	ctx := context.Background()
+
+	if _, err := p.Append(ctx, "notes/log.md", "entry", "\n", "test"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	body, err := store.Read(ctx, "notes/log.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "<!-- seq:") {
+		t.Fatalf("unexpected seq marker outside configured dir: %q", string(body))
+	}
+}
+
 func TestAppendSequenceNumbersConcurrent(t *testing.T) {
-	p, _, _ := newTestPipeline(t)
+	p, store, _ := newTestPipeline(t)
 	p.SequenceDirs = []string{"events/"}
 	ctx := context.Background()
 	path := "events/concurrent.md"
@@ -74,6 +91,25 @@ func TestAppendSequenceNumbersConcurrent(t *testing.T) {
 		if err := <-done; err != nil {
 			t.Fatalf("append: %v", err)
 		}
+	}
+
+	body, err := store.Read(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nums := extractSequenceMarkers(string(body))
+	if len(nums) != 4 {
+		t.Fatalf("expected 4 seq markers, got %d in %q", len(nums), string(body))
+	}
+	seen := make(map[int64]struct{}, len(nums))
+	for _, n := range nums {
+		if n < 1 || n > 4 {
+			t.Fatalf("seq out of range 1..4: %d", n)
+		}
+		if _, dup := seen[n]; dup {
+			t.Fatalf("duplicate seq assigned: %d", n)
+		}
+		seen[n] = struct{}{}
 	}
 }
 
