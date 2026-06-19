@@ -617,6 +617,12 @@ func TestBrandingConfigResolved(t *testing.T) {
 	if custom.ResolvedFaviconURL() != "https://cdn.example/favicon.ico" {
 		t.Fatalf("ResolvedFaviconURL = %q", custom.ResolvedFaviconURL())
 	}
+	if custom.ResolvedWelcomeTitle() != "Hi" {
+		t.Fatalf("ResolvedWelcomeTitle = %q", custom.ResolvedWelcomeTitle())
+	}
+	if custom.ResolvedWelcomeMessage() != "Go." {
+		t.Fatalf("ResolvedWelcomeMessage = %q", custom.ResolvedWelcomeMessage())
+	}
 	if !custom.HasCustomLogo() {
 		t.Fatal("expected HasCustomLogo")
 	}
@@ -630,6 +636,12 @@ func TestBrandingConfigResolved(t *testing.T) {
 	}
 	if empty.ResolvedFaviconURL() != DefaultBrandingFaviconURL {
 		t.Fatalf("default favicon = %q", empty.ResolvedFaviconURL())
+	}
+	if empty.ResolvedWelcomeTitle() != DefaultBrandingWelcomeTitle {
+		t.Fatalf("default welcome title = %q", empty.ResolvedWelcomeTitle())
+	}
+	if empty.ResolvedWelcomeMessage() != DefaultBrandingWelcomeMessage {
+		t.Fatalf("default welcome message = %q", empty.ResolvedWelcomeMessage())
 	}
 	if empty.HasCustomLogo() {
 		t.Fatal("expected no custom logo")

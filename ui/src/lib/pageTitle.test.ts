@@ -15,4 +15,8 @@ describe("formatDocumentTitle", () => {
       "Api Reference · Acme KB",
     );
   });
+
+  it("falls back to app name when titleize yields empty", () => {
+    expect(formatDocumentTitle(".md", "KiwiFS")).toBe("KiwiFS");
+  });
 });

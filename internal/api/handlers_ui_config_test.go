@@ -181,7 +181,11 @@ func TestUIConfig_BrandingDefaultsEmpty(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.Branding.Name != "" || res.Branding.LogoURL != "" {
+	if res.Branding.Name != "" ||
+		res.Branding.LogoURL != "" ||
+		res.Branding.FaviconURL != "" ||
+		res.Branding.WelcomeTitle != "" ||
+		res.Branding.WelcomeMessage != "" {
 		t.Fatalf("expected empty raw branding fields, got %+v", res.Branding)
 	}
 }
