@@ -1,57 +1,51 @@
 ---
-title: Research
-owner: researcher
-status: active
-tags: [meta, research]
+title: Research Library
+kiwi-view: true
+query: "TABLE _path AS Path, title AS Title, state AS State, year AS Year, venue AS Venue WHERE type = \"paper\" SORT state ASC, year DESC"
 ---
 
-# Research
+# Research Library
 
-Literature notes, experiment logs, and synthesis for your research.
+Track papers, reading progress, synthesis notes, and literature review drafts.
 
-## Research Questions
+## Reading Queue
 
-Open questions driving the research agenda. Each links to experiments
-attempting to answer it.
+Papers not yet finished (`unread` or `reading`):
 
-| ID | Question | Status | Experiments |
-|----|----------|--------|-------------|
-| Q1 | _What is the baseline performance?_ | answered | [[experiments/exp-001-baseline]] |
-| Q2 | _Does approach X improve over baseline?_ | unanswered | — |
+```dql
+TABLE title AS Title, authors AS Authors, state AS State, year AS Year
+WHERE type = "paper" AND (state = "unread" OR state = "reading")
+SORT year DESC
+```
 
-<!-- Add new questions here. Status: unanswered · investigating · answered · abandoned -->
+## All Papers
 
-## Experiments
-
-Chronological experiment logs, each prefixed `exp-NNN-<slug>.md`.
-
-| Experiment | Status | Result | Question |
-|------------|--------|--------|----------|
-| [[experiments/exp-001-baseline]] | completed | positive | Q1 |
-
-## Literature
-
-One note per paper or source, named by author/topic slug.
-
-| Paper | Year | Relevance | Status |
-|-------|------|-----------|--------|
-| [[literature/example-paper]] | 2025 | 4 | read |
+| Paper | Year | Venue | State |
+|-------|------|-------|-------|
+| [[papers/example-paper]] | 2017 | NeurIPS | incorporated |
+| [[papers/transformer-survey]] | 2021 | ACM Computing Surveys | summarized |
 
 ## Notes & Synthesis
 
-Free-form working notes connecting insights across experiments
-and literature.
+Cross-paper insights live in `notes/`.
 
-| Note | Type | Topic |
-|------|------|-------|
-| [[notes/synthesis-template]] | synthesis | Template for cross-source synthesis |
+| Note | Type | Status |
+|------|------|--------|
+| [[notes/synthesis-example]] | synthesis | draft |
+
+## Literature Reviews
+
+Draft and published reviews in `reviews/`.
+
+| Review | Status |
+|--------|--------|
+| [[reviews/literature-review-draft]] | draft |
 
 ## Workflow
 
-1. **Ask** a question → add it to the Research Questions table above
-2. **Read** a paper → create a note in `literature/` with DOI/URL
-3. **Design** an experiment → create in `experiments/` with status `planned`, link to question
-4. **Run** the experiment → update status to `running`, record observations
-5. **Analyze** → update status to `completed`, record results and conclusions
-6. **Synthesize** → connect findings across sources in `notes/`
-7. **Answer** → update question status, link to concluding experiment/note
+1. **Add** a paper → create `papers/<slug>.md` with `state: unread`
+2. **Read** → advance to `reading`, then `annotated` as you take notes
+3. **Summarize** → capture key findings at `summarized`
+4. **Incorporate** → link insights into `notes/` or `reviews/`, set `incorporated`
+5. **Synthesize** → write cross-paper notes in `notes/`
+6. **Review** → assemble literature review drafts in `reviews/`

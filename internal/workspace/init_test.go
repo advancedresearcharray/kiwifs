@@ -249,6 +249,27 @@ func TestInitPromptLibraryDoesNotOverwriteExisting(t *testing.T) {
 	}
 }
 
+func TestInitResearchTemplateIncludesReadingWorkflow(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "research-ws")
+	if err := Init(root, "research"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{
+		".kiwi/workflows/reading.json",
+		".kiwi/schemas/paper.json",
+		"papers/example-paper.md",
+		"notes/synthesis-example.md",
+		"reviews/literature-review-draft.md",
+		"index.md",
+		"SCHEMA.md",
+	} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Fatalf("missing %s: %v", p, err)
+		}
+	}
+}
+
 func TestInitUnknownTemplate(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "ws")
