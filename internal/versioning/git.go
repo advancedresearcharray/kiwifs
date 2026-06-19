@@ -404,6 +404,11 @@ func (g *Git) Diff(ctx context.Context, path, fromHash, toHash string) (string, 
 	return g.output(ctx, "git", "diff", fromHash, toHash, "--", path)
 }
 
+// WordDiff returns a word-level diff using git's porcelain word-diff format.
+func (g *Git) WordDiff(ctx context.Context, path, fromHash, toHash string) (string, error) {
+	return g.output(ctx, "git", "diff", "--word-diff=plain", fromHash, toHash, "--", path)
+}
+
 func (g *Git) GC(ctx context.Context) error {
 	return g.run(ctx, "git", "gc", "--auto")
 }
