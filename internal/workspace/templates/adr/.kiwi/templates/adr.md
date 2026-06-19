@@ -3,7 +3,7 @@ type: adr
 title: "[Decision Title]"
 status: proposed
 date: YYYY-MM-DD
-deciders: []
+deciders: [team-or-person]
 workflow: adr
 state: proposed
 domain:

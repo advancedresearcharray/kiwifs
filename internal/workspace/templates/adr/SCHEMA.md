@@ -34,9 +34,12 @@ Valid transitions (enforced by `.kiwi/workflows/adr.json`):
 - `accepted → deprecated` · `accepted → superseded`
 - `deprecated → superseded`
 
+Rejected transitions include backward steps (`accepted → proposed`), skipping
+states (`proposed → superseded`), and any exit from the terminal `superseded`
+state.
+
 Advance with `kiwi_workflow_advance` or by updating `state` through the
-workflow (invalid transitions are rejected). Skipping states (e.g.
-`proposed → superseded`) is rejected.
+workflow (invalid transitions are rejected).
 
 ## Frontmatter Fields
 
