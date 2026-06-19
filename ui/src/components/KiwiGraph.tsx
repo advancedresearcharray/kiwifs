@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Link2,
   Loader2,
   Maximize2,
   Route,
@@ -25,6 +26,17 @@ import {
   type KiwiGraphTheme,
 } from "@kw/lib/kiwiGraphTheme";
 import {
+  collectRelationTypes,
+  edgeMatchesRelationFilter,
+  loadRelationFilterFromSession,
+  nodeMatchesRelationFilter,
+  relationLabel,
+  resolveGraphLinks,
+  saveRelationFilterToSession,
+  shouldShowRelationFilters,
+  type ResolvedGraphLink,
+} from "@kw/lib/kiwiGraphFilters";
+import {
   communityPalette,
   computePageRank,
   pagerankToSize,
@@ -32,6 +44,7 @@ import {
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import { Button } from "@kw/components/ui/button";
+import { Badge } from "@kw/components/ui/badge";
 import { Card } from "@kw/components/ui/card";
 import { Input } from "@kw/components/ui/input";
 import {
@@ -83,6 +96,7 @@ interface GNode {
 interface GLink {
   source: string | GNode;
   target: string | GNode;
+  relation: string;
 }
 
 
@@ -151,8 +165,10 @@ function topDir(path: string): string {
 type BuiltGraph = {
   nodes: GNode[];
   links: GLink[];
+  resolvedLinks: ResolvedGraphLink[];
   dirs: string[];
   tags: string[];
+  relations: string[];
   communityMap: Map<number, { color: string; count: number; topDir: string }>;
   performance: GraphPerformanceProfile;
 };
@@ -236,17 +252,12 @@ function buildGraphData(
   });
 
   const nodeIds = new Set(nodes.map((n) => n.id));
-  const links: GLink[] = [];
-  const seen = new Set<string>();
-  for (const e of resp.edges) {
-    if (!nodeIds.has(e.source)) continue;
-    const resolved = resolver(e.target);
-    if (!resolved || !nodeIds.has(resolved) || resolved === e.source) continue;
-    const key = [e.source, resolved].sort().join("||");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    links.push({ source: e.source, target: resolved });
-  }
+  const resolvedLinks = resolveGraphLinks(resp.edges, resolver, nodeIds);
+  const links: GLink[] = resolvedLinks.map((l) => ({
+    source: l.source,
+    target: l.target,
+    relation: l.relation,
+  }));
 
   const communityMap = new Map<
     number,
@@ -262,8 +273,10 @@ function buildGraphData(
   return {
     nodes,
     links,
+    resolvedLinks,
     dirs: Array.from(dirSet).sort(),
     tags: Array.from(tagSet).sort(),
+    relations: collectRelationTypes(resp.edges),
     communityMap,
     performance: getGraphPerformanceProfile(nodes.length),
   };
@@ -318,6 +331,11 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
   const [pathSource, setPathSource] = useState<string | null>(null);
   const [pathTarget, setPathTarget] = useState<string | null>(null);
   const [foundPath, setFoundPath] = useState<string[] | null>(null);
+  const [relationFilter, setRelationFilter] = useState(loadRelationFilterFromSession);
+
+  useEffect(() => {
+    saveRelationFilterToSession(relationFilter);
+  }, [relationFilter]);
 
   // Fetch graph data
   useEffect(() => {
@@ -411,13 +429,27 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     [dirFilter, tagFilter],
   );
 
+  const relationFilterActive = relationFilter.size > 0;
+
+  const nodeMatchesRelation = useCallback(
+    (node: GNode) =>
+      !relationFilterActive ||
+      nodeMatchesRelationFilter(node.id, built?.resolvedLinks ?? [], relationFilter),
+    [built?.resolvedLinks, relationFilter, relationFilterActive],
+  );
+
   const linkVisible = useCallback(
     (link: GLink) => {
       const source = link.source as GNode;
       const target = link.target as GNode;
-      return showLinks && nodeVisible(source) && nodeVisible(target);
+      return (
+        showLinks &&
+        nodeVisible(source) &&
+        nodeVisible(target) &&
+        edgeMatchesRelationFilter(link.relation, relationFilter)
+      );
     },
-    [nodeVisible, showLinks],
+    [nodeVisible, relationFilter, showLinks],
   );
 
   const getGraphApi = useCallback(
@@ -523,12 +555,13 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       const queryMatch = nodeMatchesQuery(node);
 
       if (isActive || isHovered || onPath || (qLower && queryMatch)) return node.color;
+      if (relationFilterActive && !nodeMatchesRelation(node)) return "#243042";
       if (pathSet && !onPath) return "#243042";
       if (hovered && !isNeighbor) return "#243042";
       if (qLower && !queryMatch) return "#243042";
       return node.color;
     },
-    [activePath, adj, hovered, nodeMatchesQuery, pathSet, qLower],
+    [activePath, adj, hovered, nodeMatchesQuery, nodeMatchesRelation, pathSet, qLower, relationFilterActive],
   );
 
   const linkColor = useCallback(
@@ -846,14 +879,73 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
           <Route className="h-3 w-3" />
           Find path
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-6 px-2 text-xs opacity-50 cursor-not-allowed"
-          disabled
-        >
-          Show semantic edges
-        </Button>
+        {built && shouldShowRelationFilters(built.relations) && (
+          <div className="flex items-center gap-1 flex-wrap">
+            <Link2 className="h-3 w-3 text-muted-foreground" />
+            <span className="text-muted-foreground">Link types</span>
+            <Badge
+              variant={relationFilter.size === 0 ? "default" : "outline"}
+              className="cursor-pointer select-none h-6 px-2"
+              role="button"
+              tabIndex={0}
+              onClick={() => setRelationFilter(new Set())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setRelationFilter(new Set());
+                }
+              }}
+            >
+              All
+            </Badge>
+            {built.relations.map((relation) => {
+              const selected =
+                relationFilter.size > 0 && relationFilter.has(relation);
+              return (
+                <Badge
+                  key={relation || "__wiki__"}
+                  variant={selected ? "default" : "outline"}
+                  className="cursor-pointer select-none h-6 px-2"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setRelationFilter((current) => {
+                      if (current.size === 0) {
+                        return new Set([relation]);
+                      }
+                      const next = new Set(current);
+                      if (next.has(relation)) {
+                        next.delete(relation);
+                        return next;
+                      }
+                      next.add(relation);
+                      return next;
+                    });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setRelationFilter((current) => {
+                        if (current.size === 0) {
+                          return new Set([relation]);
+                        }
+                        const next = new Set(current);
+                        if (next.has(relation)) {
+                          next.delete(relation);
+                          return next;
+                        }
+                        next.add(relation);
+                        return next;
+                      });
+                    }
+                  }}
+                >
+                  {relationLabel(relation)}
+                </Badge>
+              );
+            })}
+          </div>
+        )}
         {pathFindActive && (
           <span className="text-muted-foreground">
             {!pathSource

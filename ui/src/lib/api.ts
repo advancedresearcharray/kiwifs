@@ -72,7 +72,7 @@ export type BacklinkEntry = {
 };
 
 export type GraphNode = { path: string; tags?: string[] };
-export type GraphEdge = { source: string; target: string };
+export type GraphEdge = { source: string; target: string; relation?: string };
 export type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] };
 
 export type CommentAnchor = {
@@ -609,7 +609,6 @@ export const api = {
       "graph" | "kanban" | "canvas" | "whiteboard" | "timeline" | "bases" | "data_sources",
       boolean
     >>;
-    toolbarViews?: string[] | null;
   }> {
     return request(`${kiwiBase()}/ui-config`);
   },
