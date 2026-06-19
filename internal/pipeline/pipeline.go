@@ -127,6 +127,10 @@ type Pipeline struct {
 	// Versioner.Commit; the index catches up within the batch window
 	// (~200ms). Set via pipeline.New options or injected by bootstrap.
 	AsyncIdx *AsyncIndexer
+
+	// SequenceDirs lists path prefixes that receive monotonic seq markers on append.
+	SequenceDirs []string
+	seqStore     *sequenceStore
 }
 
 // Result is returned from Write so callers can set ETag headers, log, etc.
@@ -223,6 +227,7 @@ func New(
 		Vectors:        vectors,
 		Root:           root,
 		uncommittedLog: ulog,
+		seqStore:       newSequenceStore(root),
 	}
 }
 
@@ -713,6 +718,16 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 		separator = "\n"
 	}
 	actor = coalesce(actor)
+
+	if p.seqStore != nil && len(p.SequenceDirs) > 0 {
+		if key := sequenceDirKey(path, p.SequenceDirs); key != "" {
+			seq, err := p.seqStore.next(key)
+			if err != nil {
+				return Result{}, fmt.Errorf("sequence counter: %w", err)
+			}
+			content = fmt.Sprintf("<!-- seq:%d -->\n%s", seq, content)
+		}
+	}
 
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()

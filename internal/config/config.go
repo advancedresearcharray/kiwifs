@@ -29,6 +29,7 @@ type Config struct {
 	Schema     SchemaConfig     `toml:"schema"`
 	Lint       LintConfig       `toml:"lint"`
 	Workflow   WorkflowConfig   `toml:"workflow"`
+	Sequences  SequencesConfig  `toml:"sequences"`
 	Drafts     DraftsConfig     `toml:"drafts"`
 	Audit      AuditConfig      `toml:"audit"`
 	Import     ImportConfig     `toml:"import"`
@@ -170,6 +171,10 @@ func (l LintConfig) IsRejectErrors() bool {
 type WorkflowConfig struct {
 	Transitions        map[string][]string `toml:"transitions"`
 	EnforceTransitions bool                `toml:"enforce_transitions"`
+}
+
+type SequencesConfig struct {
+	Directories []string `toml:"directories"`
 }
 
 type DraftsConfig struct {
