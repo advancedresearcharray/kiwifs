@@ -61,6 +61,44 @@ func TestIndexMetaStoresFrontmatter(t *testing.T) {
 	}
 }
 
+func TestIndexMetaExtractsTemplateParameters(t *testing.T) {
+	s := newTestSQLite(t)
+	content := []byte(`---
+title: Prompt
+---
+Use {{language}} to translate {{text}}.
+
+` + "```" + `
+{{ignored}}
+` + "```" + `
+`)
+	if err := s.IndexMeta(ctxBG, "prompts/translate.md", content); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+	var fm string
+	if err := s.readDB.QueryRow(`SELECT frontmatter FROM file_meta WHERE path = ?`, "prompts/translate.md").Scan(&fm); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(fm), &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	params, ok := parsed["parameters"].([]any)
+	if !ok || len(params) != 2 {
+		t.Fatalf("parameters: %+v", parsed["parameters"])
+	}
+	if params[0] != "language" || params[1] != "text" {
+		t.Fatalf("params order: %+v", params)
+	}
+	results, err := s.QueryMeta(ctxBG, []MetaFilter{{Field: "$.parameters", Op: "LIKE", Value: "%language%"}}, "", "", 0, 0)
+	if err != nil {
+		t.Fatalf("QueryMeta: %v", err)
+	}
+	if len(results) != 1 || results[0].Path != "prompts/translate.md" {
+		t.Fatalf("QueryMeta results: %+v", results)
+	}
+}
+
 func TestIndexMetaUpsert(t *testing.T) {
 	s := newTestSQLite(t)
 

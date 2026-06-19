@@ -919,6 +919,9 @@ func (s *SQLite) IndexMeta(ctx context.Context, path string, content []byte) err
 	if fm == nil {
 		fm = map[string]any{}
 	}
+	if params := markdown.ExtractTemplateParameters(string(markdown.BodyAfterFrontmatter(content))); len(params) > 0 {
+		fm["parameters"] = params
+	}
 	if s.computedFields {
 		body := []byte(markdown.BodyAfterFrontmatter(content))
 		fm["_word_count"] = len(strings.Fields(string(body)))
