@@ -1,0 +1,21 @@
+[server]
+port = 3333
+host = "127.0.0.1"
+
+[storage]
+root = "."
+
+[search]
+engine = "sqlite"
+
+[versioning]
+strategy = "git"
+
+[lint]
+require_frontmatter = true
+
+[links]
+typed_fields = ["cites", "contradicts", "extends", "reviews"]
+
+[auth]
+type = "none"

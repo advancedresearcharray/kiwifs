@@ -8,7 +8,7 @@ doi: "10.1145/3505244"
 bibtex_key: lin2021survey
 abstract: "Transformers have achieved great success in many AI fields. This survey provides a comprehensive review of Transformer variants and applications."
 tags: [survey, transformers, deep-learning]
-cites: ["[[example-paper]]"]
+cites: ["[[papers/example-paper]]"]
 workflow: reading
 state: summarized
 ---

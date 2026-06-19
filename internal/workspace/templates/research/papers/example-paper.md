@@ -8,7 +8,7 @@ doi: "10.48550/arXiv.1706.03762"
 bibtex_key: vaswani2017attention
 abstract: "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks. We propose the Transformer, based solely on attention mechanisms."
 tags: [transformers, attention, nlp]
-cites: ["[[transformer-survey]]"]
+cites: ["[[papers/transformer-survey]]"]
 workflow: reading
 state: incorporated
 ---

@@ -24,7 +24,7 @@ func TestListInitTemplatesIncludesKnown(t *testing.T) {
 		}
 		ids[item.ID] = true
 	}
-	for _, want := range []string{"blank", "knowledge", "wiki", "prompt-library"} {
+	for _, want := range []string{"blank", "knowledge", "wiki", "research", "prompt-library"} {
 		if !ids[want] {
 			t.Fatalf("missing template %q in %v", want, list)
 		}
@@ -180,6 +180,13 @@ func TestKnowledgeTemplateEmbedded(t *testing.T) {
 		"templates/prompt-library/system-prompts/code-assistant.md",
 		"templates/prompt-library/task-prompts/summarize.md",
 		"templates/prompt-library/evaluation/summarize-rubric.md",
+		"templates/research/SCHEMA.md",
+		"templates/research/index.md",
+		"templates/research/playbook.md",
+		"templates/research/.kiwi/schemas/paper.json",
+		"templates/research/.kiwi/workflows/reading.json",
+		"templates/research/.kiwi/config.toml",
+		"templates/research/papers/example-paper.md",
 	}
 	for _, p := range paths {
 		if _, err := fs.Stat(templates, p); err != nil {
@@ -258,6 +265,8 @@ func TestInitResearchTemplateIncludesReadingWorkflow(t *testing.T) {
 	for _, p := range []string{
 		".kiwi/workflows/reading.json",
 		".kiwi/schemas/paper.json",
+		".kiwi/config.toml",
+		".kiwi/playbook.md",
 		"papers/example-paper.md",
 		"notes/synthesis-example.md",
 		"reviews/literature-review-draft.md",
