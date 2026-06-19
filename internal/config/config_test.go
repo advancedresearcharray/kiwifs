@@ -501,6 +501,48 @@ func TestUIConfigSidebarResolvedSectionsSkipsEmptyLabels(t *testing.T) {
 	}
 }
 
+func TestUIToolbarViewsTOML(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui.toolbar]
+views = ["kanban", "graph", "bases"]
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"kanban", "graph", "bases"}
+	if len(cfg.UI.Toolbar.Views) != len(want) {
+		t.Fatalf("views = %v, want %v", cfg.UI.Toolbar.Views, want)
+	}
+	for i, v := range want {
+		if cfg.UI.Toolbar.Views[i] != v {
+			t.Fatalf("views[%d] = %q, want %q", i, cfg.UI.Toolbar.Views[i], v)
+		}
+	}
+}
+
+func TestUIToolbarViewsUnset(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui]
+theme_locked = true
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.UI.Toolbar.Views != nil {
+		t.Fatalf("views should be nil when unset, got %v", cfg.UI.Toolbar.Views)
+	}
+}
+
 func TestLinksConfigTypedLinkFields(t *testing.T) {
 	t.Parallel()
 	wantDefault := links.DefaultTypedLinkFields()

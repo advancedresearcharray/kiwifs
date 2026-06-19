@@ -35,7 +35,12 @@ import { KiwiRecentStart } from "./components/KiwiRecentStart";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
-import { dispatchPageChanged } from "./lib/hostConfig";
+import { dispatchPageChanged, getToolbarBuiltinViews } from "./lib/hostConfig";
+import {
+  filterToolbarViewsByFeatures,
+  resolveToolbarViews,
+  type ToolbarBuiltinViewId,
+} from "./lib/toolbarComposition";
 import { useRecentPages } from "./hooks/useRecentPages";
 import { useStarredPages } from "./hooks/useStarredPages";
 import { usePinnedPages } from "./hooks/usePinnedPages";
@@ -133,6 +138,14 @@ export default function App() {
   const { prefs, loaded: prefsLoaded, updatePreferences } = usePreferences();
   const branding = useUIConfigStore((s) => s.branding);
   const features = useUIConfigStore((s) => s.features);
+  const serverToolbarViews = useUIConfigStore((s) => s.toolbarViews);
+  const toolbarViews = filterToolbarViewsByFeatures(
+    resolveToolbarViews(
+      serverToolbarViews === undefined ? null : serverToolbarViews,
+      getToolbarBuiltinViews(),
+    ),
+    features,
+  );
 
   useEffect(() => {
     if (!prefsLoaded || prefs.sidebar_collapsed === undefined) return;
@@ -640,41 +653,44 @@ const handleSpaceSwitch = useCallback(() => {
             <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label={`New page (${formatChordDisplay(bindings.new_page)})`}>
               <Plus className="h-4 w-4" />
             </ToolbarButton>
-            {features.graph && (
-              <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
-                <Network className="h-4 w-4" />
-              </ToolbarButton>
-            )}
-            {features.bases && (
-              <ToolbarButton onClick={() => { const next = !basesOpen; closeAllViews(); setBasesOpen(next); }} label="Bases">
-                <LayoutGrid className="h-4 w-4" />
-              </ToolbarButton>
-            )}
-            {features.canvas && (
-              <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasOpen(next); }} label="Canvas">
-                <Presentation className="h-4 w-4" />
-              </ToolbarButton>
-            )}
-            {features.whiteboard && (
-              <ToolbarButton onClick={() => { const next = !whiteboardOpen; closeAllViews(); setWhiteboardOpen(next); }} label="Whiteboard">
-                <PenTool className="h-4 w-4" />
-              </ToolbarButton>
-            )}
-            {features.timeline && (
-              <ToolbarButton onClick={() => { const next = !timelineOpen; closeAllViews(); setTimelineOpen(next); }} label="Timeline">
-                <Clock4 className="h-4 w-4" />
-              </ToolbarButton>
-            )}
-            {features.kanban && (
-              <ToolbarButton onClick={() => { const next = !kanbanOpen; closeAllViews(); setKanbanOpen(next); }} label="Kanban">
-                <Columns3 className="h-4 w-4" />
-              </ToolbarButton>
-            )}
-            {features.data_sources && (
-              <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
-                <Database className="h-4 w-4" />
-              </ToolbarButton>
-            )}
+            <BuiltinToolbarViews
+              views={toolbarViews}
+              onToggle={(id) => {
+                const wasOpen = {
+                  graph: graphOpen,
+                  bases: basesOpen,
+                  canvas: canvasOpen,
+                  whiteboard: whiteboardOpen,
+                  timeline: timelineOpen,
+                  kanban: kanbanOpen,
+                  data: dataOpen,
+                }[id];
+                closeAllViews();
+                switch (id) {
+                  case "graph":
+                    setGraphOpen(!wasOpen);
+                    break;
+                  case "bases":
+                    setBasesOpen(!wasOpen);
+                    break;
+                  case "canvas":
+                    setCanvasOpen(!wasOpen);
+                    break;
+                  case "whiteboard":
+                    setWhiteboardOpen(!wasOpen);
+                    break;
+                  case "timeline":
+                    setTimelineOpen(!wasOpen);
+                    break;
+                  case "kanban":
+                    setKanbanOpen(!wasOpen);
+                    break;
+                  case "data":
+                    setDataOpen(!wasOpen);
+                    break;
+                }
+              }}
+            />
             <HostToolbarActions />
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
@@ -971,6 +987,46 @@ function WelcomeScreen({
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── Built-in toolbar view buttons ── */
+
+const BUILTIN_TOOLBAR_BUTTONS: Record<
+  ToolbarBuiltinViewId,
+  { label: string; Icon: typeof Network }
+> = {
+  graph: { label: "Knowledge graph", Icon: Network },
+  bases: { label: "Bases", Icon: LayoutGrid },
+  canvas: { label: "Canvas", Icon: Presentation },
+  whiteboard: { label: "Whiteboard", Icon: PenTool },
+  timeline: { label: "Timeline", Icon: Clock4 },
+  kanban: { label: "Kanban", Icon: Columns3 },
+  data: { label: "Data sources", Icon: Database },
+};
+
+function BuiltinToolbarViews({
+  views,
+  onToggle,
+}: {
+  views: ToolbarBuiltinViewId[];
+  onToggle: (id: ToolbarBuiltinViewId) => void;
+}) {
+  return (
+    <>
+      {views.map((id) => {
+        const { label, Icon } = BUILTIN_TOOLBAR_BUTTONS[id];
+        return (
+          <ToolbarButton
+            key={id}
+            onClick={() => onToggle(id)}
+            label={label}
+          >
+            <Icon className="h-4 w-4" />
+          </ToolbarButton>
+        );
+      })}
+    </>
   );
 }
 
