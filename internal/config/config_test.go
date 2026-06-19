@@ -507,6 +507,10 @@ func TestLinksConfigTypedLinkFields(t *testing.T) {
 	if got := cfg.TypedLinkFields(); len(got) != 2 || got[0] != "cites" || got[1] != "extends" {
 		t.Fatalf("configured: %+v", got)
 	}
+	cfg = LinksConfig{TypedFields: []string{"cites", "bad;DROP", "extends"}}
+	if got := cfg.TypedLinkFields(); len(got) != 2 || got[0] != "cites" || got[1] != "extends" {
+		t.Fatalf("sanitized: %+v", got)
+	}
 }
 
 func TestLoadLinksTypedFields(t *testing.T) {

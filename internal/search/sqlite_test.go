@@ -1029,3 +1029,174 @@ func TestReindexTypedFieldsBacklinks(t *testing.T) {
 		t.Fatalf("backlinks: %+v", backlinks)
 	}
 }
+
+func TestIndexMetaClearsRemovedTypedFieldConfig(t *testing.T) {
+	s := newTestSQLite(t)
+	s.typedLinkFields = []string{"cites", "extends"}
+
+	content := []byte("---\ncites: pages/b.md\nextends: pages/c.md\n---\n# A\n")
+	if err := s.IndexMeta(ctxBG, "pages/a.md", content); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	relations := map[string]string{}
+	for _, e := range edges {
+		if e.Source == "pages/a.md" {
+			relations[e.Target] = e.Relation
+		}
+	}
+	if relations["pages/b.md"] != "cites" || relations["pages/c.md"] != "extends" {
+		t.Fatalf("initial typed edges: %+v", relations)
+	}
+
+	// Simulate shrinking [links] typed_fields — extends links must not linger.
+	s.typedLinkFields = []string{"cites"}
+	if err := s.IndexMeta(ctxBG, "pages/a.md", content); err != nil {
+		t.Fatalf("IndexMeta after config shrink: %v", err)
+	}
+
+	edges, err = s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges after shrink: %v", err)
+	}
+	relations = map[string]string{}
+	for _, e := range edges {
+		if e.Source == "pages/a.md" {
+			relations[e.Target] = e.Relation
+		}
+	}
+	if relations["pages/c.md"] != "" {
+		t.Fatalf("extends edge should be cleared after field removed from config, got %+v", relations)
+	}
+	if relations["pages/b.md"] != "cites" {
+		t.Fatalf("cites edge should remain, got %+v", relations)
+	}
+}
+
+func TestIndexMetaClearsRemovedTypedFieldFromFrontmatter(t *testing.T) {
+	s := newTestSQLite(t)
+	s.typedLinkFields = []string{"cites", "extends"}
+
+	initial := []byte("---\ncites: pages/b.md\nextends: pages/c.md\n---\n# A\n")
+	if err := s.IndexMeta(ctxBG, "pages/a.md", initial); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+
+	updated := []byte("---\ncites: pages/b.md\n---\n# A\n")
+	if err := s.IndexMeta(ctxBG, "pages/a.md", updated); err != nil {
+		t.Fatalf("IndexMeta after field removed: %v", err)
+	}
+
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	relations := map[string]string{}
+	for _, e := range edges {
+		if e.Source == "pages/a.md" {
+			relations[e.Target] = e.Relation
+		}
+	}
+	if relations["pages/c.md"] != "" {
+		t.Fatalf("extends edge should be cleared when frontmatter drops field, got %+v", relations)
+	}
+	if relations["pages/b.md"] != "cites" {
+		t.Fatalf("cites edge should remain, got %+v", relations)
+	}
+}
+
+func TestIssue323TypedFieldsAcceptance(t *testing.T) {
+	// Covers issue #323 acceptance: all configured UC fields, string + array
+	// values, missing fields ignored, contradicts default preserved.
+	fields := []string{"supersedes", "superseded_by", "variant_of", "cites", "extends", "services"}
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	s, err := NewSQLiteWithTypedFields(dir, store, fields)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer s.Close()
+
+	content := []byte(`---
+supersedes: "[[pages/old-adr.md]]"
+superseded_by: pages/new-adr.md
+variant_of: ["[[pages/base-prompt.md]]", "pages/alt-prompt.md"]
+cites: pages/paper.md
+extends: []
+services: "[[runbooks/oncall.md|on-call]]"
+title: acceptance fixture
+---
+See [[pages/peer.md]] in the body.
+`)
+	if err := s.IndexLinks(ctxBG, "pages/fixture.md", links.Extract(content)); err != nil {
+		t.Fatalf("IndexLinks: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/fixture.md", content); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+
+	wantTyped := map[string]string{
+		"pages/old-adr.md":    "supersedes",
+		"pages/new-adr.md":    "superseded_by",
+		"pages/base-prompt.md": "variant_of",
+		"pages/alt-prompt.md": "variant_of",
+		"pages/paper.md":      "cites",
+		"runbooks/oncall.md":  "services",
+	}
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	gotTyped := map[string]string{}
+	var wikiTarget string
+	for _, e := range edges {
+		if e.Source != "pages/fixture.md" {
+			continue
+		}
+		if e.Relation == "" {
+			wikiTarget = e.Target
+			continue
+		}
+		gotTyped[e.Target] = e.Relation
+	}
+	if wikiTarget != "pages/peer.md" {
+		t.Fatalf("wiki link target: got %q want pages/peer.md", wikiTarget)
+	}
+	if len(gotTyped) != len(wantTyped) {
+		t.Fatalf("typed edges: got %+v want %+v", gotTyped, wantTyped)
+	}
+	for target, rel := range wantTyped {
+		if gotTyped[target] != rel {
+			t.Fatalf("target %q: got relation %q want %q", target, gotTyped[target], rel)
+		}
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/paper.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != "cites" || backlinks[0].Path != "pages/fixture.md" {
+		t.Fatalf("cites backlink: %+v", backlinks)
+	}
+
+	// Default config keeps contradicts when typed_fields is unset.
+	defaultCfg := newTestSQLite(t)
+	contradictsPage := []byte("---\ncontradicts: pages/target.md\n---\n# note\n")
+	if err := defaultCfg.IndexMeta(ctxBG, "pages/note.md", contradictsPage); err != nil {
+		t.Fatalf("IndexMeta contradicts: %v", err)
+	}
+	bl, err := defaultCfg.Backlinks(ctxBG, "pages/target.md")
+	if err != nil {
+		t.Fatalf("Backlinks contradicts: %v", err)
+	}
+	if len(bl) != 1 || bl[0].Relation != links.RelationContradicts {
+		t.Fatalf("contradicts backlink: %+v", bl)
+	}
+}

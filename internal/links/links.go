@@ -23,6 +23,29 @@ import (
 // RelationContradicts is the link relation for frontmatter contradicts: fields.
 const RelationContradicts = "contradicts"
 
+// validTypedFieldNameRe limits typed-link field names to safe frontmatter keys.
+// Values are bound as SQL parameters; this guards config against odd keys.
+var validTypedFieldNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`)
+
+// ValidTypedFieldName reports whether name is a safe typed-link frontmatter key.
+func ValidTypedFieldName(name string) bool {
+	return validTypedFieldNameRe.MatchString(name)
+}
+
+// SanitizeTypedLinkFields drops invalid configured field names.
+func SanitizeTypedLinkFields(fields []string) []string {
+	if len(fields) == 0 {
+		return fields
+	}
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if ValidTypedFieldName(field) {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
 // Link is one indexed outbound reference from a source page.
 type Link struct {
 	Target   string
@@ -311,7 +334,7 @@ func ExtractTypedFields(fm map[string]any, fields []string) []Link {
 	}
 	var out []Link
 	for _, field := range fields {
-		if field == "" {
+		if !ValidTypedFieldName(field) {
 			continue
 		}
 		for _, t := range ExtractTypedField(fm, field) {
