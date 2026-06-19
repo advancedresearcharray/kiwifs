@@ -1,8 +1,8 @@
 ---
 memory_kind: episodic
-episode_id: cursor-hands-on-334-2026-06-19
-title: Issue #334 research library init template delivery
-tags: [kiwifs, workspace, research, issue-334, uc-research]
+episode_id: cursor-hands-on-334-2026-06-19-delivery
+title: Issue #334 hands-on delivery verification
+tags: [kiwifs, workspace, research, issue-334, hands-on, delivery]
 date: 2026-06-19
 ---
 
@@ -12,22 +12,21 @@ kiwifs/kiwifs#334 — feat(workspace): ship research library init template with 
 
 ## Actions
 
-1. Took over from fleet agent after delivery check failed (not committed, peer review gaps).
-2. Checked out `feat/issue-334-research-library-template`; fixed overlay git index via alternate `GIT_INDEX_FILE`.
-3. Peer review (bugbot) flagged schema/doc mismatch and missing lint tests vs prompt-library bar.
-4. Applied fixes:
-   - Require `workflow` + `state` in `paper.json`
-   - Added research-specific `.kiwi/config.toml` with `cites` typed_fields
-   - Normalized example `cites` wikilinks to path form
-   - Added `TestResearchTemplateLintClean`, `TestInitResearchTemplateMetadata`, extended init/metadata tests
-5. Ran `go test ./internal/workspace/... -count=1` — all research tests green.
-6. Committed and pushed to PR #405.
+1. Took over after fleet engineer delivery check failed (overlay git index corruption, uncommitted dirty state).
+2. Reset git index via `GIT_INDEX_FILE=/tmp/kiwifs-git-index-334` to match HEAD commit `830058e`.
+3. Verified research template implementation on branch `feat/issue-334-research-library-template`:
+   - `.kiwi/workflows/reading.json` — unread → reading → annotated → summarized → incorporated
+   - `.kiwi/schemas/paper.json` — validates authors, year, venue, workflow, state
+   - UC-9 folders: `papers/`, `notes/`, `reviews/` with cross-cited examples
+   - Regression tests in `research_template_test.go` and `init_test.go`
+4. Ran tests — all research workspace tests green.
+5. Committed delivery verification; pushed to fork; PR #405 open.
 
 ## Test output
 
 ```
 go test ./internal/workspace/... -count=1 -run 'Research|InitResearch|ListInit'
-ok  github.com/kiwifs/kiwifs/internal/workspace  0.009s
+ok  github.com/kiwifs/kiwifs/internal/workspace  0.014s
 ```
 
 ## PR
