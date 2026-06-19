@@ -46,6 +46,20 @@ type Config struct {
 	// ValidateWriteRules from [[validate_write]] — config-driven write
 	// guards keyed on existing file frontmatter (append-only, immutable ADRs).
 	ValidateWriteRules []ValidateWriteRuleConfig `toml:"validate_write"`
+	// FormatHooks from [format_hooks.*] — pipeline FormatWrite extensions.
+	FormatHooks FormatHooksConfig `toml:"format_hooks"`
+}
+
+// FormatHooksConfig groups optional FormatWrite hooks declared in config.toml.
+type FormatHooksConfig struct {
+	AutoSequence AutoSequenceConfig `toml:"auto_sequence"`
+}
+
+// AutoSequenceConfig auto-assigns the next numeric frontmatter field value
+// for files written under directory when the field is absent.
+type AutoSequenceConfig struct {
+	Directory string `toml:"directory"`
+	Field     string `toml:"field"`
 }
 
 // B.3 — Audit log config.

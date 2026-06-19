@@ -195,6 +195,41 @@ func TestQueryMeta(t *testing.T) {
 	}
 }
 
+func TestMaxFrontmatterIntInDirectory(t *testing.T) {
+	s := newTestSQLite(t)
+	ctx := ctxBG
+
+	if err := s.IndexMeta(ctx, "decisions/one.md", []byte("---\nadr_number: 3\n---\n# One\n")); err != nil {
+		t.Fatalf("IndexMeta one: %v", err)
+	}
+	if err := s.IndexMeta(ctx, "decisions/two.md", []byte("---\nadr_number: 7\n---\n# Two\n")); err != nil {
+		t.Fatalf("IndexMeta two: %v", err)
+	}
+	if err := s.IndexMeta(ctx, "notes/other.md", []byte("---\nadr_number: 99\n---\n# Other\n")); err != nil {
+		t.Fatalf("IndexMeta other: %v", err)
+	}
+
+	max, err := s.MaxFrontmatterIntInDirectory(ctx, "decisions/", "adr_number")
+	if err != nil {
+		t.Fatalf("MaxFrontmatterIntInDirectory: %v", err)
+	}
+	if max != 7 {
+		t.Fatalf("max = %d, want 7", max)
+	}
+
+	empty, err := s.MaxFrontmatterIntInDirectory(ctx, "missing/", "adr_number")
+	if err != nil {
+		t.Fatalf("empty dir: %v", err)
+	}
+	if empty != 0 {
+		t.Fatalf("empty max = %d, want 0", empty)
+	}
+
+	if _, err := s.MaxFrontmatterIntInDirectory(ctx, "decisions/", "adr_number; DROP TABLE"); err == nil {
+		t.Fatalf("expected error for invalid field")
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

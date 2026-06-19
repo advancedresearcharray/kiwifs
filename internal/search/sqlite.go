@@ -1187,6 +1187,49 @@ func (s *SQLite) RemoveMeta(ctx context.Context, path string) error {
 	return err
 }
 
+// MaxFrontmatterIntInDirectory returns the highest integer stored in field
+// across file_meta rows whose path starts with pathPrefix (e.g. "decisions/").
+func (s *SQLite) MaxFrontmatterIntInDirectory(ctx context.Context, pathPrefix, field string) (int, error) {
+	pathPrefix = normalizeMetaPathPrefix(pathPrefix)
+	if pathPrefix == "" {
+		return 0, fmt.Errorf("path prefix is required")
+	}
+	jsonPath := "$." + strings.TrimPrefix(strings.TrimSpace(field), "$.")
+	if !validMetaField(jsonPath) {
+		return 0, fmt.Errorf("invalid frontmatter field %q", field)
+	}
+	var max sql.NullInt64
+	err := s.readDB.QueryRowContext(ctx, `
+SELECT MAX(CAST(json_extract(frontmatter, ?) AS INTEGER))
+FROM file_meta
+WHERE path LIKE ? ESCAPE '\'`,
+		jsonPath, escapeLikePrefix(pathPrefix)+"%",
+	).Scan(&max)
+	if err != nil {
+		return 0, fmt.Errorf("max frontmatter %q in %q: %w", field, pathPrefix, err)
+	}
+	if !max.Valid {
+		return 0, nil
+	}
+	return int(max.Int64), nil
+}
+
+func normalizeMetaPathPrefix(prefix string) string {
+	prefix = filepath.ToSlash(strings.TrimSpace(prefix))
+	prefix = strings.TrimPrefix(prefix, "/")
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	return prefix
+}
+
+func escapeLikePrefix(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
 // MetaFilter is one predicate against a frontmatter JSON path. Field must be
 // a JSON-path starting with "$.", and Op must be one of the values validated
 // by validMetaOp — these restrictions let QueryMeta build safe SQL without
