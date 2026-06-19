@@ -425,8 +425,27 @@ function EditorInner({
 
   const wikiPages = useMemo(() => wikiPagesFromTree(tree), [tree]);
   const customSlashCommands = useEditorSlashCommands();
-  const onSlashTemplateError = useCallback((message: string) => setError(message), [setError]);
+  const [slashCommandError, setSlashCommandError] = useState<string | null>(null);
+  const slashCommandErrorTimer = useRef<number | null>(null);
+  const onSlashTemplateError = useCallback((message: string) => {
+    setSlashCommandError(message);
+    if (slashCommandErrorTimer.current !== null) {
+      window.clearTimeout(slashCommandErrorTimer.current);
+    }
+    slashCommandErrorTimer.current = window.setTimeout(() => {
+      setSlashCommandError(null);
+      slashCommandErrorTimer.current = null;
+    }, 6000);
+  }, []);
   const loadSlashTemplate = useCallback((templatePath: string) => loadSlashCommandTemplate(templatePath), []);
+
+  useEffect(() => {
+    return () => {
+      if (slashCommandErrorTimer.current !== null) {
+        window.clearTimeout(slashCommandErrorTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     syncedMdRef.current = initialMd;
@@ -936,6 +955,25 @@ function EditorInner({
         onDiscardAndSwitch={handleModeSwitchDiscard}
         busy={saving}
       />
+      {slashCommandError && (
+        <div
+          role="alert"
+          className="fixed bottom-4 right-4 z-50 max-w-sm rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-lg"
+        >
+          <div className="flex items-start gap-2">
+            <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
+            <p className="flex-1">{slashCommandError}</p>
+            <button
+              type="button"
+              className="text-destructive/80 hover:text-destructive"
+              aria-label="Dismiss"
+              onClick={() => setSlashCommandError(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
