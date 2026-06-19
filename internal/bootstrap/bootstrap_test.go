@@ -2,9 +2,11 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kiwifs/kiwifs/internal/config"
@@ -163,6 +165,40 @@ func TestBuildWiresAutoSequenceFormatHook(t *testing.T) {
 	if fm["adr_number"] != 3 {
 		t.Fatalf("adr_number = %v, want 3", fm["adr_number"])
 	}
+}
+
+// [sequences] directories must wire through Build so Append injects markers.
+func TestBuildWiresSequenceDirsOnAppend(t *testing.T) {
+	dir := t.TempDir()
+	cfg := newCfg("none", "sqlite")
+	cfg.Sequences.Directories = []string{"events/"}
+	asyncOff := false
+	cfg.Search.AsyncIndex = &asyncOff
+
+	stack, err := Build("default", dir, cfg)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer stack.Close()
+
+	ctx := context.Background()
+	if _, err := stack.Pipeline.Append(ctx, "events/log.md", "first", "\n", "tester"); err != nil {
+		t.Fatalf("append 1: %v", err)
+	}
+	if _, err := stack.Pipeline.Append(ctx, "events/log.md", "second", "\n", "tester"); err != nil {
+		t.Fatalf("append 2: %v", err)
+	}
+	body, err := stack.Store.Read(ctx, "events/log.md")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !containsSeq(body, 1) || !containsSeq(body, 2) {
+		t.Fatalf("missing seq markers: %q", string(body))
+	}
+}
+
+func containsSeq(body []byte, n int64) bool {
+	return strings.Contains(string(body), fmt.Sprintf("<!-- seq:%d -->", n))
 }
 
 // Close must be idempotent-safe for callers that defer it and then
