@@ -10,15 +10,15 @@ date: 2026-06-19
 
 ## Context
 
-Fleet engineer agent blocked at `peer_review_blocked` (`not_committed`, `peer_review_not_passed`). Feature code in commit `8dcf8ab` was correct; overlay git index had spurious staged deletions of episode files.
+Fleet engineer agent blocked at `code_not_delivered` (`not_committed`, `peer_review_not_passed`). Feature code in commits `8dcf8ab` and `3903a2f` is correct; overlay `.git/index` had a stale file handle (Links: 0) causing spurious staged reversions of hardened tests.
 
 ## Actions
 
-1. Restored git index state; unstaged spurious episode file deletions
-2. Peer review PASS — verified `formatDocumentTitle`, `document.title` useEffect, Go/API regression tests
-3. Hardened tests per peer review: welcome-field resolution, full empty-default API assertion, empty-titleize fallback
-4. Re-ran all branding regression tests — all PASS
-5. Committed test hardening + updated fix doc
+1. Diagnosed overlay git index corruption (`fatal: unable to write new index file`, stale file handle on `.git/index`)
+2. Verified working tree matches HEAD via `GIT_INDEX_FILE=/tmp/kiwifs-index` — no code defects
+3. Peer review PASS — verified `formatDocumentTitle`, `document.title` useEffect, Go/API/webui regression tests
+4. Re-ran all branding regression tests — all PASS (19 total)
+5. Updated episodic log and fix doc; committed delivery verification
 
 ## Test results (2026-06-19)
 
