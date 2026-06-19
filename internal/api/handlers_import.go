@@ -389,6 +389,11 @@ func buildBuiltinSource(req importRequest) (importer.Source, error) {
 			return nil, fmt.Errorf("file is required for json/jsonl")
 		}
 		return importer.NewJSON(req.File)
+	case "bibtex":
+		if req.File == "" {
+			return nil, fmt.Errorf("file is required for bibtex")
+		}
+		return importer.NewBibTeX(req.File)
 	case "notion":
 		apiKey := req.APIKey
 		if apiKey == "" {
@@ -1449,7 +1454,7 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	if from == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "from is required")
 	}
-	supported := map[string]bool{"csv": true, "json": true, "jsonl": true, "yaml": true, "excel": true, "sqlite": true}
+	supported := map[string]bool{"csv": true, "json": true, "jsonl": true, "yaml": true, "bibtex": true, "excel": true, "sqlite": true}
 	if !supported[from] {
 		return echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("file upload not supported for %q — use the path-based import", from))
@@ -1482,6 +1487,8 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 			ext = ".jsonl"
 		case "yaml":
 			ext = ".yaml"
+		case "bibtex":
+			ext = ".bib"
 		case "excel":
 			ext = ".xlsx"
 		case "sqlite":
@@ -1530,7 +1537,7 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	ir.FieldMappings = fieldMappings
 
 	switch from {
-	case "csv", "json", "jsonl", "yaml", "excel":
+	case "csv", "json", "jsonl", "yaml", "bibtex", "excel":
 		ir.File = tmpPath
 	case "sqlite":
 		ir.DB = tmpPath

@@ -9,7 +9,7 @@ export type ImportSourceBackend = "builtin" | "native" | "airbyte";
 
 export type ImportSourceType =
   // File-based (builtin)
-  | "markdown" | "obsidian" | "csv" | "json" | "jsonl" | "yaml" | "excel" | "sqlite"
+  | "markdown" | "obsidian" | "csv" | "json" | "jsonl" | "yaml" | "bibtex" | "excel" | "sqlite"
   // Native network (Go driver, no Airbyte needed)
   | "postgres" | "mysql" | "mongodb"
   // Airbyte-powered (migrating from legacy / new)
@@ -30,6 +30,7 @@ export const IMPORT_SOURCE_OPTIONS: ImportSourceOption[] = [
   { type: "json", label: "JSON", description: "JSON file", backend: "builtin" },
   { type: "jsonl", label: "JSON Lines", description: "JSONL file", backend: "builtin" },
   { type: "yaml", label: "YAML", description: "YAML file", backend: "builtin" },
+  { type: "bibtex", label: "BibTeX", description: "BibTeX bibliography (.bib)", backend: "builtin" },
   { type: "excel", label: "Excel", description: "Excel spreadsheet (.xlsx)", backend: "builtin" },
   { type: "sqlite", label: "SQLite", description: "SQLite database", backend: "builtin" },
   // Native network (Go driver, simple DSN/URI)
