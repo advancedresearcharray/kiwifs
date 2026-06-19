@@ -55,6 +55,10 @@ jobs:
         run: npm ci
         working-directory: ui
 
+      - name: run GitHub workflow script tests
+        if: ${{ needs.changes.outputs.infra == 'true' }}
+        run: node --test .github/scripts/*.test.mjs
+
       - name: run UI tests
         if: ${{ needs.changes.outputs.ui == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.infra == 'true' }}
         run: npm test
