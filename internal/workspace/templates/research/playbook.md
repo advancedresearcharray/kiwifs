@@ -44,6 +44,8 @@ kiwi_workflow_advance(path: "papers/my-paper.md", workflow: "reading", target_st
 ```
 
 Valid progression: `unread → reading → annotated → summarized → incorporated`.
+Backward transitions (e.g. returning a paper to `reading` for re-annotation) are
+also allowed. Skipping states is rejected.
 
 At each stage:
 - **reading** — actively reading the source

@@ -268,6 +268,7 @@ func TestInitResearchTemplateIncludesReadingWorkflow(t *testing.T) {
 		".kiwi/config.toml",
 		".kiwi/playbook.md",
 		"papers/example-paper.md",
+		"papers/transformer-survey.md",
 		"notes/synthesis-example.md",
 		"reviews/literature-review-draft.md",
 		"index.md",

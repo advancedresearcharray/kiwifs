@@ -29,11 +29,14 @@ Papers use `workflow: reading` and `state` frontmatter. Valid states:
 | `summarized`   | Key findings written up                      |
 | `incorporated` | Insights merged into notes or reviews        |
 
-Transitions are enforced by `.kiwi/workflows/reading.json`:
-`unread → reading → annotated → summarized → incorporated`.
+Transitions are enforced by `.kiwi/workflows/reading.json`. Forward path:
+`unread → reading → annotated → summarized → incorporated`. Backward
+transitions (e.g. `reading → unread`, `summarized → annotated`) are allowed
+when revisiting a paper. Skipping states (e.g. `unread → incorporated`) is
+rejected.
 
-Advance with `kiwi_workflow_advance` or by updating `state` through
-the pipeline (invalid transitions are rejected).
+Advance with `kiwi_workflow_advance` or by updating `state` through the
+workflow (invalid transitions are rejected).
 
 ## Frontmatter Fields
 

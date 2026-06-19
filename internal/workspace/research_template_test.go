@@ -38,6 +38,15 @@ func TestResearchTemplateReadingWorkflowValid(t *testing.T) {
 	if err := workflow.ValidateTransition(w, "unread", "incorporated"); err == nil {
 		t.Fatal("expected error for unread -> incorporated skip")
 	}
+	for _, tc := range []struct{ from, to string }{
+		{"reading", "unread"},
+		{"annotated", "reading"},
+		{"summarized", "annotated"},
+	} {
+		if err := workflow.ValidateTransition(w, tc.from, tc.to); err != nil {
+			t.Fatalf("expected backward transition %s -> %s: %v", tc.from, tc.to, err)
+		}
+	}
 }
 
 func TestResearchTemplatePaperSchemaValidatesExample(t *testing.T) {
@@ -70,6 +79,18 @@ func TestResearchTemplatePaperSchemaValidatesExample(t *testing.T) {
 	delete(fm, "workflow")
 	if err := v.Validate(fm); err == nil {
 		t.Fatal("expected validation error for missing workflow")
+	}
+	fm["workflow"] = "reading"
+	fm["venue"] = "Test Conference"
+	fm["authors"] = []any{"Author One"}
+	fm["state"] = "done"
+	if err := v.Validate(fm); err == nil {
+		t.Fatal("expected validation error for invalid state enum")
+	}
+	fm["state"] = "unread"
+	fm["workflow"] = "tasks"
+	if err := v.Validate(fm); err == nil {
+		t.Fatal("expected validation error for wrong workflow const")
 	}
 }
 
