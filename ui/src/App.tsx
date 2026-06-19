@@ -50,6 +50,7 @@ import { usePreferences } from "./hooks/usePreferences";
 import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
 import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
+import { formatDocumentTitle } from "./lib/pageTitle";
 import { useUIConfigStore } from "./lib/uiConfigStore";
 import { Button } from "./components/ui/button";
 import {
@@ -219,6 +220,11 @@ export default function App() {
   useEffect(() => {
     dispatchPageChanged(activePath);
   }, [activePath]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.title = formatDocumentTitle(activePath, branding.name);
+  }, [activePath, branding.name]);
 
   const scheduleTreeReconcile = useCallback((delayMs = 800) => {
     if (treeReconcileTimerRef.current) {
