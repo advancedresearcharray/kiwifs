@@ -725,7 +725,7 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 			if err != nil {
 				return Result{}, fmt.Errorf("sequence counter: %w", err)
 			}
-			content = fmt.Sprintf("<!-- seq:%d -->\n%s", seq, content)
+			content = injectSequenceMarker(content, seq)
 		}
 	}
 
