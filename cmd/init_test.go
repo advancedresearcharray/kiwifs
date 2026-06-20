@@ -480,3 +480,72 @@ func TestPromptLibraryAliasError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestRunbookTemplateEmbedded(t *testing.T) {
+	t.Parallel()
+	embedded := workspace.EmbeddedTemplates()
+	paths := []string{
+		"templates/runbook/SCHEMA.md",
+		"templates/runbook/index.md",
+		"templates/runbook/playbook.md",
+		"templates/runbook/example-high-cpu.md",
+		"templates/runbook/.kiwi/schemas/runbook.json",
+		"templates/runbook/.kiwi/config.toml",
+		"templates/runbook/.kiwi/templates/runbook.md",
+	}
+	for _, p := range paths {
+		if _, err := fs.Stat(embedded, p); err != nil {
+			t.Fatalf("embedded template missing %s: %v", p, err)
+		}
+	}
+}
+
+func TestRunbookTemplateInit(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "runbook")
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "runbook"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	mustExist := []string{
+		"SCHEMA.md",
+		"index.md",
+		"example-high-cpu.md",
+		".kiwi/schemas/runbook.json",
+		".kiwi/templates/runbook.md",
+		".kiwi/config.toml",
+		".kiwi/playbook.md",
+	}
+	for _, p := range mustExist {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("expected %s to exist: %v", p, err)
+		}
+	}
+
+	example, err := os.ReadFile(filepath.Join(root, "example-high-cpu.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"type: runbook",
+		"trigger:",
+		"severity: P2",
+		"owner:",
+		"services:",
+		"Trigger / When to Use",
+		"## 2. Diagnosis",
+		"## 3. Mitigation",
+		"## 4. Verification",
+		"## 5. Rollback",
+		"## 6. RTO and Data Loss Expectations",
+		"## 7. Escalation Path",
+		"```bash",
+	} {
+		if !strings.Contains(string(example), want) {
+			t.Errorf("example runbook missing %q", want)
+		}
+	}
+}

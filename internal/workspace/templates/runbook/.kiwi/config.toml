@@ -1,0 +1,36 @@
+[server]
+port = 3333
+# Bind localhost until auth is configured; change to 0.0.0.0 only with auth enabled.
+host = "127.0.0.1"
+
+[storage]
+root = "."
+
+[search]
+engine = "sqlite"
+
+[versioning]
+strategy = "git"
+
+[lint]
+require_frontmatter = true
+
+[links]
+typed_fields = ["services"]
+
+[janitor.execution_staleness]
+directory = "."
+date_field = "last_executed"
+max_age_days = 90
+
+[janitor.execution_staleness.flag_values]
+last_outcome = "failure"
+
+# Runbooks may contain credentials placeholders and production commands.
+# Enable authentication before exposing this workspace over REST, NFS, S3, or WebDAV.
+[auth]
+type = "none"
+# type = "apikey"
+# api_key = "${KIWI_API_KEY}"
+# type = "perspace"  # per-space API keys (recommended for multi-tenant)
+# type = "oidc"      # SSO for team access
