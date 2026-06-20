@@ -24,7 +24,7 @@ func TestListInitTemplatesIncludesKnown(t *testing.T) {
 		}
 		ids[item.ID] = true
 	}
-	for _, want := range []string{"blank", "knowledge", "wiki", "research", "prompt-library"} {
+	for _, want := range []string{"blank", "knowledge", "wiki", "research", "prompt-library", "adr"} {
 		if !ids[want] {
 			t.Fatalf("missing template %q in %v", want, list)
 		}
@@ -187,6 +187,14 @@ func TestKnowledgeTemplateEmbedded(t *testing.T) {
 		"templates/research/.kiwi/workflows/reading.json",
 		"templates/research/.kiwi/config.toml",
 		"templates/research/papers/example-paper.md",
+		"templates/adr/SCHEMA.md",
+		"templates/adr/index.md",
+		"templates/adr/playbook.md",
+		"templates/adr/.kiwi/schemas/adr.json",
+		"templates/adr/.kiwi/workflows/adr.json",
+		"templates/adr/.kiwi/templates/adr.md",
+		"templates/adr/.kiwi/config.toml",
+		"templates/adr/decisions/ADR-001-use-markdown-for-adrs.md",
 	}
 	for _, p := range paths {
 		if _, err := fs.Stat(templates, p); err != nil {

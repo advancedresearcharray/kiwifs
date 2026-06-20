@@ -329,6 +329,103 @@ func TestPromptLibraryTemplateInit(t *testing.T) {
 	}
 }
 
+func TestADRTemplateEmbedded(t *testing.T) {
+	t.Parallel()
+	embedded := workspace.EmbeddedTemplates()
+	paths := []string{
+		"templates/adr/SCHEMA.md",
+		"templates/adr/index.md",
+		"templates/adr/playbook.md",
+		"templates/adr/.kiwi/schemas/adr.json",
+		"templates/adr/.kiwi/workflows/adr.json",
+		"templates/adr/.kiwi/templates/adr.md",
+		"templates/adr/.kiwi/config.toml",
+		"templates/adr/decisions/ADR-001-use-markdown-for-adrs.md",
+	}
+	for _, p := range paths {
+		if _, err := fs.Stat(embedded, p); err != nil {
+			t.Fatalf("embedded template missing %s: %v", p, err)
+		}
+	}
+}
+
+func TestADRTemplateInit(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "adr")
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "adr"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	mustExist := []string{
+		"SCHEMA.md",
+		"index.md",
+		"decisions/ADR-001-use-markdown-for-adrs.md",
+		".kiwi/schemas/adr.json",
+		".kiwi/workflows/adr.json",
+		".kiwi/templates/adr.md",
+		".kiwi/config.toml",
+		".kiwi/playbook.md",
+	}
+	for _, p := range mustExist {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("expected %s to exist: %v", p, err)
+		}
+	}
+
+	example, err := os.ReadFile(filepath.Join(root, "decisions/ADR-001-use-markdown-for-adrs.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"type: adr",
+		"status: accepted",
+		"workflow: adr",
+		"Context and Problem Statement",
+		"Decision Drivers",
+		"Considered Options",
+		"Decision Outcome",
+	} {
+		if !strings.Contains(string(example), want) {
+			t.Errorf("example ADR missing %q", want)
+		}
+	}
+
+	cfg, err := os.ReadFile(filepath.Join(root, ".kiwi/config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"auto_sequence", "decisions/", "adr_number", "supersedes"} {
+		if !strings.Contains(string(cfg), want) {
+			t.Errorf("config.toml missing %q", want)
+		}
+	}
+}
+
+func TestADRTemplateInitBlankRoot(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "empty-parent", "adr")
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "adr"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := os.ReadFile(filepath.Join(root, ".kiwi/config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(cfg)
+	for _, want := range []string{"127.0.0.1", "[auth]", "apikey", "perspace"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("config.toml missing %q", want)
+		}
+	}
+}
+
 func TestPromptLibraryTemplateInitBlankRoot(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "empty-parent", "prompts")
