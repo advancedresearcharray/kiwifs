@@ -59,6 +59,10 @@ go test ./internal/...
 - Rebased onto main preserving `ValidateWrite(ctx, path, content, WriteKind)` and `validate.go` — earlier PR branch had regressed that API.
 - Bulk duplicate-path guard closes bypass where two entries for the same path could overwrite an append-only first entry.
 - Checks run under `writeMu` to avoid TOCTOU with concurrent PUTs.
+- `isAppendOnly` accepts bool `true`, string `"true"` (case-insensitive), and string `"1"` — pipeline tests cover string forms.
+- Frontmatter PATCH routes through `WriteWithOpts`, so append-only files reject field updates with 409.
+- MCP `kiwi_write` uses pipeline `Write` → guarded `WriteWithOpts`.
+- **Overlay FS pitfall:** on `/tmp/kiwifs-overlay/mnt`, use `GIT_INDEX_FILE=/tmp/kiwifs-overlay/upper/.git/index` when index writes fail; remove bleed-through untracked files before testing. A stale-index merge deleted `append_only.go` (v12, 2026-06-20).
 
 ## Reuse guide
 

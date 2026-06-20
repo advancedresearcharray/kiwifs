@@ -97,6 +97,36 @@ func TestAppendOnly_WriteStreamRejectsOverwrite(t *testing.T) {
 	}
 }
 
+func TestAppendOnly_StringTrueValue(t *testing.T) {
+	p, _, _ := newTestPipeline(t)
+	ctx := context.Background()
+	path := "events/log.md"
+	initial := []byte("---\nappend_only: \"true\"\n---\nentry\n")
+
+	if _, err := p.Write(ctx, path, initial, "test"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err := p.Write(ctx, path, []byte("replaced\n"), "test")
+	if !errors.Is(err, ErrAppendOnly) {
+		t.Fatalf("overwrite string true: got %v, want ErrAppendOnly", err)
+	}
+}
+
+func TestAppendOnly_StringOneValue(t *testing.T) {
+	p, _, _ := newTestPipeline(t)
+	ctx := context.Background()
+	path := "events/log.md"
+	initial := []byte("---\nappend_only: \"1\"\n---\nentry\n")
+
+	if _, err := p.Write(ctx, path, initial, "test"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err := p.Write(ctx, path, []byte("replaced\n"), "test")
+	if !errors.Is(err, ErrAppendOnly) {
+		t.Fatalf("overwrite string 1: got %v, want ErrAppendOnly", err)
+	}
+}
+
 func TestAppendOnly_BulkWriteRejectsDuplicatePathOverwrite(t *testing.T) {
 	p, ctx := newAppendOnlyPipeline(t)
 	_, err := p.BulkWrite(ctx, []struct {
