@@ -645,6 +645,16 @@ func TestExtractTypedField(t *testing.T) {
 			want: []string{"pages/ref.md"},
 		},
 		{
+			name: "supersedes string", field: "supersedes",
+			fm: map[string]any{"supersedes": "[[pages/old.md]]"},
+			want: []string{"pages/old.md"},
+		},
+		{
+			name: "superseded_by string", field: "superseded_by",
+			fm: map[string]any{"superseded_by": "/pages/new.md"},
+			want: []string{"pages/new.md"},
+		},
+		{
 			name: "array values", field: "supersedes",
 			fm: map[string]any{"supersedes": []any{"pages/a.md", "[[pages/b.md]]"}},
 			want: []string{"pages/a.md", "pages/b.md"},
@@ -653,6 +663,21 @@ func TestExtractTypedField(t *testing.T) {
 			name: "missing field", field: "extends",
 			fm: map[string]any{"title": "x"},
 			want: nil,
+		},
+		{
+			name: "nested array from YAML [[wiki-link]]", field: "supersedes",
+			fm:   map[string]any{"supersedes": []any{[]any{"adrs/0001-use-kiwifs"}}},
+			want: []string{"adrs/0001-use-kiwifs"},
+		},
+		{
+			name: "deeply nested arrays", field: "supersedes",
+			fm:   map[string]any{"supersedes": []any{[]any{[]any{"a.md"}, "b.md"}}},
+			want: []string{"a.md", "b.md"},
+		},
+		{
+			name: "mixed nested and flat", field: "cites",
+			fm:   map[string]any{"cites": []any{"direct.md", []any{"nested.md"}}},
+			want: []string{"direct.md", "nested.md"},
 		},
 	}
 	for _, tc := range cases {
@@ -696,6 +721,31 @@ See [[foo]].
 		{Target: "foo"},
 		{Target: "pages/b.md", Relation: "cites"},
 	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestValidTypedFieldName(t *testing.T) {
+	t.Parallel()
+	valid := []string{"cites", "supersedes", "superseded_by", "variant_of", "extends", "services", "contradicts"}
+	for _, name := range valid {
+		if !ValidTypedFieldName(name) {
+			t.Fatalf("%q should be valid", name)
+		}
+	}
+	invalid := []string{"", "cites; DROP TABLE links", "field.name", "field-name", "123", "a b"}
+	for _, name := range invalid {
+		if ValidTypedFieldName(name) {
+			t.Fatalf("%q should be invalid", name)
+		}
+	}
+}
+
+func TestSanitizeTypedLinkFields(t *testing.T) {
+	t.Parallel()
+	got := SanitizeTypedLinkFields([]string{"cites", "bad;injection", "extends", ""})
+	want := []string{"cites", "extends"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}

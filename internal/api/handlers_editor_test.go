@@ -120,3 +120,35 @@ func TestGetEditorSlashCommands_SkipsInvalidID(t *testing.T) {
 		t.Fatalf("expected only valid id, got %+v", res.Commands)
 	}
 }
+
+func TestGetEditorSlashCommands_TrimsAndDefaultsIcon(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	cfg.UI.Editor.SlashCommands = []config.SlashCommandConfig{{
+		ID:          "  adr  ",
+		Label:       "  ADR  ",
+		Description: "  Insert ADR  ",
+		Template:    "  templates/adr.md  ",
+	}}
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/editor/slash-commands", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+
+	var res editorSlashCommandsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Commands) != 1 {
+		t.Fatalf("expected 1 command, got %+v", res.Commands)
+	}
+	cmd := res.Commands[0]
+	if cmd.ID != "adr" || cmd.Label != "ADR" || cmd.Template != "templates/adr.md" {
+		t.Fatalf("trim failed: %+v", cmd)
+	}
+	if cmd.Icon != "FileText" || cmd.Description != "Insert ADR" {
+		t.Fatalf("defaults failed: %+v", cmd)
+	}
+}

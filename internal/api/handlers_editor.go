@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
@@ -33,19 +34,25 @@ type editorSlashCommandsResponse struct {
 func (h *Handlers) GetEditorSlashCommands(c echo.Context) error {
 	out := make([]editorSlashCommandEntry, 0, len(h.ui.Editor.SlashCommands))
 	for _, cmd := range h.ui.Editor.SlashCommands {
-		if cmd.ID == "" || cmd.Template == "" || !slashCommandIDPattern.MatchString(cmd.ID) {
+		id := strings.TrimSpace(cmd.ID)
+		template := strings.TrimSpace(cmd.Template)
+		if id == "" || template == "" || !slashCommandIDPattern.MatchString(id) {
 			continue
 		}
-		label := cmd.Label
+		label := strings.TrimSpace(cmd.Label)
 		if label == "" {
-			label = cmd.ID
+			label = id
+		}
+		icon := strings.TrimSpace(cmd.Icon)
+		if icon == "" {
+			icon = "FileText"
 		}
 		out = append(out, editorSlashCommandEntry{
-			ID:          cmd.ID,
+			ID:          id,
 			Label:       label,
-			Icon:        cmd.Icon,
-			Description: cmd.Description,
-			Template:    cmd.Template,
+			Icon:        icon,
+			Description: strings.TrimSpace(cmd.Description),
+			Template:    template,
 		})
 	}
 	return c.JSON(http.StatusOK, editorSlashCommandsResponse{Commands: out})

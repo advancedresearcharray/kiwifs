@@ -9,6 +9,7 @@ type UIConfigState = {
   themeLocked: boolean;
   branding: BrandingConfig;
   features: Record<UIFeatureKey, boolean>;
+  toolbarViews: string[] | null | undefined;
   loaded: boolean;
   load: () => Promise<void>;
 };
@@ -17,6 +18,7 @@ export const useUIConfigStore = create<UIConfigState>((set) => ({
   themeLocked: false,
   branding: DEFAULT_BRANDING,
   features: DEFAULT_UI_FEATURES,
+  toolbarViews: undefined,
   loaded: false,
   load: async () => {
     try {
@@ -25,6 +27,7 @@ export const useUIConfigStore = create<UIConfigState>((set) => ({
         themeLocked: config.themeLocked === true,
         branding: resolveBranding(config.branding ?? {}),
         features: resolveUIFeatures(config.features),
+        toolbarViews: config.toolbarViews ?? null,
         loaded: true,
       });
     } catch {
@@ -32,6 +35,7 @@ export const useUIConfigStore = create<UIConfigState>((set) => ({
         themeLocked: false,
         branding: DEFAULT_BRANDING,
         features: DEFAULT_UI_FEATURES,
+        toolbarViews: null,
         loaded: true,
       });
     }

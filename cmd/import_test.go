@@ -61,3 +61,42 @@ func TestInferSchema_SaveSchema_AbsolutePath(t *testing.T) {
 		t.Fatalf("expected schema at %s (basename only, not full path): %v", outPath, err)
 	}
 }
+
+func TestBuildSource_BibTeXRequiresFile(t *testing.T) {
+	c := &cobra.Command{}
+	c.Flags().String("file", "", "")
+	_, err := buildSource(c, "bibtex")
+	if err == nil || err.Error() != "--file is required for bibtex" {
+		t.Fatalf("buildSource(bibtex) err = %v, want --file is required for bibtex", err)
+	}
+}
+
+func TestBuildSource_BibTeXMissingFile(t *testing.T) {
+	c := &cobra.Command{}
+	c.Flags().String("file", "", "")
+	_ = c.Flags().Set("file", filepath.Join(t.TempDir(), "missing.bib"))
+	_, err := buildSource(c, "bibtex")
+	if err == nil {
+		t.Fatal("expected error for missing bibtex file")
+	}
+}
+
+func TestBuildSource_BibTeX(t *testing.T) {
+	bibPath := filepath.Join(t.TempDir(), "refs.bib")
+	if err := os.WriteFile(bibPath, []byte(`@article{a, title={T}, author={A}, year={2024}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := &cobra.Command{}
+	c.Flags().String("file", "", "")
+	_ = c.Flags().Set("file", bibPath)
+
+	src, err := buildSource(c, "bibtex")
+	if err != nil {
+		t.Fatalf("buildSource(bibtex): %v", err)
+	}
+	if src.Name() != "refs" {
+		t.Fatalf("Name() = %q, want refs", src.Name())
+	}
+	_ = src.Close()
+}

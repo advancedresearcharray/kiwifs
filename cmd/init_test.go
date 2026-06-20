@@ -288,6 +288,80 @@ func TestWikiTemplateInit(t *testing.T) {
 	}
 }
 
+func TestPromptLibraryTemplateInit(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "prompts")
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "prompt-library"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	mustExist := []string{
+		"SCHEMA.md",
+		"index.md",
+		"system-prompts/code-assistant.md",
+		"task-prompts/summarize.md",
+		"task-prompts/review-code.md",
+		"task-prompts/translate.md",
+		"evaluation/summarize-rubric.md",
+		".kiwi/schemas/prompt.json",
+		".kiwi/schemas/rubric.json",
+		".kiwi/playbook.md",
+		".kiwi/config.toml",
+	}
+	for _, p := range mustExist {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("expected %s to exist: %v", p, err)
+		}
+	}
+
+	summarize, err := os.ReadFile(filepath.Join(root, "task-prompts/summarize.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(summarize), "{{content}}") {
+		t.Error("summarize.md missing {{content}} template variable")
+	}
+	if !strings.Contains(string(summarize), "type: prompt") {
+		t.Error("summarize.md missing type: prompt")
+	}
+}
+
+func TestPromptLibraryTemplateInitBlankRoot(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "empty-parent", "prompts")
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "prompt-library"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := os.ReadFile(filepath.Join(root, ".kiwi/config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfg), "127.0.0.1") {
+		t.Error("expected localhost bind in prompt-library config.toml")
+	}
+	if !strings.Contains(string(cfg), "[auth]") {
+		t.Error("expected auth section in prompt-library config.toml")
+	}
+}
+
+func TestInitRejectsUnknownTemplateFlag(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "bad")
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "does-not-exist"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected error for unknown template")
+	}
+}
+
 func TestMemoryTemplateMigrationError(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "kb")

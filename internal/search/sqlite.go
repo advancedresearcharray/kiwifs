@@ -180,6 +180,7 @@ func NewSQLiteWithTypedFields(root string, store storage.Storage, typedLinkField
 	if len(typedLinkFields) == 0 {
 		typedLinkFields = links.DefaultTypedLinkFields()
 	}
+	typedLinkFields = links.SanitizeTypedLinkFields(typedLinkFields)
 	s := &SQLite{root: abs, store: store, writeDB: writeDB, readDB: readDB, computedFields: true, customComputedFields: ccf, typedLinkFields: typedLinkFields}
 
 	// Construction has no caller ctx — the schema bootstrap and initial
@@ -1048,6 +1049,16 @@ func (s *SQLite) indexTypedFields(ctx context.Context, source string, fm map[str
 	}
 	defer tx.Rollback()
 
+	// Clear every typed (non-wiki) link for this source before re-inserting.
+	// Per-field deletes alone leave stale edges when a field drops out of
+	// [links] typed_fields or when frontmatter no longer sets the field.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation != ''`, source); err != nil {
+		return err
+	}
+	if len(s.typedLinkFields) == 0 {
+		return tx.Commit()
+	}
+
 	stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return err
@@ -1055,9 +1066,6 @@ func (s *SQLite) indexTypedFields(ctx context.Context, source string, fm map[str
 	defer stmt.Close()
 
 	for _, field := range s.typedLinkFields {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation = ?`, source, field); err != nil {
-			return err
-		}
 		for _, t := range links.Unique(links.ExtractTypedField(fm, field)) {
 			if _, err := stmt.ExecContext(ctx, source, t, strings.ToLower(t), field); err != nil {
 				return err
@@ -1177,6 +1185,49 @@ func (s *SQLite) IndexMeta(ctx context.Context, path string, content []byte) err
 func (s *SQLite) RemoveMeta(ctx context.Context, path string) error {
 	_, err := s.writeDB.ExecContext(ctx, `DELETE FROM file_meta WHERE path = ?`, path)
 	return err
+}
+
+// MaxFrontmatterIntInDirectory returns the highest integer stored in field
+// across file_meta rows whose path starts with pathPrefix (e.g. "decisions/").
+func (s *SQLite) MaxFrontmatterIntInDirectory(ctx context.Context, pathPrefix, field string) (int, error) {
+	pathPrefix = normalizeMetaPathPrefix(pathPrefix)
+	if pathPrefix == "" {
+		return 0, fmt.Errorf("path prefix is required")
+	}
+	jsonPath := "$." + strings.TrimPrefix(strings.TrimSpace(field), "$.")
+	if !validMetaField(jsonPath) {
+		return 0, fmt.Errorf("invalid frontmatter field %q", field)
+	}
+	var max sql.NullInt64
+	err := s.readDB.QueryRowContext(ctx, `
+SELECT MAX(CAST(json_extract(frontmatter, ?) AS INTEGER))
+FROM file_meta
+WHERE path LIKE ? ESCAPE '\'`,
+		jsonPath, escapeLikePrefix(pathPrefix)+"%",
+	).Scan(&max)
+	if err != nil {
+		return 0, fmt.Errorf("max frontmatter %q in %q: %w", field, pathPrefix, err)
+	}
+	if !max.Valid {
+		return 0, nil
+	}
+	return int(max.Int64), nil
+}
+
+func normalizeMetaPathPrefix(prefix string) string {
+	prefix = filepath.ToSlash(strings.TrimSpace(prefix))
+	prefix = strings.TrimPrefix(prefix, "/")
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	return prefix
+}
+
+func escapeLikePrefix(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 // MetaFilter is one predicate against a frontmatter JSON path. Field must be

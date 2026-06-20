@@ -518,7 +518,7 @@ func TestAirbyteRegistryLookup(t *testing.T) {
 
 // TestAirbyteBuiltinCheck tests the builtin/airbyte source classification
 func TestAirbyteBuiltinCheck(t *testing.T) {
-	builtins := []string{"csv", "json", "jsonl", "markdown", "obsidian", "excel", "yaml", "sqlite", "postgres", "mysql", "mongodb", "firestore"}
+	builtins := []string{"csv", "json", "jsonl", "markdown", "obsidian", "excel", "yaml", "bibtex", "sqlite", "postgres", "mysql", "mongodb", "firestore"}
 	for _, s := range builtins {
 		if !IsBuiltinSource(s) {
 			t.Errorf("IsBuiltinSource(%q) = false, want true", s)

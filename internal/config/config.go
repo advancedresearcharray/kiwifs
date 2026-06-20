@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kiwifs/kiwifs/internal/links"
 )
 
 type Config struct {
@@ -45,6 +46,20 @@ type Config struct {
 	// ValidateWriteRules from [[validate_write]] — config-driven write
 	// guards keyed on existing file frontmatter (append-only, immutable ADRs).
 	ValidateWriteRules []ValidateWriteRuleConfig `toml:"validate_write"`
+	// FormatHooks from [format_hooks.*] — pipeline FormatWrite extensions.
+	FormatHooks FormatHooksConfig `toml:"format_hooks"`
+}
+
+// FormatHooksConfig groups optional FormatWrite hooks declared in config.toml.
+type FormatHooksConfig struct {
+	AutoSequence AutoSequenceConfig `toml:"auto_sequence"`
+}
+
+// AutoSequenceConfig auto-assigns the next numeric frontmatter field value
+// for files written under directory when the field is absent.
+type AutoSequenceConfig struct {
+	Directory string `toml:"directory"`
+	Field     string `toml:"field"`
 }
 
 // B.3 — Audit log config.
@@ -58,12 +73,12 @@ type LinksConfig struct {
 }
 
 // TypedLinkFields returns configured typed-link frontmatter fields.
-// When unset, defaults to ["contradicts"] for backward compatibility.
+// When unset, defaults to contradicts plus ADR supersession fields.
 func (l LinksConfig) TypedLinkFields() []string {
 	if len(l.TypedFields) > 0 {
-		return l.TypedFields
+		return links.SanitizeTypedLinkFields(l.TypedFields)
 	}
-	return []string{"contradicts"}
+	return links.DefaultTypedLinkFields()
 }
 
 // ImportConfig controls the data import subsystem — Airbyte integration,
@@ -215,6 +230,15 @@ func (b BackupConfig) IsRebaseBeforePush() bool {
 	return b.RebaseBeforePush == nil || *b.RebaseBeforePush
 }
 
+// ToolbarConfig controls which built-in header view buttons appear and in what order.
+// Example:
+//
+//	[ui.toolbar]
+//	views = ["graph", "kanban", "bases"]
+type ToolbarConfig struct {
+	Views []string `toml:"views"`
+}
+
 // UIConfig controls frontend behaviour. Toggled via [ui] in config.toml.
 type UIConfig struct {
 	ThemeLocked     bool              `toml:"theme_locked"`
@@ -227,6 +251,7 @@ type UIConfig struct {
 	Sidebar   UISidebarConfig `toml:"sidebar"`
 	Branding  BrandingConfig  `toml:"branding"`
 	Features  UIFeaturesConfig `toml:"features"`
+	Toolbar   ToolbarConfig   `toml:"toolbar"`
 	Editor    UIEditorConfig  `toml:"editor"`
 }
 

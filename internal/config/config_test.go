@@ -3,7 +3,10 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/kiwifs/kiwifs/internal/links"
 )
 
 func TestLoadExpandsEnv(t *testing.T) {
@@ -381,6 +384,28 @@ message = "Accepted decisions cannot be edited."
 	}
 }
 
+func TestLoadFormatHooksAutoSequence(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[format_hooks.auto_sequence]
+directory = "decisions/"
+field = "adr_number"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.FormatHooks.AutoSequence.Directory != "decisions/" {
+		t.Fatalf("directory = %q", cfg.FormatHooks.AutoSequence.Directory)
+	}
+	if cfg.FormatHooks.AutoSequence.Field != "adr_number" {
+		t.Fatalf("field = %q", cfg.FormatHooks.AutoSequence.Field)
+	}
+}
+
 func TestUIConfigCustomCSS(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := filepath.Join(root, ".kiwi")
@@ -498,14 +523,61 @@ func TestUIConfigSidebarResolvedSectionsSkipsEmptyLabels(t *testing.T) {
 	}
 }
 
+func TestUIToolbarViewsTOML(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui.toolbar]
+views = ["kanban", "graph", "bases"]
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"kanban", "graph", "bases"}
+	if len(cfg.UI.Toolbar.Views) != len(want) {
+		t.Fatalf("views = %v, want %v", cfg.UI.Toolbar.Views, want)
+	}
+	for i, v := range want {
+		if cfg.UI.Toolbar.Views[i] != v {
+			t.Fatalf("views[%d] = %q, want %q", i, cfg.UI.Toolbar.Views[i], v)
+		}
+	}
+}
+
+func TestUIToolbarViewsUnset(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui]
+theme_locked = true
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.UI.Toolbar.Views != nil {
+		t.Fatalf("views should be nil when unset, got %v", cfg.UI.Toolbar.Views)
+	}
+}
+
 func TestLinksConfigTypedLinkFields(t *testing.T) {
 	t.Parallel()
-	if got := (LinksConfig{}).TypedLinkFields(); len(got) != 1 || got[0] != "contradicts" {
-		t.Fatalf("default: %+v", got)
+	wantDefault := links.DefaultTypedLinkFields()
+	if got := (LinksConfig{}).TypedLinkFields(); !reflect.DeepEqual(got, wantDefault) {
+		t.Fatalf("default: got %+v want %+v", got, wantDefault)
 	}
 	cfg := LinksConfig{TypedFields: []string{"cites", "extends"}}
 	if got := cfg.TypedLinkFields(); len(got) != 2 || got[0] != "cites" || got[1] != "extends" {
 		t.Fatalf("configured: %+v", got)
+	}
+	cfg = LinksConfig{TypedFields: []string{"cites", "bad;DROP", "extends"}}
+	if got := cfg.TypedLinkFields(); len(got) != 2 || got[0] != "cites" || got[1] != "extends" {
+		t.Fatalf("sanitized: %+v", got)
 	}
 }
 

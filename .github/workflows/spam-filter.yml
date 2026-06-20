@@ -1,0 +1,166 @@
+name: Spam Filter
+
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  filter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect and hide CJK spam
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const SPAM_LOG_ISSUE = 392;
+            const MAINTAINER = 'amelia751';
+
+            // Determine if this is a comment or an issue
+            const isComment = !!context.payload.comment;
+            const body = isComment
+              ? context.payload.comment.body
+              : context.payload.issue.body || '';
+            const author = isComment
+              ? context.payload.comment.user.login
+              : context.payload.issue.user.login;
+            const issueNumber = isComment
+              ? context.payload.issue.number
+              : context.payload.issue.number;
+
+            // --- SAFETY: skip trusted authors ---
+            const trustedBots = [
+              'github-actions[bot]', 'dependabot[bot]', 'release-please[bot]',
+              'cursor[bot]', 'renovate[bot]'
+            ];
+            if (trustedBots.includes(author)) return;
+            if (author === MAINTAINER) return;
+
+            // Check if author is a collaborator/org member
+            try {
+              const { data: permLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: author,
+              });
+              if (['admin', 'write', 'maintain'].includes(permLevel.permission)) return;
+            } catch (e) {}
+
+            try {
+              await github.rest.orgs.checkMembershipForUser({
+                org: context.repo.owner,
+                username: author,
+              });
+              return;
+            } catch (e) {}
+
+            // --- CJK DETECTION ---
+            // Count CJK characters (Chinese, Japanese, Korean)
+            const cjkRegex = /[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef\u2e80-\u2eff\u3200-\u32ff\ufe30-\ufe4f]/g;
+            const cjkMatches = body.match(cjkRegex) || [];
+            const totalChars = body.replace(/\s/g, '').length;
+
+            if (totalChars === 0) return;
+
+            const cjkRatio = cjkMatches.length / totalChars;
+
+            if (cjkRatio < 0.5) return; // Not CJK-dominant — allow
+
+            // --- CHECK: author has zero prior comments on this repo ---
+            let hasPriorActivity = false;
+            try {
+              const { data: comments } = await github.rest.issues.listCommentsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 5,
+                sort: 'created',
+                direction: 'desc',
+              });
+              hasPriorActivity = comments.some(c =>
+                c.user.login === author && c.id !== (context.payload.comment?.id)
+              );
+            } catch (e) {}
+
+            // Check contributor status (has commits)
+            let isContributor = false;
+            try {
+              const { data: contributors } = await github.rest.repos.listContributors({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              });
+              isContributor = contributors.some(c => c.login === author);
+            } catch (e) {}
+
+            if (hasPriorActivity || isContributor) return;
+
+            // --- SPAM CONFIRMED: CJK-dominant, no prior activity, not a contributor ---
+            console.log(`🚨 Spam detected from ${author} on #${issueNumber} (CJK ratio: ${(cjkRatio * 100).toFixed(0)}%)`);
+
+            // 1. Minimize (hide) the comment
+            if (isComment) {
+              const commentNodeId = context.payload.comment.node_id;
+              await github.graphql(`
+                mutation($id: ID!) {
+                  minimizeComment(input: { subjectId: $id, classifier: SPAM }) {
+                    minimizedComment { isMinimized }
+                  }
+                }
+              `, { id: commentNodeId });
+            } else {
+              // For issues: close + lock
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                state: 'closed',
+                state_reason: 'not_planned',
+              });
+              await github.rest.issues.lock({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                lock_reason: 'spam',
+              });
+            }
+
+            // 2. Block user from org
+            try {
+              await github.rest.orgs.blockUser({
+                org: context.repo.owner,
+                username: author,
+              });
+            } catch (e) {
+              console.log(`Failed to block ${author}: ${e.message}`);
+            }
+
+            // 3. Log to private tracking issue (triggers email to maintainer)
+            const snippet = body.substring(0, 200).replace(/\n/g, ' ');
+            const action = isComment ? 'comment' : 'issue';
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: SPAM_LOG_ISSUE,
+                body: [
+                  `@${MAINTAINER} 🚨 **Spam ${action} hidden**`,
+                  '',
+                  `| Field | Value |`,
+                  `|-------|-------|`,
+                  `| Author | \`${author}\` |`,
+                  `| Issue/PR | #${issueNumber} |`,
+                  `| CJK ratio | ${(cjkRatio * 100).toFixed(0)}% |`,
+                  `| Action taken | ${isComment ? 'Comment minimized' : 'Issue closed + locked'} + user blocked |`,
+                  '',
+                  `**Content preview:**`,
+                  `> ${snippet}${body.length > 200 ? '...' : ''}`,
+                ].join('\n'),
+              });
+            } catch (e) {
+              console.log(`Failed to log spam to #${SPAM_LOG_ISSUE}: ${e.message}`);
+            }

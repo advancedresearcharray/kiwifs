@@ -37,6 +37,11 @@ type Manager struct {
 	order   []string
 	baseCfg *config.Config
 	mu      sync.RWMutex
+
+	// OnStackCreated is called after a new stack is built by AddSpace.
+	// Use this to wire per-space services (e.g. MCP handler) that
+	// require the fully-initialized stack.
+	OnStackCreated func(stack *bootstrap.Stack)
 }
 
 // persistedEntry is a single space record written to .kiwi/spaces.json.
@@ -166,6 +171,10 @@ func (m *Manager) AddSpace(name, root string, cfg *config.Config) error {
 	stack, err := bootstrap.Build(name, root, cfg)
 	if err != nil {
 		return err
+	}
+
+	if m.OnStackCreated != nil {
+		m.OnStackCreated(stack)
 	}
 
 	m.spaces[name] = &Space{

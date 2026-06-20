@@ -50,7 +50,7 @@ function humanSize(bytes: number): string {
 }
 
 const SOURCE_GROUPS = [
-  { title: "Files", description: "Upload or point to files", sources: ["csv", "json", "jsonl", "yaml", "excel", "sqlite"] },
+  { title: "Files", description: "Upload or point to files", sources: ["csv", "json", "jsonl", "yaml", "bibtex", "excel", "sqlite"] },
   { title: "Documents", description: "Import markdown files or Obsidian vaults", sources: ["markdown", "obsidian"] },
   { title: "Databases", description: "Connect to a running database", sources: ["postgres", "mysql", "mongodb"] },
   { title: "Cloud Services", description: "Sync from cloud platforms via Airbyte", sources: ["firestore", "firebase-rtdb", "notion", "airtable"] },
@@ -63,7 +63,7 @@ const DB_DEFAULTS: Record<string, { port: number; protocol: string; placeholder:
 };
 
 /** Sources that support browser file upload via the /import/upload endpoint */
-const UPLOADABLE_SOURCES = new Set(["csv", "json", "jsonl", "yaml", "excel", "sqlite"]);
+const UPLOADABLE_SOURCES = new Set(["csv", "json", "jsonl", "yaml", "bibtex", "excel", "sqlite"]);
 
 /** Structured sources that support the field-mapping wizard step */
 const FIELD_MAPPING_SOURCES = new Set([
@@ -80,6 +80,7 @@ const FILE_ACCEPT: Record<string, string> = {
   json: ".json,application/json",
   jsonl: ".jsonl,.ndjson",
   yaml: ".yaml,.yml",
+  bibtex: ".bib,.bibtex",
   excel: ".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   sqlite: ".db,.sqlite,.sqlite3",
 };
