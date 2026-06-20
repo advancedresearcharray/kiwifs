@@ -110,6 +110,86 @@ func TestUIConfig_ToolbarViewsUnset(t *testing.T) {
 	}
 }
 
+func TestUIConfig_BrandingFromConfig(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	cfg.UI.Branding = config.BrandingConfig{
+		Name:           "Acme Knowledge Base",
+		LogoURL:        ".kiwi/assets/logo.png",
+		FaviconURL:     ".kiwi/assets/favicon.svg",
+		WelcomeTitle:   "Welcome to Acme KB",
+		WelcomeMessage: "Search or create a page to get started.",
+	}
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/ui-config", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var res struct {
+		Branding struct {
+			Name           string `json:"name"`
+			LogoURL        string `json:"logoUrl"`
+			FaviconURL     string `json:"faviconUrl"`
+			WelcomeTitle   string `json:"welcomeTitle"`
+			WelcomeMessage string `json:"welcomeMessage"`
+		} `json:"branding"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Branding.Name != "Acme Knowledge Base" {
+		t.Fatalf("name = %q", res.Branding.Name)
+	}
+	if res.Branding.LogoURL != ".kiwi/assets/logo.png" {
+		t.Fatalf("logoUrl = %q", res.Branding.LogoURL)
+	}
+	if res.Branding.FaviconURL != ".kiwi/assets/favicon.svg" {
+		t.Fatalf("faviconUrl = %q", res.Branding.FaviconURL)
+	}
+	if res.Branding.WelcomeTitle != "Welcome to Acme KB" {
+		t.Fatalf("welcomeTitle = %q", res.Branding.WelcomeTitle)
+	}
+	if res.Branding.WelcomeMessage != "Search or create a page to get started." {
+		t.Fatalf("welcomeMessage = %q", res.Branding.WelcomeMessage)
+	}
+}
+
+func TestUIConfig_BrandingDefaultsEmpty(t *testing.T) {
+	s := buildTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/ui-config", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var res struct {
+		Branding struct {
+			Name           string `json:"name"`
+			LogoURL        string `json:"logoUrl"`
+			FaviconURL     string `json:"faviconUrl"`
+			WelcomeTitle   string `json:"welcomeTitle"`
+			WelcomeMessage string `json:"welcomeMessage"`
+		} `json:"branding"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Branding.Name != "" ||
+		res.Branding.LogoURL != "" ||
+		res.Branding.FaviconURL != "" ||
+		res.Branding.WelcomeTitle != "" ||
+		res.Branding.WelcomeMessage != "" {
+		t.Fatalf("expected empty raw branding fields, got %+v", res.Branding)
+	}
+}
+
 func TestUIConfig_SidebarFromConfig(t *testing.T) {
 	dir, pipe, cstore := buildTestPipeline(t)
 	cfg := &config.Config{}

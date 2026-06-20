@@ -565,6 +565,106 @@ theme_locked = true
 	}
 }
 
+func TestLoadUIBranding(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui.branding]
+name = "Acme Knowledge Base"
+logo_url = ".kiwi/assets/logo.png"
+favicon_url = ".kiwi/assets/favicon.svg"
+welcome_title = "Welcome to Acme KB"
+welcome_message = "Search or create a page to get started."
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	b := cfg.UI.Branding
+	if b.Name != "Acme Knowledge Base" {
+		t.Fatalf("name = %q", b.Name)
+	}
+	if b.LogoURL != ".kiwi/assets/logo.png" {
+		t.Fatalf("logo_url = %q", b.LogoURL)
+	}
+	if b.FaviconURL != ".kiwi/assets/favicon.svg" {
+		t.Fatalf("favicon_url = %q", b.FaviconURL)
+	}
+	if b.WelcomeTitle != "Welcome to Acme KB" {
+		t.Fatalf("welcome_title = %q", b.WelcomeTitle)
+	}
+	if b.WelcomeMessage != "Search or create a page to get started." {
+		t.Fatalf("welcome_message = %q", b.WelcomeMessage)
+	}
+}
+
+func TestBrandingConfigResolved(t *testing.T) {
+	custom := BrandingConfig{
+		Name:           "Acme",
+		LogoURL:        ".kiwi/assets/logo.png",
+		FaviconURL:     "https://cdn.example/favicon.ico",
+		WelcomeTitle:   "Hi",
+		WelcomeMessage: "Go.",
+	}
+	if custom.ResolvedName() != "Acme" {
+		t.Fatalf("ResolvedName = %q", custom.ResolvedName())
+	}
+	if custom.ResolvedLogoURL() != "/raw/.kiwi/assets/logo.png" {
+		t.Fatalf("ResolvedLogoURL = %q", custom.ResolvedLogoURL())
+	}
+	if custom.ResolvedFaviconURL() != "https://cdn.example/favicon.ico" {
+		t.Fatalf("ResolvedFaviconURL = %q", custom.ResolvedFaviconURL())
+	}
+	if custom.ResolvedWelcomeTitle() != "Hi" {
+		t.Fatalf("ResolvedWelcomeTitle = %q", custom.ResolvedWelcomeTitle())
+	}
+	if custom.ResolvedWelcomeMessage() != "Go." {
+		t.Fatalf("ResolvedWelcomeMessage = %q", custom.ResolvedWelcomeMessage())
+	}
+	if !custom.HasCustomLogo() {
+		t.Fatal("expected HasCustomLogo")
+	}
+
+	empty := BrandingConfig{}
+	if empty.ResolvedName() != DefaultBrandingName {
+		t.Fatalf("default name = %q", empty.ResolvedName())
+	}
+	if empty.ResolvedLogoURL() != DefaultBrandingLogoURL {
+		t.Fatalf("default logo = %q", empty.ResolvedLogoURL())
+	}
+	if empty.ResolvedFaviconURL() != DefaultBrandingFaviconURL {
+		t.Fatalf("default favicon = %q", empty.ResolvedFaviconURL())
+	}
+	if empty.ResolvedWelcomeTitle() != DefaultBrandingWelcomeTitle {
+		t.Fatalf("default welcome title = %q", empty.ResolvedWelcomeTitle())
+	}
+	if empty.ResolvedWelcomeMessage() != DefaultBrandingWelcomeMessage {
+		t.Fatalf("default welcome message = %q", empty.ResolvedWelcomeMessage())
+	}
+	if empty.HasCustomLogo() {
+		t.Fatal("expected no custom logo")
+	}
+}
+
+func TestResolveBrandingAssetURL(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"/logo.png", "/logo.png"},
+		{"https://cdn.example/logo.png", "https://cdn.example/logo.png"},
+		{".kiwi/assets/logo.png", "/raw/.kiwi/assets/logo.png"},
+		{"./pages/logo.png", "/raw/pages/logo.png"},
+	}
+	for _, tc := range cases {
+		if got := ResolveBrandingAssetURL(tc.in); got != tc.want {
+			t.Fatalf("ResolveBrandingAssetURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestLinksConfigTypedLinkFields(t *testing.T) {
 	t.Parallel()
 	wantDefault := links.DefaultTypedLinkFields()
