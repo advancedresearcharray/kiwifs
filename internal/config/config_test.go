@@ -384,6 +384,27 @@ message = "Accepted decisions cannot be edited."
 	}
 }
 
+func TestLoadSequencesConfig(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[sequences]
+directories = ["events/", "audit/"]
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.Sequences.Directories) != 2 {
+		t.Fatalf("directories = %v", cfg.Sequences.Directories)
+	}
+	if cfg.Sequences.Directories[0] != "events/" || cfg.Sequences.Directories[1] != "audit/" {
+		t.Fatalf("directories = %v", cfg.Sequences.Directories)
+	}
+}
+
 func TestLoadFormatHooksAutoSequence(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := filepath.Join(root, ".kiwi")

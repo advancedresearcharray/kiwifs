@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/janitor"
+	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/kiwifs/kiwifs/internal/search"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/spf13/cobra"
@@ -14,16 +16,19 @@ import (
 
 var checkCmd = &cobra.Command{
 	Use:   "check",
-	Short: "CI-friendly knowledge base hygiene scan",
-	Long: `Run the janitor scan with stable exit codes for CI pipelines.
+	Short: "CI-friendly knowledge base hygiene and integrity scan",
+	Long: `Run integrity checks against the knowledge base at --root.
+
+Hygiene (janitor): stale pages, orphans, broken links, missing metadata,
+expired memory, and more.
+
+Sequences: when [sequences] is configured in .kiwi/config.toml, scans for
+<!-- seq:N --> markers and reports gaps in configured directories.
 
 Exit codes:
   0 — no error-severity issues (and no warnings when --fail-on-warn)
-  1 — hygiene issues found
-  2 — scan failure (bad root, unreadable files)
-
-Delegates to the same checks as kiwifs janitor: stale pages, orphans,
-broken links, missing metadata, expired memory, and more.`,
+  1 — hygiene or sequence issues found
+  2 — scan failure (bad root, unreadable files)`,
 	Example: `  kiwifs check --root ./knowledge
   kiwifs check --root ./knowledge --json
   kiwifs check --root ./knowledge --fail-on-warn`,
@@ -71,28 +76,71 @@ func runKnowledgeScan(cmd *cobra.Command) (*janitor.ScanResult, string, int, boo
 	return result, abs, staleDays, asJSON, nil
 }
 
+type checkOutput struct {
+	Janitor   *janitor.ScanResult `json:"janitor"`
+	Sequences []string            `json:"sequences,omitempty"`
+}
+
 func runCheck(cmd *cobra.Command, args []string) error {
-	result, _, _, asJSON, err := runKnowledgeScan(cmd)
+	code := runCheckWithCode(cmd, args)
+	if code != 0 {
+		os.Exit(code)
+	}
+	return nil
+}
+
+// runCheckWithCode runs hygiene + sequence checks and returns an exit code
+// (0 ok, 1 issues found, 2 scan failure). Tests use this instead of runCheck
+// to avoid os.Exit.
+func runCheckWithCode(cmd *cobra.Command, args []string) int {
+	result, abs, _, asJSON, err := runKnowledgeScan(cmd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
+	}
+
+	directories := []string(nil)
+	cfg, cfgErr := config.Load(abs)
+	if cfgErr == nil {
+		directories = cfg.Sequences.Directories
+	}
+
+	var seqIssues []string
+	if len(directories) > 0 {
+		seqIssues, err = pipeline.CheckSequenceGaps(abs, directories)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 2
+		}
 	}
 
 	failOnWarn, _ := cmd.Flags().GetBool("fail-on-warn")
 
 	if asJSON {
+		out := checkOutput{Janitor: result}
+		if len(seqIssues) > 0 {
+			out.Sequences = seqIssues
+		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(result); err != nil {
+		if err := enc.Encode(out); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
+			return 2
 		}
 	} else {
 		fmt.Print(result.Summary())
+		if len(seqIssues) > 0 {
+			fmt.Println("Sequence gaps:")
+			for _, issue := range seqIssues {
+				fmt.Println(issue)
+			}
+		}
 	}
 
-	if result.HasErrors() || (failOnWarn && result.HasWarnings()) {
-		os.Exit(1)
+	janitorFailed := result.HasErrors() || (failOnWarn && result.HasWarnings())
+	seqFailed := len(seqIssues) > 0
+	if janitorFailed || seqFailed {
+		return 1
 	}
-	return nil
+	return 0
 }

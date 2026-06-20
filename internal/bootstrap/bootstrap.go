@@ -105,6 +105,7 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 
 	hub := events.NewHub()
 	pipe := pipeline.New(store, ver, searcher, linker, hub, vectors, root)
+	pipe.SequenceDirs = cfg.Sequences.Directories
 
 	asyncIdxEnabled := cfg.Search.AsyncIndex == nil || *cfg.Search.AsyncIndex
 	if asyncIdxEnabled && cfg.Search.Engine != "grep" {

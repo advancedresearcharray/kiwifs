@@ -47,3 +47,42 @@ func TestScanResult_HasWarnings(t *testing.T) {
 		t.Fatal("expected warnings")
 	}
 }
+
+func TestRunCheckWithCode_SequenceGapFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".kiwi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `[sequences]
+directories = ["events/"]
+`
+	if err := os.WriteFile(filepath.Join(dir, ".kiwi", "config.toml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eventsDir := filepath.Join(dir, "events")
+	if err := os.MkdirAll(eventsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(eventsDir, "log.md"),
+		[]byte("<!-- seq:1 -->\na\n<!-- seq:3 -->\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(dir, ".kiwi", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "sequences.json"),
+		[]byte(`{"counters":{"events":3}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	checkCmd.SetContext(context.Background())
+	args := []string{"--root", dir}
+	checkCmd.SetArgs(args)
+	if err := checkCmd.ParseFlags(args); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if code := runCheckWithCode(checkCmd, args); code != 1 {
+		t.Fatalf("expected exit 1 for sequence gap, got %d", code)
+	}
+}
