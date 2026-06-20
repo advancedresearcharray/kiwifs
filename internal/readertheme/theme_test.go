@@ -105,6 +105,26 @@ func TestBuildCSS_RejectsUnsafeValues(t *testing.T) {
 	}
 }
 
+func TestBuildCSS_RejectsUnsafeKeys(t *testing.T) {
+	theme := map[string]any{
+		"light": map[string]any{
+			"primary": "hsl(65 80% 55%)",
+			"foo\n}\n</style><script>alert(1)</script><style>": "red",
+			"123bad": "blue",
+		},
+	}
+	css := BuildCSS(theme)
+	if strings.Contains(css, "script") {
+		t.Fatalf("unsafe key should be filtered: %s", css)
+	}
+	if strings.Contains(css, "123bad") {
+		t.Fatalf("key must start with a letter: %s", css)
+	}
+	if !strings.Contains(css, "--primary:") {
+		t.Fatalf("safe token should remain: %s", css)
+	}
+}
+
 func TestBrandingFromConfig_TitlePrefix(t *testing.T) {
 	ctx := BrandingFromConfig(config.BrandingConfig{
 		Name:       "Acme Docs",

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/kiwifs/kiwifs/internal/config"
 )
@@ -158,7 +159,7 @@ func tokensFrom(v any) map[string]string {
 	out := make(map[string]string, len(raw))
 	for k, val := range raw {
 		s, ok := val.(string)
-		if !ok || !safeCSSValue(s) {
+		if !ok || !safeCSSKey(k) || !safeCSSValue(s) {
 			continue
 		}
 		out[k] = strings.TrimSpace(s)
@@ -175,6 +176,27 @@ func safeCSSValue(v string) bool {
 	}
 	if strings.ContainsAny(v, "{}<>\n\r") {
 		return false
+	}
+	return true
+}
+
+func safeCSSKey(k string) bool {
+	if k == "" || len(k) > 64 {
+		return false
+	}
+	if strings.ContainsAny(k, "{}<>\n\r ;:\"'") {
+		return false
+	}
+	for i, r := range k {
+		if i == 0 {
+			if !unicode.IsLetter(r) {
+				return false
+			}
+			continue
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' {
+			return false
+		}
 	}
 	return true
 }
