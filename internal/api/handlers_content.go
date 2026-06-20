@@ -450,7 +450,12 @@ func (h *Handlers) Janitor(c echo.Context) error {
 		}
 	}
 
-	scanner := janitor.New(h.root, h.store, h.searcher, staleDays)
+	var execOpts []janitor.Option
+	if h.cfg != nil && h.cfg.Janitor.ExecutionStaleness.Enabled() {
+		es := h.cfg.Janitor.ExecutionStaleness
+		execOpts = janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
+	}
+	scanner := janitor.New(h.root, h.store, h.searcher, staleDays, execOpts...)
 	result, err := scanner.Scan(c.Request().Context())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())

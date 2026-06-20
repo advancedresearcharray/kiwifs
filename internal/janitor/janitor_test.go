@@ -250,3 +250,371 @@ This content is long enough to avoid being flagged as an empty page entirely.
 		t.Fatalf("expected 1 healthy (index.md is exempt from orphan check), got %d; issues=%+v", res.Healthy, res.Issues)
 	}
 }
+
+const runbookBody = `
+Content long enough to avoid empty-page flag and hit fifty chars of body text here.
+`
+
+func TestScan_ExecutionStalenessFlagsStaleRunbook(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/stale.md": `---
+title: Stale deploy
+owner: alice
+status: active
+last_executed: 2020-01-01
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{"last_outcome": "failure"},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	by := issuesByKind(res.Issues)
+	if len(by[IssueExecutionStale]) != 1 {
+		t.Fatalf("expected 1 execution-stale, got %+v", by[IssueExecutionStale])
+	}
+	if by[IssueExecutionStale][0].Path != "runbooks/stale.md" {
+		t.Fatalf("expected runbooks/stale.md, got %s", by[IssueExecutionStale][0].Path)
+	}
+	if !strings.Contains(by[IssueExecutionStale][0].Message, "last_executed") {
+		t.Fatalf("expected staleness message, got %q", by[IssueExecutionStale][0].Message)
+	}
+}
+
+func TestScan_ExecutionStalenessFreshRunbookNotFlagged(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/fresh.md": `---
+title: Fresh deploy
+owner: alice
+status: active
+last_executed: 2099-01-01
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{"last_outcome": "failure"},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	by := issuesByKind(res.Issues)
+	if len(by[IssueExecutionStale]) != 0 {
+		t.Fatalf("expected no execution-stale, got %+v", by[IssueExecutionStale])
+	}
+}
+
+func TestScan_ExecutionStalenessFlagsFailureRegardlessOfAge(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/failed.md": `---
+title: Failed deploy
+owner: alice
+status: active
+last_executed: 2099-01-01
+last_outcome: failure
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{"last_outcome": "failure"},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	by := issuesByKind(res.Issues)
+	if len(by[IssueExecutionStale]) != 1 {
+		t.Fatalf("expected 1 execution-stale for failure, got %+v", by[IssueExecutionStale])
+	}
+	if !strings.Contains(by[IssueExecutionStale][0].Message, `last_outcome is "failure"`) {
+		t.Fatalf("expected failure message, got %q", by[IssueExecutionStale][0].Message)
+	}
+}
+
+func TestScan_ExecutionStalenessIgnoresOtherDirectories(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"pages/stale.md": `---
+title: Other stale
+owner: alice
+status: active
+last_executed: 2020-01-01
+last_outcome: failure
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{"last_outcome": "failure"},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	by := issuesByKind(res.Issues)
+	if len(by[IssueExecutionStale]) != 0 {
+		t.Fatalf("expected no execution-stale outside runbooks/, got %+v", by[IssueExecutionStale])
+	}
+}
+
+func TestOptionsFromExecutionStaleness_DisabledWhenDirectoryEmpty(t *testing.T) {
+	if opts := OptionsFromExecutionStaleness("", "last_executed", 90, nil); opts != nil {
+		t.Fatalf("expected nil opts for empty directory, got %v", opts)
+	}
+	if opts := OptionsFromExecutionStaleness("   ", "last_executed", 90, nil); opts != nil {
+		t.Fatalf("expected nil opts for whitespace directory, got %v", opts)
+	}
+}
+
+func TestExecutionStalenessRule_Enabled(t *testing.T) {
+	enabled := ExecutionStalenessRule{Directory: "runbooks/"}
+	if !enabled.Enabled() {
+		t.Fatal("expected enabled for non-empty directory")
+	}
+	disabled := ExecutionStalenessRule{Directory: ""}
+	if disabled.Enabled() {
+		t.Fatal("expected disabled for empty directory")
+	}
+}
+
+func TestScan_ExecutionStalenessMultipleFlagValues(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/blocked.md": `---
+title: Blocked runbook
+owner: alice
+status: blocked
+last_executed: 2099-01-01
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{
+			"last_outcome": "failure",
+			"status":       "blocked",
+		},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	by := issuesByKind(res.Issues)
+	if len(by[IssueExecutionStale]) != 1 {
+		t.Fatalf("expected 1 execution-stale for status=blocked, got %+v", by[IssueExecutionStale])
+	}
+	if !strings.Contains(by[IssueExecutionStale][0].Message, `status is "blocked"`) {
+		t.Fatalf("expected blocked flag message, got %q", by[IssueExecutionStale][0].Message)
+	}
+}
+
+func TestScan_ExecutionStalenessCustomDateField(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/custom-date.md": `---
+title: Custom date field
+owner: alice
+status: active
+last_verified: 2020-01-01
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_verified",
+		MaxAgeDays: 90,
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	by := issuesByKind(res.Issues)
+	if len(by[IssueExecutionStale]) != 1 {
+		t.Fatalf("expected 1 execution-stale for custom date field, got %+v", by[IssueExecutionStale])
+	}
+	if !strings.Contains(by[IssueExecutionStale][0].Message, "last_verified") {
+		t.Fatalf("expected last_verified in message, got %q", by[IssueExecutionStale][0].Message)
+	}
+}
+
+func TestScan_ExecutionStalenessMissingDateFieldNotFlaggedByAge(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/no-date.md": `---
+title: No execution date
+owner: alice
+status: active
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{"last_outcome": "failure"},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(issuesByKind(res.Issues)[IssueExecutionStale]) != 0 {
+		t.Fatalf("expected no execution-stale without date or failure flag, got %+v", res.Issues)
+	}
+}
+
+func TestScan_ExecutionStalenessStaleAndFailureBothFlag(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/stale-failed.md": `---
+title: Stale and failed
+owner: alice
+status: active
+last_executed: 2020-01-01
+last_outcome: failure
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{"last_outcome": "failure"},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	staleIssues := issuesByKind(res.Issues)[IssueExecutionStale]
+	if len(staleIssues) != 2 {
+		t.Fatalf("expected 2 execution-stale issues (age + failure), got %+v", staleIssues)
+	}
+}
+
+func TestScan_ExecutionStalenessDefaultMaxAgeFromStaleDays(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/old.md": `---
+title: Uses scanner stale days
+owner: alice
+status: active
+last_executed: 2020-01-01
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 30, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory: "runbooks/",
+		DateField: "last_executed",
+		// MaxAgeDays 0 → fall back to scanner staleDays (30)
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(issuesByKind(res.Issues)[IssueExecutionStale]) != 1 {
+		t.Fatalf("expected execution-stale using staleDays fallback, got %+v", res.Issues)
+	}
+}
+
+func TestScan_ExecutionStalenessRFC3339Date(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/rfc3339.md": `---
+title: RFC3339 date
+owner: alice
+status: active
+last_executed: 2020-01-01T00:00:00Z
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(issuesByKind(res.Issues)[IssueExecutionStale]) != 1 {
+		t.Fatalf("expected execution-stale for RFC3339 date, got %+v", res.Issues)
+	}
+}
+
+func TestScan_ExecutionStalenessInvalidDateIgnored(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/bad-date.md": `---
+title: Bad date
+owner: alice
+status: active
+last_executed: not-a-date
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		DateField:  "last_executed",
+		MaxAgeDays: 90,
+		FlagValues: map[string]string{"last_outcome": "failure"},
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(issuesByKind(res.Issues)[IssueExecutionStale]) != 0 {
+		t.Fatalf("expected no execution-stale for unparseable date without flag match, got %+v", res.Issues)
+	}
+}
+
+func TestScan_ExecutionStalenessDefaultDateField(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"runbooks/default-field.md": `---
+title: Default date field
+owner: alice
+status: active
+last_executed: 2020-01-01
+last_outcome: success
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---` + runbookBody,
+	})
+	sc := New(root, store, nil, 90, WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  "runbooks/",
+		MaxAgeDays: 90,
+		// DateField empty → last_executed
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(issuesByKind(res.Issues)[IssueExecutionStale]) != 1 {
+		t.Fatalf("expected execution-stale with default date_field, got %+v", res.Issues)
+	}
+}

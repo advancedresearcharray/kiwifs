@@ -427,7 +427,7 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		if staleDays <= 0 {
 			staleDays = janitor.DefaultStaleDays
 		}
-		scanner := janitor.New(root, store, searcher, staleDays)
+		scanner := janitor.New(root, store, searcher, staleDays, janitorExecutionOpts(cfg)...)
 		opts := janitor.ScheduleOptions{
 			Interval:    iv,
 			Jitter:      60 * time.Second,
@@ -661,4 +661,12 @@ func generateBootstrapSecret() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func janitorExecutionOpts(cfg *config.Config) []janitor.Option {
+	if cfg == nil || !cfg.Janitor.ExecutionStaleness.Enabled() {
+		return nil
+	}
+	es := cfg.Janitor.ExecutionStaleness
+	return janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
 }
