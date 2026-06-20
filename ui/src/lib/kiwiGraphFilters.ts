@@ -82,6 +82,17 @@ export function loadRelationFilterFromSession(): Set<string> {
   }
 }
 
+/** Drop stale relation types; empty intersection resets to "All". */
+export function reconcileRelationFilter(
+  selected: ReadonlySet<string>,
+  available: readonly string[],
+): Set<string> {
+  if (selected.size === 0) return new Set();
+  const valid = new Set(available);
+  const next = new Set([...selected].filter((r) => valid.has(r)));
+  return next.size === 0 ? new Set() : next;
+}
+
 export function saveRelationFilterToSession(selected: ReadonlySet<string>): void {
   if (typeof sessionStorage === "undefined") return;
   try {

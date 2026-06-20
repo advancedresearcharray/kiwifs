@@ -30,6 +30,7 @@ import {
   edgeMatchesRelationFilter,
   loadRelationFilterFromSession,
   nodeMatchesRelationFilter,
+  reconcileRelationFilter,
   relationLabel,
   resolveGraphLinks,
   saveRelationFilterToSession,
@@ -276,7 +277,7 @@ function buildGraphData(
     resolvedLinks,
     dirs: Array.from(dirSet).sort(),
     tags: Array.from(tagSet).sort(),
-    relations: collectRelationTypes(resp.edges),
+    relations: collectRelationTypes(resolvedLinks),
     communityMap,
     performance: getGraphPerformanceProfile(nodes.length),
   };
@@ -390,6 +391,20 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     return buildGraphData(resp, tree, themeRef.current, sizeByPageRank, colorByCommunity);
   }, [resp, tree, sizeByPageRank, colorByCommunity]);
 
+  useEffect(() => {
+    if (!built) return;
+    setRelationFilter((current) => {
+      const next = reconcileRelationFilter(current, built.relations);
+      if (
+        next.size === current.size &&
+        [...next].every((relation) => current.has(relation))
+      ) {
+        return current;
+      }
+      return next;
+    });
+  }, [built?.relations]);
+
   // react-force-graph treats graphData identity changes as data updates.
   // Keep this object stable across hover/search/path re-renders so pointer
   // interaction does not restart the force engine or perturb the camera.
@@ -403,13 +418,19 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     if (!built) return next;
     for (const n of built.nodes) next.set(n.id, new Set());
     for (const l of built.links) {
+      if (
+        relationFilter.size > 0 &&
+        !edgeMatchesRelationFilter(l.relation, relationFilter)
+      ) {
+        continue;
+      }
       const s = typeof l.source === "string" ? l.source : l.source.id;
       const t = typeof l.target === "string" ? l.target : l.target.id;
       next.get(s)?.add(t);
       next.get(t)?.add(s);
     }
     return next;
-  }, [built]);
+  }, [built, relationFilter]);
 
   const pathSet = useMemo(() => foundPath ? new Set(foundPath) : null, [foundPath]);
   const qLower = query.trim().toLowerCase();

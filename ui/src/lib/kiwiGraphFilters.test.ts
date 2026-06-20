@@ -4,6 +4,7 @@ import {
   edgeMatchesRelationFilter,
   loadRelationFilterFromSession,
   nodeMatchesRelationFilter,
+  reconcileRelationFilter,
   relationLabel,
   RELATION_FILTER_SESSION_KEY,
   resolveGraphLinks,
@@ -108,6 +109,24 @@ describe("kiwiGraphFilters", () => {
 
     it("shows controls when multiple relation types exist", () => {
       expect(shouldShowRelationFilters(["", "cites"])).toBe(true);
+    });
+  });
+
+  describe("reconcileRelationFilter", () => {
+    it("returns empty set when filter is empty", () => {
+      expect(reconcileRelationFilter(new Set(), ["", "cites"])).toEqual(new Set());
+    });
+
+    it("keeps only relations present in the graph", () => {
+      expect(
+        reconcileRelationFilter(new Set(["cites", "contradicts"]), ["", "cites"]),
+      ).toEqual(new Set(["cites"]));
+    });
+
+    it("resets to All when no selected relations remain valid", () => {
+      expect(
+        reconcileRelationFilter(new Set(["cites"]), ["", "contradicts"]),
+      ).toEqual(new Set());
     });
   });
 
