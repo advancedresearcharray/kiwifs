@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -398,6 +400,38 @@ func TestToolHandlerWrite(t *testing.T) {
 	})
 	if !strings.Contains(text, "Written new-page.md") {
 		t.Fatalf("expected 'Written' message, got: %s", text)
+	}
+}
+
+func TestToolHandlerWrite_RejectsAppendOnlyOverwrite(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+
+	initial := "---\nappend_only: true\n---\nentry\n"
+	if _, err := b.WriteFile(context.Background(), "events/log.md", initial, "test", ""); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := b.WriteFile(context.Background(), "events/log.md", "replaced\n", "test", "")
+	if !errors.Is(err, pipeline.ErrAppendOnly) {
+		t.Fatalf("overwrite: got %v, want ErrAppendOnly", err)
+	}
+
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "kiwi_write"
+	req.Params.Arguments = map[string]any{
+		"path":    "events/log.md",
+		"content": "replaced via tool\n",
+	}
+	result, herr := handleWrite(b)(context.Background(), req)
+	if herr != nil {
+		t.Fatalf("kiwi_write handler: %v", herr)
+	}
+	if !result.IsError {
+		t.Fatalf("expected tool error, got success: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "append-only") {
+		t.Fatalf("expected append-only error, got: %s", text)
 	}
 }
 

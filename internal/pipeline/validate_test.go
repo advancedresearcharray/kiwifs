@@ -152,8 +152,8 @@ func TestPipelineValidateWriteRulesIntegration(t *testing.T) {
 	}
 
 	_, err = p.Write(ctx, "log.md", []byte("---\nappend_only: true\n---\nreplaced\n"), "tester")
-	if !errors.Is(err, ErrWriteRejected) {
-		t.Fatalf("Write should return ErrWriteRejected, got %v", err)
+	if !errors.Is(err, ErrAppendOnly) {
+		t.Fatalf("Write should return ErrAppendOnly, got %v", err)
 	}
 
 	_, err = p.Append(ctx, "log.md", "entry two", "\n", "tester")

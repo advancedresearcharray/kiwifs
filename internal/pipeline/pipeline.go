@@ -532,6 +532,9 @@ func (p *Pipeline) WriteStream(ctx context.Context, path string, body io.Reader,
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	if err := p.rejectAppendOnlyOverwrite(ctx, path); err != nil {
+		return Result{}, err
+	}
 	p.markInflight(path)
 	if content != nil {
 		if err := p.Store.Write(ctx, path, content); err != nil {
@@ -603,6 +606,9 @@ func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byt
 	// If-Match: * means "match any existing representation" per RFC 7232 §3.1.
 	// We skip the ETag comparison — the precondition succeeds as long as the
 	// resource exists. For new files (create), * is a no-op.
+	if err := p.rejectAppendOnlyOverwrite(ctx, path); err != nil {
+		return Result{}, err
+	}
 	var oldStatus string
 	if p.OnTransition != nil || p.ValidateTransition != nil {
 		if old, err := p.Store.Read(ctx, path); err == nil {
@@ -799,6 +805,9 @@ func (p *Pipeline) BulkWrite(ctx context.Context, files []struct {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := p.rejectAppendOnlyBulkOverwrite(ctx, files); err != nil {
 		return nil, err
 	}
 	type preImage struct {

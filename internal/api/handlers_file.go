@@ -337,6 +337,9 @@ func (h *Handlers) patchFrontmatterFields(c echo.Context, path string, fields ma
 		if errors.Is(err, pipeline.ErrWriteRejected) {
 			return echo.NewHTTPError(http.StatusConflict, err.Error())
 		}
+		if errors.Is(err, pipeline.ErrAppendOnly) {
+			return echo.NewHTTPError(http.StatusConflict, err.Error())
+		}
 		if errors.Is(err, pipeline.ErrValidationFailed) {
 			return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
 		}
@@ -488,6 +491,9 @@ func (h *Handlers) WriteFile(c echo.Context) error {
 		if errors.Is(err, pipeline.ErrWriteRejected) {
 			return echo.NewHTTPError(http.StatusConflict, err.Error())
 		}
+		if errors.Is(err, pipeline.ErrAppendOnly) {
+			return echo.NewHTTPError(http.StatusConflict, err.Error())
+		}
 		if errors.Is(err, pipeline.ErrValidationFailed) {
 			return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
 		}
@@ -578,6 +584,9 @@ func (h *Handlers) BulkWrite(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusConflict, err.Error())
 		}
 		if errors.Is(err, pipeline.ErrWriteRejected) {
+			return echo.NewHTTPError(http.StatusConflict, err.Error())
+		}
+		if errors.Is(err, pipeline.ErrAppendOnly) {
 			return echo.NewHTTPError(http.StatusConflict, err.Error())
 		}
 		if errors.Is(err, pipeline.ErrValidationFailed) {
@@ -973,6 +982,9 @@ func (h *Handlers) AppendFile(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusConflict, err.Error())
 		}
 		if errors.Is(err, pipeline.ErrWriteRejected) {
+			return echo.NewHTTPError(http.StatusConflict, err.Error())
+		}
+		if errors.Is(err, pipeline.ErrAppendOnly) {
 			return echo.NewHTTPError(http.StatusConflict, err.Error())
 		}
 		if errors.Is(err, pipeline.ErrValidationFailed) {
