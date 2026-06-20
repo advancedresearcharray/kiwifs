@@ -234,3 +234,18 @@ func Delete(kiwiDir, name string) error {
 	}
 	return nil
 }
+
+// SyncStatusOnAdvance mirrors targetState into status when the page keeps status
+// aligned with workflow state (UC-7 ADRs and any doc where status == state).
+func SyncStatusOnAdvance(fm map[string]any, currentState, targetState string) {
+	if _, ok := fm["status"]; !ok {
+		return
+	}
+	if typ, _ := fm["type"].(string); typ == "adr" {
+		fm["status"] = targetState
+		return
+	}
+	if cur, _ := fm["status"].(string); cur == currentState {
+		fm["status"] = targetState
+	}
+}

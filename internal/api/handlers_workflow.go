@@ -523,10 +523,18 @@ func (h *Handlers) AdvanceWorkflow(c echo.Context) error {
 	}
 
 	// Update frontmatter: state + auto-stamp modified time on transition.
-	updated, err := setFrontmatterFields(content, map[string]string{
+	fields := map[string]string{
 		"state":    req.TargetState,
 		"modified": time.Now().UTC().Format(time.RFC3339),
-	})
+	}
+	if _, hasStatus := fm["status"]; hasStatus {
+		if typ, _ := fm["type"].(string); typ == "adr" {
+			fields["status"] = req.TargetState
+		} else if cur, _ := fm["status"].(string); cur == currentState {
+			fields["status"] = req.TargetState
+		}
+	}
+	updated, err := setFrontmatterFields(content, fields)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update state: "+err.Error())
 	}
