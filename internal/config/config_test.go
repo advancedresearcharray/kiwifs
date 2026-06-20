@@ -760,3 +760,47 @@ template = "templates/runbook-step.md"
 		t.Fatalf("second command = %+v", cfg.UI.Editor.SlashCommands[1])
 	}
 }
+
+func TestLoadJanitorExecutionStaleness(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[janitor.execution_staleness]
+directory = "runbooks/"
+date_field = "last_executed"
+max_age_days = 90
+
+[janitor.execution_staleness.flag_values]
+last_outcome = "failure"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	es := cfg.Janitor.ExecutionStaleness
+	if !es.Enabled() {
+		t.Fatal("expected execution staleness enabled")
+	}
+	if es.Directory != "runbooks/" || es.DateField != "last_executed" || es.MaxAgeDays != 90 {
+		t.Fatalf("unexpected config: %+v", es)
+	}
+	if es.FlagValues["last_outcome"] != "failure" {
+		t.Fatalf("flag_values = %+v", es.FlagValues)
+	}
+}
+
+func TestLoadJanitorExecutionStalenessDisabledByDefault(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte("[janitor]\nstale_days = 90\n"), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Janitor.ExecutionStaleness.Enabled() {
+		t.Fatal("expected execution staleness disabled when section omitted")
+	}
+}

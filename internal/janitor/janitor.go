@@ -27,7 +27,8 @@ const (
 	IssueBrokenLink    = "broken-link"
 	IssueNoReviewDate  = "no-review-date"
 	IssueDecisionFound = "decision-found"
-	IssueExpiredMemory = "expired-memory"
+	IssueExpiredMemory  = "expired-memory"
+	IssueExecutionStale = "execution-stale"
 )
 
 type Issue struct {
@@ -106,20 +107,73 @@ func (r *ScanResult) HasWarnings() bool {
 	return false
 }
 
-type Scanner struct {
-	root      string
-	store     storage.Storage
-	searcher  search.Searcher
-	staleDays int
+// ExecutionStalenessRule flags files under directory when a date field is stale
+// or when configured frontmatter values match (e.g. last_outcome = failure).
+type ExecutionStalenessRule struct {
+	Directory  string
+	DateField  string
+	MaxAgeDays int
+	FlagValues map[string]string
 }
 
-func New(root string, store storage.Storage, searcher search.Searcher, staleDays int) *Scanner {
-	return &Scanner{
+func (r ExecutionStalenessRule) Enabled() bool {
+	return strings.TrimSpace(r.Directory) != ""
+}
+
+type Scanner struct {
+	root               string
+	store              storage.Storage
+	searcher           search.Searcher
+	staleDays          int
+	executionStaleness *ExecutionStalenessRule
+}
+
+type Option func(*Scanner)
+
+func WithExecutionStaleness(rule ExecutionStalenessRule) Option {
+	return func(s *Scanner) {
+		if rule.Enabled() {
+			cp := rule
+			s.executionStaleness = &cp
+		}
+	}
+}
+
+// OptionFromExecutionStaleness builds a scanner option from config.toml fields.
+func OptionFromExecutionStaleness(directory, dateField string, maxAgeDays int, flagValues map[string]string) Option {
+	return WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  directory,
+		DateField:  dateField,
+		MaxAgeDays: maxAgeDays,
+		FlagValues: flagValues,
+	})
+}
+
+// OptionsFromExecutionStaleness returns nil when directory is unset.
+func OptionsFromExecutionStaleness(directory, dateField string, maxAgeDays int, flagValues map[string]string) []Option {
+	rule := ExecutionStalenessRule{
+		Directory:  directory,
+		DateField:  dateField,
+		MaxAgeDays: maxAgeDays,
+		FlagValues: flagValues,
+	}
+	if !rule.Enabled() {
+		return nil
+	}
+	return []Option{WithExecutionStaleness(rule)}
+}
+
+func New(root string, store storage.Storage, searcher search.Searcher, staleDays int, opts ...Option) *Scanner {
+	s := &Scanner{
 		root:      root,
 		store:     store,
 		searcher:  searcher,
 		staleDays: staleDays,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 type pageInfo struct {
@@ -167,6 +221,7 @@ func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 	result.Issues = append(result.Issues, s.checkOrphans(ctx, pages)...)
 	result.Issues = append(result.Issues, s.checkDuplicates(pages)...)
 	result.Issues = append(result.Issues, s.checkContradictions(pages)...)
+	result.Issues = append(result.Issues, s.checkExecutionStaleness(pages)...)
 
 	for _, is := range result.Issues {
 		pagesWithIssues[is.Path] = true
@@ -474,6 +529,65 @@ func tagOverlap(a, b []string) []string {
 	return overlap
 }
 
+func (s *Scanner) checkExecutionStaleness(pages []pageInfo) []Issue {
+	if s.executionStaleness == nil {
+		return nil
+	}
+	rule := s.executionStaleness
+	dir := strings.TrimPrefix(strings.TrimSpace(rule.Directory), "/")
+	if dir == "" {
+		return nil
+	}
+	if !strings.HasSuffix(dir, "/") {
+		dir += "/"
+	}
+
+	dateField := strings.TrimSpace(rule.DateField)
+	if dateField == "" {
+		dateField = "last_executed"
+	}
+	maxAge := rule.MaxAgeDays
+	if maxAge <= 0 {
+		maxAge = s.staleDays
+		if maxAge <= 0 {
+			maxAge = DefaultStaleDays
+		}
+	}
+
+	now := time.Now()
+	var issues []Issue
+	for _, p := range pages {
+		if !strings.HasPrefix(p.path, dir) {
+			continue
+		}
+
+		for field, want := range rule.FlagValues {
+			if fmStringField(p.frontmatter, field) == want {
+				issues = append(issues, Issue{
+					Kind:       IssueExecutionStale,
+					Path:       p.path,
+					Message:    fmt.Sprintf("%s is %q", field, want),
+					Severity:   "warning",
+					Suggestion: "review the runbook and update execution metadata after remediation",
+				})
+			}
+		}
+
+		if executed, ok := fmDateField(p.frontmatter, dateField); ok {
+			if now.Sub(executed).Hours()/24 > float64(maxAge) {
+				issues = append(issues, Issue{
+					Kind:       IssueExecutionStale,
+					Path:       p.path,
+					Message:    fmt.Sprintf("%s %s is older than %d days", dateField, executed.Format("2006-01-02"), maxAge),
+					Severity:   "warning",
+					Suggestion: fmt.Sprintf("execute the runbook and update %s", dateField),
+				})
+			}
+		}
+	}
+	return issues
+}
+
 func (s *Scanner) checkExpiredMemory(ctx context.Context, p pageInfo) []Issue {
 	now := time.Now().UTC()
 
@@ -561,6 +675,19 @@ func parseTTL(raw string) (time.Duration, bool) {
 		return time.Duration(n) * time.Hour, true
 	default:
 		return 0, false
+	}
+}
+
+func fmStringField(fm map[string]any, key string) string {
+	val, ok := fm[key]
+	if !ok {
+		return ""
+	}
+	switch v := val.(type) {
+	case string:
+		return v
+	default:
+		return fmt.Sprint(v)
 	}
 }
 
