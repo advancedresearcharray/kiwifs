@@ -34,5 +34,5 @@ Targeted regression: 17 tests PASS (`TestPublishedPage_*`, `TestBuildCSS_*`, `Te
 ## Deliverables
 
 - Branch: `feat/reader-workspace-theme-348-clean`
-- Commits: `c9c2112` (feat), `be6cbc0` (episodic)
-- PR opened against `kiwifs/kiwifs` main
+- Commits: `c9c2112` (feat), `be6cbc0` (episodic), `e3dbb70` (hands-on), `21d59cf` (CSS key sanitization)
+- PR: https://github.com/kiwifs/kiwifs/pull/407
