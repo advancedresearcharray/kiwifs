@@ -279,3 +279,63 @@ func TestMkdocsRelativeLink(t *testing.T) {
 		t.Fatalf("got %q, want ../pages/hello.md", got)
 	}
 }
+
+func TestPathUnderPrefix(t *testing.T) {
+	tests := []struct {
+		path, prefix string
+		want         bool
+	}{
+		{"pages/hello.md", "pages", true},
+		{"pages/hello.md", "pages/", true},
+		{"/pages/hello.md", "pages", true},
+		{"pages-extra/foo.md", "pages", false},
+		{"pages-extra/foo.md", "pages/", false},
+		{"pages.md", "pages", false},
+		{"ab/c", "a", false},
+		{"students/alice.md", "students/", true},
+		{"teachers/bob.md", "students/", false},
+		{"pages", "pages", true},
+		{"anything.md", "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path+" under "+tc.prefix, func(t *testing.T) {
+			if got := pathUnderPrefix(tc.path, tc.prefix); got != tc.want {
+				t.Fatalf("pathUnderPrefix(%q, %q) = %v, want %v", tc.path, tc.prefix, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExportMkDocsPathPrefix(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := storage.NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(ctx, "pages/hello.md", []byte("# Hello\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(ctx, "pages-extra/other.md", []byte("# Other\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	outDir := filepath.Join(t.TempDir(), "site")
+	count, err := ExportMkDocs(ctx, store, MkDocsOptions{
+		OutputDir:  outDir,
+		PathPrefix: "pages",
+		SiteName:   "Prefix Test",
+	})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count=%d, want 1 (only pages/, not pages-extra/)", count)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "docs", "hello.md")); err != nil {
+		t.Fatalf("hello.md missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "docs", "pages-extra", "other.md")); !os.IsNotExist(err) {
+		t.Fatalf("pages-extra/other.md should not be exported: %v", err)
+	}
+}
