@@ -93,6 +93,148 @@ func TestPublishedPage_Branding(t *testing.T) {
 	}
 }
 
+func TestPublishedPage_DarkModeTheme(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	kiwiDir := filepath.Join(dir, ".kiwi")
+	if err := os.MkdirAll(kiwiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	theme := `{"mode":"dark","dark":{"background":"hsl(0 0% 5%)","foreground":"hsl(0 0% 95%)"}}`
+	if err := os.WriteFile(filepath.Join(kiwiDir, "theme.json"), []byte(theme), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	pageContent := "---\npublished: true\ntitle: Dark Page\n---\n# Dark Page\n"
+	mustPutFile(t, s, "docs/dark.md", pageContent)
+
+	req := httptest.NewRequest(http.MethodGet, "/p/docs/dark.md", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "--background: hsl(0 0% 5%)") {
+		t.Fatalf("expected dark mode background token in HTML")
+	}
+	if !strings.Contains(body, "--foreground: hsl(0 0% 95%)") {
+		t.Fatalf("expected dark mode foreground token in HTML")
+	}
+}
+
+func TestPublishedPage_SystemModeTheme(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	kiwiDir := filepath.Join(dir, ".kiwi")
+	if err := os.MkdirAll(kiwiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	theme := `{"mode":"system","light":{"background":"#fff"},"dark":{"background":"#111"}}`
+	if err := os.WriteFile(filepath.Join(kiwiDir, "theme.json"), []byte(theme), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	pageContent := "---\npublished: true\ntitle: System Page\n---\n# System Page\n"
+	mustPutFile(t, s, "docs/system.md", pageContent)
+
+	req := httptest.NewRequest(http.MethodGet, "/p/docs/system.md", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "--background: #fff") {
+		t.Fatalf("expected light background token in HTML")
+	}
+	if !strings.Contains(body, "@media (prefers-color-scheme: dark)") {
+		t.Fatalf("system mode should include dark media query")
+	}
+	if !strings.Contains(body, "--background: #111") {
+		t.Fatalf("expected dark background token in media query block")
+	}
+}
+
+func TestPublishedPage_InvalidThemeJSONFallback(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	kiwiDir := filepath.Join(dir, ".kiwi")
+	if err := os.MkdirAll(kiwiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kiwiDir, "theme.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	pageContent := "---\npublished: true\ntitle: Broken Theme\n---\n# Broken Theme\n"
+	mustPutFile(t, s, "docs/broken-theme.md", pageContent)
+
+	req := httptest.NewRequest(http.MethodGet, "/p/docs/broken-theme.md", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "--background: #ffffff") {
+		t.Fatalf("invalid theme.json should fall back to default CSS variables")
+	}
+}
+
+func TestPublishedPage_ThemeOnlyInHTMLResponse(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	kiwiDir := filepath.Join(dir, ".kiwi")
+	if err := os.MkdirAll(kiwiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	theme := `{"mode":"light","light":{"primary":"hsl(200 80% 45%)"}}`
+	if err := os.WriteFile(filepath.Join(kiwiDir, "theme.json"), []byte(theme), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	pageContent := "---\npublished: true\ntitle: Negotiated\n---\n# Negotiated\n"
+	mustPutFile(t, s, "docs/negotiated.md", pageContent)
+
+	mdReq := httptest.NewRequest(http.MethodGet, "/p/docs/negotiated.md", nil)
+	mdReq.Header.Set("Accept", "text/markdown")
+	mdRec := httptest.NewRecorder()
+	s.echo.ServeHTTP(mdRec, mdReq)
+	if mdRec.Code != http.StatusOK {
+		t.Fatalf("markdown GET: %d", mdRec.Code)
+	}
+	if strings.Contains(mdRec.Body.String(), "--primary:") {
+		t.Fatalf("markdown response must not include injected theme CSS")
+	}
+
+	jsonReq := httptest.NewRequest(http.MethodGet, "/p/docs/negotiated.md", nil)
+	jsonReq.Header.Set("Accept", "application/json")
+	jsonRec := httptest.NewRecorder()
+	s.echo.ServeHTTP(jsonRec, jsonReq)
+	if jsonRec.Code != http.StatusOK {
+		t.Fatalf("json GET: %d", jsonRec.Code)
+	}
+	if strings.Contains(jsonRec.Body.String(), "--primary:") {
+		t.Fatalf("json response must not include injected theme CSS")
+	}
+}
+
 func TestPublishedPage_DefaultThemeFallback(t *testing.T) {
 	s := buildTestServer(t)
 	pageContent := "---\npublished: true\ntitle: Plain Page\n---\n# Plain Page\n"
