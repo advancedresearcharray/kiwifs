@@ -189,3 +189,36 @@ func TestGitConcurrentCommitsRequireExternalSerialisation(t *testing.T) {
 		}
 	}
 }
+
+func TestGitWordDiff(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	g, err := NewGit(dir)
+	if err != nil {
+		t.Fatalf("NewGit: %v", err)
+	}
+	ctx := context.Background()
+	writeRoot(t, dir, "prompt.md", "You are a helpful assistant.")
+	if err := g.Commit(ctx, "prompt.md", "tester", "v1"); err != nil {
+		t.Fatalf("commit v1: %v", err)
+	}
+	writeRoot(t, dir, "prompt.md", "You are a concise helpful assistant.")
+	if err := g.Commit(ctx, "prompt.md", "tester", "v2"); err != nil {
+		t.Fatalf("commit v2: %v", err)
+	}
+	vs, err := g.Log(ctx, "prompt.md")
+	if err != nil || len(vs) < 2 {
+		t.Fatalf("log: %v len=%d", err, len(vs))
+	}
+	lineDiff, err := g.Diff(ctx, "prompt.md", vs[1].Hash, vs[0].Hash)
+	if err != nil || lineDiff == "" {
+		t.Fatalf("line diff: %v %q", err, lineDiff)
+	}
+	wordDiff, err := g.WordDiff(ctx, "prompt.md", vs[1].Hash, vs[0].Hash)
+	if err != nil || wordDiff == "" {
+		t.Fatalf("word diff: %v %q", err, wordDiff)
+	}
+	if wordDiff == lineDiff {
+		t.Fatalf("expected word diff to differ from line diff")
+	}
+}

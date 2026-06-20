@@ -114,6 +114,15 @@ func (a *AsyncGit) Diff(ctx context.Context, path, fromHash, toHash string) (str
 	return a.inner.Diff(ctx, path, fromHash, toHash)
 }
 
+func (a *AsyncGit) WordDiff(ctx context.Context, path, fromHash, toHash string) (string, error) {
+	if wd, ok := a.inner.(interface {
+		WordDiff(context.Context, string, string, string) (string, error)
+	}); ok {
+		return wd.WordDiff(ctx, path, fromHash, toHash)
+	}
+	return "", ErrWordDiffUnsupported
+}
+
 func (a *AsyncGit) Blame(ctx context.Context, path string) ([]BlameLine, error) {
 	return a.inner.Blame(ctx, path)
 }

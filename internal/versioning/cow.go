@@ -235,6 +235,18 @@ func (c *Cow) Diff(ctx context.Context, path, fromHash, toHash string) (string, 
 	return difflib.GetUnifiedDiffString(ud)
 }
 
+func (c *Cow) WordDiff(ctx context.Context, path, fromHash, toHash string) (string, error) {
+	fromData, err := c.Show(ctx, path, fromHash)
+	if err != nil {
+		return "", fmt.Errorf("from version: %w", err)
+	}
+	toData, err := c.Show(ctx, path, toHash)
+	if err != nil {
+		return "", fmt.Errorf("to version: %w", err)
+	}
+	return WordDiffText(string(fromData), string(toData), fromHash, toHash)
+}
+
 // Blame is not meaningful under CoW — snapshots are whole-file, not
 // per-line. Return ErrBlameUnsupported so the API layer can 501 rather
 // than silently returning an empty result.
