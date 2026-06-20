@@ -413,6 +413,11 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     [built],
   );
 
+  const availableRelations = useMemo(
+    () => (built ? new Set(built.relations) : undefined),
+    [built?.relations],
+  );
+
   const adj = useMemo(() => {
     const next = new Map<string, Set<string>>();
     if (!built) return next;
@@ -420,7 +425,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
     for (const l of built.links) {
       if (
         relationFilter.size > 0 &&
-        !edgeMatchesRelationFilter(l.relation, relationFilter)
+        !edgeMatchesRelationFilter(l.relation, relationFilter, availableRelations)
       ) {
         continue;
       }
@@ -430,7 +435,7 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
       next.get(t)?.add(s);
     }
     return next;
-  }, [built, relationFilter]);
+  }, [built, relationFilter, availableRelations]);
 
   const pathSet = useMemo(() => foundPath ? new Set(foundPath) : null, [foundPath]);
   const qLower = query.trim().toLowerCase();
@@ -467,10 +472,10 @@ export function KiwiGraph({ tree, activePath, onNavigate, onClose }: Props) {
         showLinks &&
         nodeVisible(source) &&
         nodeVisible(target) &&
-        edgeMatchesRelationFilter(link.relation, relationFilter)
+        edgeMatchesRelationFilter(link.relation, relationFilter, availableRelations)
       );
     },
-    [nodeVisible, relationFilter, showLinks],
+    [availableRelations, nodeVisible, relationFilter, showLinks],
   );
 
   const getGraphApi = useCallback(

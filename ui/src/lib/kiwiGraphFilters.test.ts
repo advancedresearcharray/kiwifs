@@ -8,11 +8,35 @@ import {
   relationLabel,
   RELATION_FILTER_SESSION_KEY,
   resolveGraphLinks,
+  sanitizeRelation,
   saveRelationFilterToSession,
   shouldShowRelationFilters,
 } from "./kiwiGraphFilters";
 
 describe("kiwiGraphFilters", () => {
+  describe("sanitizeRelation", () => {
+    it("accepts empty string as wiki-link", () => {
+      expect(sanitizeRelation("")).toBe("");
+      expect(sanitizeRelation(null)).toBe("");
+      expect(sanitizeRelation(undefined)).toBe("");
+    });
+
+    it("accepts valid typed-link field names", () => {
+      expect(sanitizeRelation("cites")).toBe("cites");
+      expect(sanitizeRelation("contradicts")).toBe("contradicts");
+      expect(sanitizeRelation("superseded_by")).toBe("superseded_by");
+      expect(sanitizeRelation("  cites  ")).toBe("cites");
+    });
+
+    it("rejects malicious or invalid relation values", () => {
+      expect(sanitizeRelation("<script>alert(1)</script>")).toBe("");
+      expect(sanitizeRelation("bad;injection")).toBe("");
+      expect(sanitizeRelation("9starts-with-digit")).toBe("");
+      expect(sanitizeRelation({})).toBe("");
+      expect(sanitizeRelation(["cites"])).toBe("");
+    });
+  });
+
   describe("relationLabel", () => {
     it("labels empty relation as wiki-link", () => {
       expect(relationLabel("")).toBe("wiki-link");
@@ -50,6 +74,19 @@ describe("kiwiGraphFilters", () => {
       expect(edgeMatchesRelationFilter("contradicts", selected)).toBe(true);
       expect(edgeMatchesRelationFilter("", selected)).toBe(false);
       expect(edgeMatchesRelationFilter("supersedes", selected)).toBe(false);
+    });
+
+    it("sanitizes relation before matching", () => {
+      const selected = new Set(["cites"]);
+      expect(edgeMatchesRelationFilter("  cites  ", selected)).toBe(true);
+      expect(edgeMatchesRelationFilter("<script>", selected)).toBe(false);
+    });
+
+    it("rejects relations absent from the available set", () => {
+      const selected = new Set(["cites"]);
+      const available = new Set(["", "cites"]);
+      expect(edgeMatchesRelationFilter("cites", selected, available)).toBe(true);
+      expect(edgeMatchesRelationFilter("contradicts", selected, available)).toBe(false);
     });
   });
 
@@ -95,6 +132,25 @@ describe("kiwiGraphFilters", () => {
       );
       expect(links).toHaveLength(3);
       expect(links.map((l) => l.relation).sort()).toEqual(["", "cites", "contradicts"]);
+    });
+
+    it("sanitizes malicious relation metadata from API edges", () => {
+      const nodeIds = new Set(["pages/a.md", "pages/b.md"]);
+      const resolver = (target: string) =>
+        target === "pages/b.md" ? "pages/b.md" : null;
+      const links = resolveGraphLinks(
+        [
+          {
+            source: "pages/a.md",
+            target: "pages/b.md",
+            relation: "<script>alert(1)</script>",
+          },
+        ],
+        resolver,
+        nodeIds,
+      );
+      expect(links).toHaveLength(1);
+      expect(links[0]?.relation).toBe("");
     });
   });
 
@@ -160,6 +216,21 @@ describe("kiwiGraphFilters", () => {
       saveRelationFilterToSession(new Set(["cites"]));
       saveRelationFilterToSession(new Set());
       expect(sessionStorage.getItem(RELATION_FILTER_SESSION_KEY)).toBeNull();
+      expect(loadRelationFilterFromSession()).toEqual(new Set());
+    });
+
+    it("drops invalid relation types from tampered session storage", () => {
+      storage.set(
+        RELATION_FILTER_SESSION_KEY,
+        JSON.stringify(["cites", "<script>", "bad;injection", ""]),
+      );
+      expect(loadRelationFilterFromSession()).toEqual(new Set(["cites", ""]));
+    });
+
+    it("returns empty set for malformed session storage", () => {
+      storage.set(RELATION_FILTER_SESSION_KEY, "not-json");
+      expect(loadRelationFilterFromSession()).toEqual(new Set());
+      storage.set(RELATION_FILTER_SESSION_KEY, JSON.stringify({ cites: true }));
       expect(loadRelationFilterFromSession()).toEqual(new Set());
     });
   });

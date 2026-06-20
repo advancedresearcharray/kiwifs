@@ -2,6 +2,21 @@ import type { GraphEdge } from "@kw/lib/api";
 
 export const RELATION_FILTER_SESSION_KEY = "kiwifs-graph-relation-filter";
 
+/** Matches backend links.ValidTypedFieldName — safe typed-link frontmatter keys. */
+const VALID_RELATION_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+
+/**
+ * Sanitize relation from API/session input.
+ * Empty string = wiki-link; invalid values normalize to wiki-link (defense in depth).
+ */
+export function sanitizeRelation(relation: unknown): string {
+  if (relation == null || relation === "") return "";
+  if (typeof relation !== "string") return "";
+  const trimmed = relation.trim();
+  if (trimmed === "" || !VALID_RELATION_RE.test(trimmed)) return "";
+  return trimmed;
+}
+
 /** Display label for a relation type; empty string = body wiki-link. */
 export function relationLabel(relation: string): string {
   return relation === "" ? "wiki-link" : relation;
@@ -11,7 +26,7 @@ export function relationLabel(relation: string): string {
 export function collectRelationTypes(edges: Array<{ relation?: string }>): string[] {
   const set = new Set<string>();
   for (const e of edges) {
-    set.add(e.relation ?? "");
+    set.add(sanitizeRelation(e.relation));
   }
   return Array.from(set).sort((a, b) => {
     if (a === "") return -1;
@@ -23,9 +38,12 @@ export function collectRelationTypes(edges: Array<{ relation?: string }>): strin
 export function edgeMatchesRelationFilter(
   relation: string,
   selected: ReadonlySet<string>,
+  available?: ReadonlySet<string>,
 ): boolean {
   if (selected.size === 0) return true;
-  return selected.has(relation);
+  const safe = sanitizeRelation(relation);
+  if (available && available.size > 0 && !available.has(safe)) return false;
+  return selected.has(safe);
 }
 
 export type ResolvedGraphLink = {
@@ -60,7 +78,7 @@ export function resolveGraphLinks(
     if (!nodeIds.has(e.source)) continue;
     const resolved = resolver(e.target);
     if (!resolved || !nodeIds.has(resolved) || resolved === e.source) continue;
-    const relation = e.relation ?? "";
+    const relation = sanitizeRelation(e.relation);
     const key = `${e.source}||${resolved}||${relation}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -76,7 +94,11 @@ export function loadRelationFilterFromSession(): Set<string> {
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((v): v is string => typeof v === "string"));
+    return new Set(
+      parsed
+        .filter((v): v is string => typeof v === "string")
+        .map(sanitizeRelation),
+    );
   } catch {
     return new Set();
   }
