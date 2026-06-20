@@ -72,7 +72,7 @@ func ExportMkDocs(ctx context.Context, store storage.Storage, opts MkDocsOptions
 		if strings.HasPrefix(base, ".") || strings.Contains(entry.Path, "/.kiwi/") {
 			return nil
 		}
-		if opts.PathPrefix != "" && !strings.HasPrefix(entry.Path, strings.TrimPrefix(opts.PathPrefix, "/")) {
+		if opts.PathPrefix != "" && !pathUnderPrefix(entry.Path, opts.PathPrefix) {
 			return nil
 		}
 		allPaths = append(allPaths, entry.Path)
@@ -140,6 +140,17 @@ func ExportMkDocs(ctx context.Context, store storage.Storage, opts MkDocsOptions
 	}
 
 	return count, nil
+}
+
+// pathUnderPrefix reports whether path is equal to prefix or nested under it.
+// Unlike strings.HasPrefix alone, "pages" does not match "pages-extra/foo.md".
+func pathUnderPrefix(path, prefix string) bool {
+	path = filepath.ToSlash(strings.TrimPrefix(path, "/"))
+	prefix = strings.Trim(strings.TrimPrefix(filepath.ToSlash(prefix), "/"), "/")
+	if prefix == "" {
+		return true
+	}
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
 func buildMkdocsWikiIndex(paths []string) map[string]string {
