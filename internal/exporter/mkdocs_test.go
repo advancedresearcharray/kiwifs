@@ -290,6 +290,8 @@ func TestPathUnderPrefix(t *testing.T) {
 		{"/pages/hello.md", "pages", true},
 		{"pages-extra/foo.md", "pages", false},
 		{"pages-extra/foo.md", "pages/", false},
+		{"pages.md", "pages", false},
+		{"ab/c", "a", false},
 		{"students/alice.md", "students/", true},
 		{"teachers/bob.md", "students/", false},
 		{"pages", "pages", true},
