@@ -39,7 +39,7 @@ var templateDescriptions = map[string]string{
 	"knowledge":      "LLM-maintained knowledge base with schema, episodes, and agent playbook",
 	"wiki":           "Wiki with onboarding, ADRs, processes, and reference docs",
 	"runbook":        "Operational runbooks and incident response procedures",
-	"research":       "Research notes, hypotheses, and literature tracking",
+	"research":       "Research library with paper tracking, reading workflow, and literature reviews",
 	"tasks":          "Task tracking with priorities and status workflows",
 	"prompt-library": "Versioned prompt registry with schemas, eval rubrics, and DQL metrics",
 	"blank":          "Empty workspace with Kiwi config only",

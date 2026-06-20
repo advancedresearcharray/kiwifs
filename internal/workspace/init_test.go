@@ -24,7 +24,7 @@ func TestListInitTemplatesIncludesKnown(t *testing.T) {
 		}
 		ids[item.ID] = true
 	}
-	for _, want := range []string{"blank", "knowledge", "wiki", "prompt-library"} {
+	for _, want := range []string{"blank", "knowledge", "wiki", "research", "prompt-library"} {
 		if !ids[want] {
 			t.Fatalf("missing template %q in %v", want, list)
 		}
@@ -180,6 +180,13 @@ func TestKnowledgeTemplateEmbedded(t *testing.T) {
 		"templates/prompt-library/system-prompts/code-assistant.md",
 		"templates/prompt-library/task-prompts/summarize.md",
 		"templates/prompt-library/evaluation/summarize-rubric.md",
+		"templates/research/SCHEMA.md",
+		"templates/research/index.md",
+		"templates/research/playbook.md",
+		"templates/research/.kiwi/schemas/paper.json",
+		"templates/research/.kiwi/workflows/reading.json",
+		"templates/research/.kiwi/config.toml",
+		"templates/research/papers/example-paper.md",
 	}
 	for _, p := range paths {
 		if _, err := fs.Stat(templates, p); err != nil {
@@ -246,6 +253,30 @@ func TestInitPromptLibraryDoesNotOverwriteExisting(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "SCHEMA.md")); err != nil {
 		t.Fatal("expected SCHEMA.md to be created alongside existing index.md")
+	}
+}
+
+func TestInitResearchTemplateIncludesReadingWorkflow(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "research-ws")
+	if err := Init(root, "research"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{
+		".kiwi/workflows/reading.json",
+		".kiwi/schemas/paper.json",
+		".kiwi/config.toml",
+		".kiwi/playbook.md",
+		"papers/example-paper.md",
+		"papers/transformer-survey.md",
+		"notes/synthesis-example.md",
+		"reviews/literature-review-draft.md",
+		"index.md",
+		"SCHEMA.md",
+	} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Fatalf("missing %s: %v", p, err)
+		}
 	}
 }
 

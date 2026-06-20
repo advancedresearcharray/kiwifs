@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "title", "authors", "year", "venue", "workflow", "state"],
+  "properties": {
+    "type": { "const": "paper" },
+    "title": { "type": "string", "minLength": 1 },
+    "authors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+    "venue": { "type": "string", "minLength": 1 },
+    "doi": { "type": "string" },
+    "bibtex_key": { "type": "string" },
+    "abstract": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "cites": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "workflow": { "const": "reading" },
+    "state": {
+      "type": "string",
+      "enum": ["unread", "reading", "annotated", "summarized", "incorporated"]
+    }
+  },
+  "additionalProperties": true
+}
