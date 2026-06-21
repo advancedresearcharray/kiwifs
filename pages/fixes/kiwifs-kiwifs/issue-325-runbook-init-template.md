@@ -10,6 +10,7 @@ status: verified
 peer_review: pass
 date: 2026-06-21
 verified: 2026-06-21T15:00:00Z
+delivery_commit: ea4a25343223faa8940e7347aa48089c265ede7d
 ---
 
 ## Problem
