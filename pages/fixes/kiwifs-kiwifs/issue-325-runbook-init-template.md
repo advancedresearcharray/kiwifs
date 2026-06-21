@@ -7,8 +7,8 @@ repo: kiwifs/kiwifs
 issue_number: 325
 languages: [go, markdown, json]
 status: verified
-date: 2026-06-20
-verified: 2026-06-20
+date: 2026-06-21
+verified: 2026-06-21
 ---
 
 ## Problem
@@ -56,6 +56,7 @@ Replace the legacy runbook scaffold with UC-6 DevHelm format:
 - `internal/workspace/init_test.go` — include `runbook` in `ListInitTemplates` assertion
 - `cmd/init.go` — flag help + example for `--template runbook`
 - `cmd/init_test.go` — `TestRunbookTemplateEmbedded`, `TestRunbookTemplateInit`
+- `cmd/check_test.go` — `TestRunbookInitCheckPasses` (acceptance: `kiwifs check` on scaffold)
 
 ## Tests
 

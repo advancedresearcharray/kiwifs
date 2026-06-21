@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kiwifs/kiwifs/internal/janitor"
+	"github.com/kiwifs/kiwifs/internal/workspace"
 )
 
 func TestRunKnowledgeScan_DetectsBrokenLinks(t *testing.T) {
@@ -201,5 +202,34 @@ This runbook has enough content to avoid the empty-page threshold in janitor sca
 	}
 	if !found {
 		t.Fatalf("expected execution-stale for runbooks/stale.md, got %+v", result.Issues)
+	}
+}
+
+func TestRunbookInitCheckPasses(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "runbook-ws")
+	if err := workspace.Init(root, "runbook"); err != nil {
+		t.Fatal(err)
+	}
+
+	checkCmd.SetContext(context.Background())
+	args := []string{"--root", root}
+	checkCmd.SetArgs(args)
+	if err := checkCmd.ParseFlags(args); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+
+	if code := runCheckWithCode(checkCmd, args); code != 0 {
+		t.Fatalf("expected exit 0 for runbook init scaffold, got %d", code)
+	}
+
+	result, _, _, _, err := runKnowledgeScan(checkCmd)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	for _, is := range result.Issues {
+		if is.Severity == "error" {
+			t.Fatalf("unexpected error issue on runbook scaffold: %+v", is)
+		}
 	}
 }
