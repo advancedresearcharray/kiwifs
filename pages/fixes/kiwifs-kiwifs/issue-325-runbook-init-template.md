@@ -7,6 +7,7 @@ repo: kiwifs/kiwifs
 issue_number: 325
 languages: [go, markdown, json]
 status: verified
+peer_review: pass
 date: 2026-06-21
 verified: 2026-06-21
 ---
@@ -75,6 +76,16 @@ go run . check --root "$TMP/runbooks"   # exit 0 (info-level orphans only)
 ```
 
 ## Peer review notes
+
+**Status: pass** (2026-06-21 hands-on takeover, PR #418)
+
+Reviewed template scaffold, schema, registration, and tests:
+
+- `runbook.json` requires `type`, `title`, `trigger`, `severity`, `owner`, `services`
+- `example-high-cpu.md` has all 7 UC-6 sections with fenced bash blocks and expected output
+- `cmd/init.go` lists `runbook` in help and example; `internal/workspace/init.go` registers template
+- `TestRunbookInitCheckPasses` confirms `kiwifs check` exit 0 on scaffold (info-level orphans only)
+- No code defects found; implementation complete
 
 - Example runbook frontmatter must pass `runbook.json` — include at least one service in
   `services` array with wiki-link syntax.
