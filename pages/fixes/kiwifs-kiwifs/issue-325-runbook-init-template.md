@@ -9,7 +9,7 @@ languages: [go, markdown, json]
 status: verified
 peer_review: pass
 date: 2026-06-21
-verified: 2026-06-21T15:05:00Z
+verified: 2026-06-21T15:25:00Z
 delivery_commit: 892c045f7f1363b24534da9a00b4d5069352b75b
 ---
 
@@ -78,7 +78,7 @@ go run . check --root "$TMP/runbooks"   # exit 0 (info-level orphans only)
 
 ## Peer review notes
 
-**Status: pass** (2026-06-21 hands-on takeover v5, PR #418)
+**Status: pass** (2026-06-21 hands-on takeover v7, PR #418)
 
 Verified template scaffold, schema, registration, and tests:
 
