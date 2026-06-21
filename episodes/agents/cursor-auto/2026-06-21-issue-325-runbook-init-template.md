@@ -39,7 +39,19 @@ go build -o /tmp/kiwifs-test .
 | JSON Schema validates required frontmatter | PASS |
 | `kiwifs check` passes on generated scaffold | PASS |
 
+## Peer review (2026-06-21 hands-on takeover)
+
+Reviewed template scaffold, schema, registration, and tests:
+
+- `runbook.json` requires `type`, `title`, `trigger`, `severity`, `owner`, `services` — matches issue spec
+- `example-high-cpu.md` has all 7 UC-6 sections with fenced bash blocks and expected output
+- `cmd/init.go` lists `runbook` in help and example; `internal/workspace/init.go` registers template
+- `TestRunbookInitCheckPasses` confirms acceptance criterion: `kiwifs check` exit 0 on scaffold
+- Info-level janitor warnings (missing-owner, orphan README/playbook) are expected and non-blocking
+
+No code defects found. Implementation is complete.
+
 ## Outcome
 
-Implementation verified on branch. Committed episodic log, pushed branch, opened PR
-closing #325.
+Implementation verified on branch `feat/issue-325-runbook-init-template`. PR #418 open at
+https://github.com/kiwifs/kiwifs/pull/418 (Closes #325).
