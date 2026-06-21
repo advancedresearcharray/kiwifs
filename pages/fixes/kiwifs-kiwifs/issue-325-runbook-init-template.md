@@ -9,7 +9,8 @@ languages: [go, markdown, json]
 status: verified
 peer_review: pass
 date: 2026-06-21
-verified: 2026-06-21
+verified: 2026-06-21T14:50:00Z
+delivery_commit: pending
 ---
 
 ## Problem
@@ -77,9 +78,10 @@ go run . check --root "$TMP/runbooks"   # exit 0 (info-level orphans only)
 
 ## Peer review notes
 
-**Status: pass** (2026-06-21 hands-on takeover, PR #418)
+**Status: pass** (2026-06-21 hands-on takeover v3, PR #418)
 
-Reviewed template scaffold, schema, registration, and tests:
+Re-verified after rebase onto `origin/main`. Reviewed template scaffold, schema,
+registration, and tests:
 
 - `runbook.json` requires `type`, `title`, `trigger`, `severity`, `owner`, `services`
 - `example-high-cpu.md` has all 7 UC-6 sections with fenced bash blocks and expected output
