@@ -481,6 +481,17 @@ func TestPromptLibraryAliasError(t *testing.T) {
 	}
 }
 
+func TestInitCmdDocumentsRunbookTemplate(t *testing.T) {
+	t.Parallel()
+	usage := initCmd.Flags().Lookup("template").Usage
+	if !strings.Contains(usage, "runbook") {
+		t.Fatalf("template flag usage missing runbook: %q", usage)
+	}
+	if !strings.Contains(initCmd.Example, "--template runbook") {
+		t.Fatalf("init example missing runbook template:\n%s", initCmd.Example)
+	}
+}
+
 func TestRunbookTemplateEmbedded(t *testing.T) {
 	t.Parallel()
 	embedded := workspace.EmbeddedTemplates()

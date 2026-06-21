@@ -9,8 +9,8 @@ languages: [go, markdown, json]
 status: verified
 peer_review: pass
 date: 2026-06-21
-verified: 2026-06-21T15:00:00Z
-delivery_commit: ea4a25343223faa8940e7347aa48089c265ede7d
+verified: 2026-06-21T15:05:00Z
+delivery_commit: pending
 ---
 
 ## Problem
@@ -78,7 +78,7 @@ go run . check --root "$TMP/runbooks"   # exit 0 (info-level orphans only)
 
 ## Peer review notes
 
-**Status: pass** (2026-06-21 hands-on takeover v4, PR #418)
+**Status: pass** (2026-06-21 hands-on takeover v5, PR #418)
 
 Verified template scaffold, schema, registration, and tests:
 
@@ -86,7 +86,8 @@ Verified template scaffold, schema, registration, and tests:
 - `example-high-cpu.md` has all 7 UC-6 sections with fenced bash blocks and expected output
 - `cmd/init.go` lists `runbook` in help and example; `internal/workspace/init.go` registers template
 - `TestRunbookInitCheckPasses` confirms `kiwifs check` exit 0 on scaffold (info-level orphans only)
-- Unrelated bounty fix docs removed from PR scope during v4 delivery cleanup
+- `TestInitCmdDocumentsRunbookTemplate` guards `--template runbook` in flag help and CLI example
+- UC-6 wiki updated: runbook init template removed from "What's Missing", milestone 1 marked shipped
 - No code defects found; implementation complete
 
 - Example runbook frontmatter must pass `runbook.json` — include at least one service in
