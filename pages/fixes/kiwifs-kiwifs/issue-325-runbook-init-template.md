@@ -9,8 +9,9 @@ languages: [go, markdown, json]
 status: verified
 peer_review: pass
 date: 2026-06-21
-verified: 2026-06-21T15:25:00Z
-delivery_commit: 892c045f7f1363b24534da9a00b4d5069352b75b
+verified: 2026-06-21T15:42:00Z
+delivery_commit: 2724b00e162490a9b7440546a7f5a950c8f5cf33
+ci_run: 27909055535
 ---
 
 ## Problem
@@ -57,7 +58,7 @@ Replace the legacy runbook scaffold with UC-6 DevHelm format:
 - `internal/workspace/runbook_template_test.go` — schema, scaffold, lint, metadata tests
 - `internal/workspace/init_test.go` — include `runbook` in `ListInitTemplates` assertion
 - `cmd/init.go` — flag help + example for `--template runbook`
-- `cmd/init_test.go` — `TestRunbookTemplateEmbedded`, `TestRunbookTemplateInit`
+- `cmd/init_test.go` — `TestRunbookTemplateEmbedded`, `TestRunbookTemplateInit`, `TestInitCmdDocumentsRunbookTemplate`, `TestRunbookTemplateInitBlankRoot`
 - `cmd/check_test.go` — `TestRunbookInitCheckPasses` (acceptance: `kiwifs check` on scaffold)
 
 ## Tests
@@ -78,7 +79,7 @@ go run . check --root "$TMP/runbooks"   # exit 0 (info-level orphans only)
 
 ## Peer review notes
 
-**Status: pass** (2026-06-21 hands-on takeover v7, PR #418)
+**Status: pass** (2026-06-21 hands-on delivery v11, PR #418, CI run 27909055535 SUCCESS)
 
 Verified template scaffold, schema, registration, and tests:
 
@@ -87,6 +88,7 @@ Verified template scaffold, schema, registration, and tests:
 - `cmd/init.go` lists `runbook` in help and example; `internal/workspace/init.go` registers template
 - `TestRunbookInitCheckPasses` confirms `kiwifs check` exit 0 on scaffold (info-level orphans only)
 - `TestInitCmdDocumentsRunbookTemplate` guards `--template runbook` in flag help and CLI example
+- `TestRunbookTemplateInitBlankRoot` hardens blank-parent init path (matches ADR/prompt peer-review pattern)
 - UC-6 wiki updated: runbook init template removed from "What's Missing", milestone 1 marked shipped
 - No code defects found; implementation complete
 
