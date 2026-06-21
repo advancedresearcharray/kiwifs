@@ -492,6 +492,28 @@ func TestInitCmdDocumentsRunbookTemplate(t *testing.T) {
 	}
 }
 
+func TestRunbookTemplateInitBlankRoot(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "empty-parent", "runbooks")
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--root", root, "--template", "runbook"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := os.ReadFile(filepath.Join(root, ".kiwi/config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(cfg)
+	for _, want := range []string{"127.0.0.1", "[auth]", "apikey", "perspace", "execution_staleness"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("config.toml missing %q", want)
+		}
+	}
+}
+
 func TestRunbookTemplateEmbedded(t *testing.T) {
 	t.Parallel()
 	embedded := workspace.EmbeddedTemplates()
