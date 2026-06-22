@@ -68,12 +68,21 @@ func runKnowledgeScan(cmd *cobra.Command) (*janitor.ScanResult, string, int, boo
 		searcher = sq
 	}
 
-	scanner := janitor.New(abs, store, searcher, staleDays)
+	scanner := janitor.New(abs, store, searcher, staleDays, janitorOptsFromConfig(abs)...)
 	result, err := scanner.Scan(cmd.Context())
 	if err != nil {
 		return nil, abs, staleDays, asJSON, fmt.Errorf("check: %w", err)
 	}
 	return result, abs, staleDays, asJSON, nil
+}
+
+func janitorOptsFromConfig(root string) []janitor.Option {
+	cfg, err := config.Load(root)
+	if err != nil || !cfg.Janitor.ExecutionStaleness.Enabled() {
+		return nil
+	}
+	es := cfg.Janitor.ExecutionStaleness
+	return janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
 }
 
 type checkOutput struct {

@@ -20,6 +20,7 @@ KiwiFS already has strong alignment with structured runbook management:
 | Wiki links to services, dashboards, other runbooks | ✅ | `internal/links/` |
 | Backlinks ("what runbooks reference auth-service?") | ✅ | `internal/links/` |
 | Content health janitor (stale detection, broken links) | ✅ | `internal/janitor/` |
+| Execution staleness janitor (`last_executed`, `last_outcome`) | ✅ | `[janitor.execution_staleness]` in `.kiwi/config.toml` |
 | Webhooks with HMAC signing for Slack/PagerDuty notifications | ✅ | `internal/webhooks/` |
 | MCP tools for agent read/write/search during incidents | ✅ | `internal/mcpserver/` (62 tools) |
 | DQL queries over frontmatter | ✅ | `internal/dataview/` |
@@ -40,11 +41,31 @@ KiwiFS already has strong alignment with structured runbook management:
 
 **KiwiFS's unique positioning:** The only system where the runbook, the execution log, and the improvement history are the same git-tracked markdown file. An agent reads the runbook, executes it, records what happened, and proposes edits — all through the same filesystem.
 
+## Execution staleness configuration
+
+Flag runbooks that have not been exercised recently or whose last run failed:
+
+```toml
+[janitor.execution_staleness]
+directory = "runbooks/"
+date_field = "last_executed"
+max_age_days = 90
+
+[janitor.execution_staleness.flag_values]
+last_outcome = "failure"
+```
+
+- **Age check:** files under `directory` where `date_field` is older than `max_age_days` emit `execution-stale` (warning).
+- **Flag check:** any frontmatter key in `flag_values` that equals the configured value is flagged regardless of age.
+- **Defaults:** `date_field` → `last_executed`; `max_age_days` → `[janitor].stale_days` (90).
+- **Surfaces in:** `kiwifs check`, `kiwifs janitor`, scheduled background janitor, `GET /api/kiwi/janitor`.
+- **Interaction:** complements generic review staleness (`reviewed`, `next-review`); both can flag the same file.
+
 ## What's Missing
 
 | Gap | Why it matters | Industry reference |
 |-----|---------------|-------------------|
-| Execution outcome frontmatter | No convention for `last_executed`, `last_outcome`, `execution_count`, `avg_resolution_time` | PagerDuty metrics |
+| Execution outcome schema | Convention exists for `last_executed` / `last_outcome`; missing `execution_count`, `avg_resolution_time` | PagerDuty metrics |
 | Structured append metadata | Appends lack structured per-entry metadata (timestamp, actor, outcome per step) | incident.io timeline |
 | Claim escalation metadata | Claims don't carry severity or SLA-based escalation timing | PagerDuty escalation policies |
 | Frontmatter-only merge | No way to update execution metadata without conflicting with body edits | Concurrent read/write during incidents |

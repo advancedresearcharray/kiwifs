@@ -184,9 +184,38 @@ type DraftsConfig struct {
 }
 
 type JanitorConfig struct {
-	Interval    string `toml:"interval"`
-	StaleDays   int    `toml:"stale_days"`
-	StartupScan bool   `toml:"startup_scan"`
+	Interval           string                     `toml:"interval"`
+	StaleDays          int                        `toml:"stale_days"`
+	StartupScan        bool                       `toml:"startup_scan"`
+	ExecutionStaleness ExecutionStalenessConfig   `toml:"execution_staleness"`
+}
+
+// ExecutionStalenessConfig flags runbooks (or other directory-scoped pages) when
+// execution metadata goes stale. Opt-in: leave directory empty to disable.
+//
+// Example (.kiwi/config.toml):
+//
+//	[janitor.execution_staleness]
+//	directory = "runbooks/"
+//	date_field = "last_executed"   # default when omitted
+//	max_age_days = 90              # defaults to [janitor].stale_days when 0
+//
+//	[janitor.execution_staleness.flag_values]
+//	last_outcome = "failure"       # flag regardless of age when field matches
+//
+// Surfaces as execution-stale warnings in kiwifs check, kiwifs janitor, the
+// scheduled background janitor, and GET /api/kiwi/janitor. Works alongside
+// generic review staleness (reviewed / next-review) without replacing it.
+type ExecutionStalenessConfig struct {
+	Directory  string            `toml:"directory"`
+	DateField  string            `toml:"date_field"`
+	MaxAgeDays int               `toml:"max_age_days"`
+	FlagValues map[string]string `toml:"flag_values"`
+}
+
+// Enabled reports whether the execution staleness rule is configured.
+func (c ExecutionStalenessConfig) Enabled() bool {
+	return strings.TrimSpace(c.Directory) != ""
 }
 
 type DataviewConfig struct {
