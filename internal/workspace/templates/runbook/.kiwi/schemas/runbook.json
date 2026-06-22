@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Operational Runbook",
+  "type": "object",
+  "required": ["type", "title", "trigger", "severity", "owner", "services"],
+  "properties": {
+    "type": { "const": "runbook" },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable runbook title"
+    },
+    "trigger": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Alert or condition that should invoke this runbook"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["P1", "P2", "P3", "P4"],
+      "description": "Incident severity when this runbook applies"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Team or person responsible for runbook accuracy"
+    },
+    "services": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "description": "Affected services (wiki-link strings, e.g. [[api-service]])"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "active", "deprecated"]
+    },
+    "last_executed": {
+      "type": "string",
+      "format": "date"
+    },
+    "last_outcome": {
+      "type": "string",
+      "enum": ["success", "failure", "partial"]
+    },
+    "execution_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "avg_resolution_time": {
+      "type": "string",
+      "description": "Typical time to complete mitigation (e.g. 15m)"
+    },
+    "reviewed": {
+      "type": "string",
+      "format": "date"
+    },
+    "next-review": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "additionalProperties": true
+}

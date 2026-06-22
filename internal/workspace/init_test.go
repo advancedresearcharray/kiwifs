@@ -24,7 +24,7 @@ func TestListInitTemplatesIncludesKnown(t *testing.T) {
 		}
 		ids[item.ID] = true
 	}
-	for _, want := range []string{"blank", "memory", "wiki", "research", "prompt", "adr", "kb", "cms", "data", "log"} {
+	for _, want := range []string{"blank", "memory", "wiki", "research", "prompt", "adr", "kb", "cms", "data", "log", "runbook"} {
 		if !ids[want] {
 			t.Fatalf("missing template %q in %v", want, list)
 		}
@@ -209,6 +209,13 @@ func TestTemplatesEmbedded(t *testing.T) {
 		"templates/log/index.md",
 		"templates/log/playbook.md",
 		"templates/log/.kiwi/schemas/event.json",
+		"templates/runbook/SCHEMA.md",
+		"templates/runbook/index.md",
+		"templates/runbook/playbook.md",
+		"templates/runbook/example-high-cpu.md",
+		"templates/runbook/.kiwi/schemas/runbook.json",
+		"templates/runbook/.kiwi/config.toml",
+		"templates/runbook/.kiwi/templates/runbook.md",
 	}
 	for _, p := range paths {
 		if _, err := fs.Stat(templates, p); err != nil {

@@ -70,11 +70,10 @@ last_outcome = "failure"
 | Claim escalation metadata | Claims don't carry severity or SLA-based escalation timing | PagerDuty escalation policies |
 | Frontmatter-only merge | No way to update execution metadata without conflicting with body edits | Concurrent read/write during incidents |
 | Service-link frontmatter array | `services` field as indexed wiki-link array for "runbooks for this service" queries | Backstage service catalog |
-| Runbook init template | No scaffold for the standard 7-section runbook format | DevHelm AI-executable format |
 
 ## Proposed Milestones
 
-1. **Runbook init template** — Ship `.kiwi/templates/runbook/` with the DevHelm 7-section format (trigger, diagnosis, mitigation, verification, rollback, RTO, escalation). Include `.kiwi/schemas/runbook.json` for validation. Wire into `kiwifs init --template runbook`.
+1. ~~**Runbook init template**~~ ✅ — Shipped via `kiwifs init --template runbook`: DevHelm 7-section format, `.kiwi/schemas/runbook.json`, example runbook, blank template, and `kiwifs check` regression tests (issue #325, PR #418).
 2. **Execution outcome schema** — Standardize frontmatter fields: `last_executed`, `last_outcome`, `execution_count`, `avg_resolution_time`, `services`. Index for DQL.
 3. **Structured append metadata** — Extend `POST /api/kiwi/file/append` to accept per-entry metadata (actor, outcome, step_id). Each append creates a structured section with timestamp heading.
 4. **Claim escalation** — Extend claims to carry `severity` and `claimed_at`. Janitor flags claims exceeding configurable SLA thresholds.
