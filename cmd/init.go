@@ -12,7 +12,8 @@ var initCmd = &cobra.Command{
 	Short: "Initialize a knowledge directory",
 	Example: `  kiwifs init --root ~/my-knowledge
   kiwifs init --root ~/my-knowledge --template knowledge
-  kiwifs init --root ~/my-wiki --template wiki`,
+  kiwifs init --root ~/my-wiki --template wiki
+  kiwifs init --root ~/my-runbooks --template runbook`,
 	RunE: runInit,
 }
 

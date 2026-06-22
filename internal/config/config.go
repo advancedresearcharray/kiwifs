@@ -130,9 +130,24 @@ type DraftsConfig struct {
 }
 
 type JanitorConfig struct {
-	Interval    string `toml:"interval"`
-	StaleDays   int    `toml:"stale_days"`
-	StartupScan bool   `toml:"startup_scan"`
+	Interval           string                   `toml:"interval"`
+	StaleDays          int                      `toml:"stale_days"`
+	StartupScan        bool                     `toml:"startup_scan"`
+	ExecutionStaleness ExecutionStalenessConfig `toml:"execution_staleness"`
+}
+
+// ExecutionStalenessConfig flags runbooks (or other directory-scoped pages) when
+// execution metadata goes stale. Opt-in: leave directory empty to disable.
+type ExecutionStalenessConfig struct {
+	Directory  string            `toml:"directory"`
+	DateField  string            `toml:"date_field"`
+	MaxAgeDays int               `toml:"max_age_days"`
+	FlagValues map[string]string `toml:"flag_values"`
+}
+
+// Enabled reports whether the execution staleness rule is configured.
+func (c ExecutionStalenessConfig) Enabled() bool {
+	return strings.TrimSpace(c.Directory) != ""
 }
 
 type DataviewConfig struct {

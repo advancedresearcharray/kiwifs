@@ -27,6 +27,8 @@ const (
 	IssueBrokenLink    = "broken-link"
 	IssueNoReviewDate  = "no-review-date"
 	IssueDecisionFound = "decision-found"
+	IssueExpiredMemory  = "expired-memory"
+	IssueExecutionStale = "execution-stale"
 )
 
 type Issue struct {
@@ -95,20 +97,83 @@ func (r *ScanResult) HasErrors() bool {
 	return false
 }
 
-type Scanner struct {
-	root      string
-	store     storage.Storage
-	searcher  search.Searcher
-	staleDays int
+// HasWarnings reports whether any issue has warning severity.
+func (r *ScanResult) HasWarnings() bool {
+	for _, is := range r.Issues {
+		if is.Severity == "warning" {
+			return true
+		}
+	}
+	return false
 }
 
-func New(root string, store storage.Storage, searcher search.Searcher, staleDays int) *Scanner {
-	return &Scanner{
+// ExecutionStalenessRule flags files under directory when a date field is stale
+// or when configured frontmatter values match (e.g. last_outcome = failure).
+type ExecutionStalenessRule struct {
+	Directory  string
+	DateField  string
+	MaxAgeDays int
+	FlagValues map[string]string
+}
+
+func (r ExecutionStalenessRule) Enabled() bool {
+	return strings.TrimSpace(r.Directory) != ""
+}
+
+type Scanner struct {
+	root               string
+	store              storage.Storage
+	searcher           search.Searcher
+	staleDays          int
+	executionStaleness *ExecutionStalenessRule
+}
+
+type Option func(*Scanner)
+
+func WithExecutionStaleness(rule ExecutionStalenessRule) Option {
+	return func(s *Scanner) {
+		if rule.Enabled() {
+			cp := rule
+			s.executionStaleness = &cp
+		}
+	}
+}
+
+// OptionFromExecutionStaleness builds a scanner option from config.toml fields.
+func OptionFromExecutionStaleness(directory, dateField string, maxAgeDays int, flagValues map[string]string) Option {
+	return WithExecutionStaleness(ExecutionStalenessRule{
+		Directory:  directory,
+		DateField:  dateField,
+		MaxAgeDays: maxAgeDays,
+		FlagValues: flagValues,
+	})
+}
+
+// OptionsFromExecutionStaleness returns nil when directory is unset.
+func OptionsFromExecutionStaleness(directory, dateField string, maxAgeDays int, flagValues map[string]string) []Option {
+	rule := ExecutionStalenessRule{
+		Directory:  directory,
+		DateField:  dateField,
+		MaxAgeDays: maxAgeDays,
+		FlagValues: flagValues,
+	}
+	if !rule.Enabled() {
+		return nil
+	}
+	return []Option{WithExecutionStaleness(rule)}
+}
+
+func New(root string, store storage.Storage, searcher search.Searcher, staleDays int, opts ...Option) *Scanner {
+	s := &Scanner{
 		root:      root,
 		store:     store,
 		searcher:  searcher,
 		staleDays: staleDays,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 type pageInfo struct {
@@ -156,6 +221,7 @@ func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 	result.Issues = append(result.Issues, s.checkOrphans(ctx, pages)...)
 	result.Issues = append(result.Issues, s.checkDuplicates(pages)...)
 	result.Issues = append(result.Issues, s.checkContradictions(pages)...)
+	result.Issues = append(result.Issues, s.checkExecutionStaleness(pages)...)
 
 	for _, is := range result.Issues {
 		pagesWithIssues[is.Path] = true
@@ -230,6 +296,9 @@ func (s *Scanner) checkPage(ctx context.Context, p pageInfo, existing map[string
 
 	// Stale detection
 	issues = append(issues, s.checkStale(p)...)
+
+	// Memory expiration
+	issues = append(issues, s.checkExpiredMemory(ctx, p)...)
 
 	// No review date (has owner but no next-review)
 	if _, hasOwner := p.frontmatter["owner"]; hasOwner {
@@ -458,6 +527,168 @@ func tagOverlap(a, b []string) []string {
 		}
 	}
 	return overlap
+}
+
+func (s *Scanner) checkExecutionStaleness(pages []pageInfo) []Issue {
+	if s.executionStaleness == nil {
+		return nil
+	}
+	rule := s.executionStaleness
+	dir := strings.TrimPrefix(strings.TrimSpace(rule.Directory), "/")
+	if dir == "" {
+		return nil
+	}
+	if !strings.HasSuffix(dir, "/") {
+		dir += "/"
+	}
+
+	dateField := strings.TrimSpace(rule.DateField)
+	if dateField == "" {
+		dateField = "last_executed"
+	}
+	maxAge := rule.MaxAgeDays
+	if maxAge <= 0 {
+		maxAge = s.staleDays
+		if maxAge <= 0 {
+			maxAge = DefaultStaleDays
+		}
+	}
+
+	now := time.Now()
+	var issues []Issue
+	for _, p := range pages {
+		if !strings.HasPrefix(p.path, dir) {
+			continue
+		}
+
+		for field, want := range rule.FlagValues {
+			if fmStringField(p.frontmatter, field) == want {
+				issues = append(issues, Issue{
+					Kind:       IssueExecutionStale,
+					Path:       p.path,
+					Message:    fmt.Sprintf("%s is %q", field, want),
+					Severity:   "warning",
+					Suggestion: "review the runbook and update execution metadata after remediation",
+				})
+			}
+		}
+
+		if executed, ok := fmDateField(p.frontmatter, dateField); ok {
+			if now.Sub(executed).Hours()/24 > float64(maxAge) {
+				issues = append(issues, Issue{
+					Kind:       IssueExecutionStale,
+					Path:       p.path,
+					Message:    fmt.Sprintf("%s %s is older than %d days", dateField, executed.Format("2006-01-02"), maxAge),
+					Severity:   "warning",
+					Suggestion: fmt.Sprintf("execute the runbook and update %s", dateField),
+				})
+			}
+		}
+	}
+	return issues
+}
+
+func (s *Scanner) checkExpiredMemory(ctx context.Context, p pageInfo) []Issue {
+	now := time.Now().UTC()
+
+	if raw, hasKey := p.frontmatter["expires_at"]; hasKey {
+		expiresAt, ok := fmDateField(p.frontmatter, "expires_at")
+		if !ok {
+			return []Issue{{
+				Kind:       IssueExpiredMemory,
+				Path:       p.path,
+				Message:    fmt.Sprintf("expires_at value %q is not a valid date (expected RFC3339 or YYYY-MM-DD)", fmt.Sprint(raw)),
+				Severity:   "warning",
+				Suggestion: "use a valid date format, e.g. expires_at: 2026-12-31 or expires_at: 2026-12-31T00:00:00Z",
+			}}
+		}
+		if now.After(expiresAt) {
+			return []Issue{{
+				Kind:       IssueExpiredMemory,
+				Path:       p.path,
+				Message:    fmt.Sprintf("memory expired at %s", expiresAt.Format(time.RFC3339)),
+				Severity:   "info",
+				Suggestion: "update or remove expires_at, or archive the page",
+			}}
+		}
+		return nil
+	}
+
+	ttlRaw, ok := p.frontmatter["ttl"].(string)
+	if !ok || strings.TrimSpace(ttlRaw) == "" {
+		return nil
+	}
+	ttl, ok := parseTTL(strings.TrimSpace(ttlRaw))
+	if !ok {
+		return []Issue{{
+			Kind:       IssueExpiredMemory,
+			Path:       p.path,
+			Message:    fmt.Sprintf("ttl value %q is not a supported format (use e.g. 7d, 24h)", ttlRaw),
+			Severity:   "warning",
+			Suggestion: "use a supported TTL format: <number>d for days or <number>h for hours",
+		}}
+	}
+
+	base, ok := fmDateField(p.frontmatter, "created")
+	if !ok {
+		if ent, err := s.store.Stat(ctx, p.path); err == nil && ent != nil && !ent.ModTime.IsZero() {
+			base = ent.ModTime.UTC()
+			ok = true
+		}
+	}
+	if !ok {
+		return nil
+	}
+	if now.After(base.Add(ttl)) {
+		return []Issue{{
+			Kind:       IssueExpiredMemory,
+			Path:       p.path,
+			Message:    fmt.Sprintf("memory TTL %s elapsed (base %s)", ttlRaw, base.Format(time.RFC3339)),
+			Severity:   "info",
+			Suggestion: "refresh the page or remove the ttl field",
+		}}
+	}
+	return nil
+}
+
+const (
+	maxTTLDays  = 106751 // prevent int64 nanosecond overflow (~292 years)
+	maxTTLHours = 2562047
+)
+
+func parseTTL(raw string) (time.Duration, bool) {
+	var n int
+	var unit string
+	if _, err := fmt.Sscanf(raw, "%d%s", &n, &unit); err != nil || n <= 0 {
+		return 0, false
+	}
+	switch unit {
+	case "d":
+		if n > maxTTLDays {
+			n = maxTTLDays
+		}
+		return time.Duration(n) * 24 * time.Hour, true
+	case "h":
+		if n > maxTTLHours {
+			n = maxTTLHours
+		}
+		return time.Duration(n) * time.Hour, true
+	default:
+		return 0, false
+	}
+}
+
+func fmStringField(fm map[string]any, key string) string {
+	val, ok := fm[key]
+	if !ok {
+		return ""
+	}
+	switch v := val.(type) {
+	case string:
+		return v
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 func fmDateField(fm map[string]any, key string) (time.Time, bool) {
