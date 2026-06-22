@@ -72,7 +72,7 @@ export type BacklinkEntry = {
 };
 
 export type GraphNode = { path: string; tags?: string[] };
-export type GraphEdge = { source: string; target: string };
+export type GraphEdge = { source: string; target: string; relation?: string };
 export type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] };
 
 export type CommentAnchor = {
