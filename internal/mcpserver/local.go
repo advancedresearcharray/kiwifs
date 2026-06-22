@@ -2504,24 +2504,26 @@ func (b *LocalBackend) WorkflowAdvance(ctx context.Context, path, targetState, a
 		return nil, err
 	}
 
-	// Update frontmatter
-	fmRaw, body, err := markdown.SplitFrontmatter([]byte(content))
-	if err != nil || len(fmRaw) == 0 {
-		return nil, fmt.Errorf("cannot split frontmatter")
-	}
-	fm["state"] = targetState
-	newFM, err := yamlMarshal(fm)
+	updated, err := markdown.SetFrontmatterField([]byte(content), "state", targetState)
 	if err != nil {
-		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+		return nil, fmt.Errorf("update state: %w", err)
+	}
+	syncStatus := false
+	if _, hasStatus := fm["status"]; hasStatus {
+		if typ, _ := fm["type"].(string); typ == "adr" {
+			syncStatus = true
+		} else if cur, _ := fm["status"].(string); cur == currentState {
+			syncStatus = true
+		}
+	}
+	if syncStatus {
+		updated, err = markdown.SetFrontmatterField(updated, "status", targetState)
+		if err != nil {
+			return nil, fmt.Errorf("update status: %w", err)
+		}
 	}
 
-	var buf strings.Builder
-	buf.WriteString("---\n")
-	buf.Write(newFM)
-	buf.WriteString("---\n")
-	buf.Write(body)
-
-	etag, err := b.WriteFile(ctx, path, buf.String(), actor, "")
+	etag, err := b.WriteFile(ctx, path, string(updated), actor, "")
 	if err != nil {
 		return nil, err
 	}
