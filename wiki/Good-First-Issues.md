@@ -75,7 +75,7 @@ Scoped, beginner-friendly tasks for new contributors. Each issue has:
 
 | # | Issue | Difficulty | Area | Status |
 |---|-------|-----------|------|--------|
-| [#325](https://github.com/kiwifs/kiwifs/issues/325) | Ship runbook init template and frontmatter schema | Beginner | Markdown + Go | Open |
+| [#325](https://github.com/kiwifs/kiwifs/issues/325) | Ship runbook init template and frontmatter schema ✅ | Beginner | Markdown + Go | Shipped (PR #418) |
 | [#326](https://github.com/kiwifs/kiwifs/issues/326) | Add execution staleness janitor rule for runbooks | Beginner | Go | Open |
 | [#327](https://github.com/kiwifs/kiwifs/issues/327) | Add frontmatter-only PATCH mode for file updates | Intermediate | Go | Open |
 
