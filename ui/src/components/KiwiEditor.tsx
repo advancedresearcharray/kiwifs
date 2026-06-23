@@ -31,9 +31,10 @@ import {
   wikiPagesFromTree,
 } from "@kw/lib/editorMode";
 import { formatDistanceToNow } from "date-fns";
-import { MarkdownSourceEditor } from "./editor/MarkdownSourceEditor";
-import { blockNoteSlashItems, loadSlashCommandTemplate } from "@kw/lib/editorSlashCommands";
-import { useEditorSlashCommands } from "../hooks/useEditorSlashCommands";
+import { KiwiMarkdownSourceEditor } from "./KiwiMarkdownSourceEditor";
+import { EditorImageDropOverlay } from "./EditorImageDropOverlay";
+import { renameFileForPaste, isOsFileDrag } from "@kw/lib/editorImagePaste";
+import { imagePasteProsemirrorPlugin, imagePastePluginKey } from "@kw/lib/imagePasteProsemirrorPlugin";
 import {
   Dialog,
   DialogContent,
@@ -156,11 +157,9 @@ type Props = {
   onSaved: (path: string) => void;
   onNavigate?: (path: string) => void;
   saveRef?: React.MutableRefObject<SaveHandle | null>;
-  editorModePref?: "editor" | "source";
-  onEditorModeChange?: (mode: EditorMode) => void;
 };
 
-export function KiwiEditor({ path, tree, onClose, onSaved, onNavigate, saveRef, editorModePref, onEditorModeChange }: Props) {
+export function KiwiEditor({ path, tree, onClose, onSaved, onNavigate, saveRef }: Props) {
   const [initialMd, setInitialMd] = useState<string | null>(null);
   const etagRef = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -240,8 +239,6 @@ export function KiwiEditor({ path, tree, onClose, onSaved, onNavigate, saveRef, 
       onSaved={onSaved}
       onNavigate={onNavigate}
       saveRef={saveRef}
-      editorModePref={editorModePref}
-      onEditorModeChange={onEditorModeChange}
     />
   );
 }
@@ -379,8 +376,6 @@ function EditorInner({
   onSaved,
   onNavigate,
   saveRef,
-  editorModePref,
-  onEditorModeChange,
 }: {
   path: string;
   tree?: import("@kw/lib/api").TreeEntry | null;
@@ -394,8 +389,6 @@ function EditorInner({
   onSaved: (p: string) => void;
   onNavigate?: (path: string) => void;
   saveRef?: React.MutableRefObject<SaveHandle | null>;
-  editorModePref?: "editor" | "source";
-  onEditorModeChange?: (mode: EditorMode) => void;
 }) {
   const [editorMode, setEditorMode] = useState<EditorMode>(() => loadEditorModePreference());
   const [sourceText, setSourceText] = useState(initialMd);
@@ -422,27 +415,28 @@ function EditorInner({
   );
   const [visualParseBody, setVisualParseBody] = useState(initialVisualBody);
   const [lastEdit, setLastEdit] = useState<{ author: string; date: string } | null>(null);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const imageUploadErrorTimer = useRef<number | null>(null);
+  const [visualFileDragActive, setVisualFileDragActive] = useState(false);
+  const visualFileDragDepthRef = useRef(0);
 
   const wikiPages = useMemo(() => wikiPagesFromTree(tree), [tree]);
-  const customSlashCommands = useEditorSlashCommands();
-  const [slashCommandError, setSlashCommandError] = useState<string | null>(null);
-  const slashCommandErrorTimer = useRef<number | null>(null);
-  const onSlashTemplateError = useCallback((message: string) => {
-    setSlashCommandError(message);
-    if (slashCommandErrorTimer.current !== null) {
-      window.clearTimeout(slashCommandErrorTimer.current);
+
+  const onImageUploadError = useCallback((message: string) => {
+    setImageUploadError(message);
+    if (imageUploadErrorTimer.current !== null) {
+      window.clearTimeout(imageUploadErrorTimer.current);
     }
-    slashCommandErrorTimer.current = window.setTimeout(() => {
-      setSlashCommandError(null);
-      slashCommandErrorTimer.current = null;
+    imageUploadErrorTimer.current = window.setTimeout(() => {
+      setImageUploadError(null);
+      imageUploadErrorTimer.current = null;
     }, 6000);
   }, []);
-  const loadSlashTemplate = useCallback((templatePath: string) => loadSlashCommandTemplate(templatePath), []);
 
   useEffect(() => {
     return () => {
-      if (slashCommandErrorTimer.current !== null) {
-        window.clearTimeout(slashCommandErrorTimer.current);
+      if (imageUploadErrorTimer.current !== null) {
+        window.clearTimeout(imageUploadErrorTimer.current);
       }
     };
   }, []);
@@ -458,19 +452,6 @@ function EditorInner({
   }, [path, initialMd, frontmatterSplit.frontmatter, initialVisualBody]);
 
   useEffect(() => {
-    if (!editorModePref) return;
-    setEditorMode(editorModePref === "source" ? "source" : "visual");
-  }, [editorModePref]);
-
-  const persistEditorMode = useCallback(
-    (mode: EditorMode) => {
-      saveEditorModePreference(mode);
-      onEditorModeChange?.(mode);
-    },
-    [onEditorModeChange],
-  );
-
-  useEffect(() => {
     let cancelled = false;
     api.versions(path).then((r) => {
       if (cancelled || !r.versions.length) return;
@@ -480,12 +461,17 @@ function EditorInner({
     return () => { cancelled = true; };
   }, [path]);
 
-  const uploadFile = useCallback(
+  const uploadImageAsset = useCallback(
     async (file: File) => {
       const targetDir = dirOf(path);
       return api.uploadAsset(file, targetDir);
     },
     [path],
+  );
+
+  const uploadFile = useCallback(
+    async (file: File) => uploadImageAsset(renameFileForPaste(file)),
+    [uploadImageAsset],
   );
 
   const editorOptions = useMemo(
@@ -504,12 +490,22 @@ function EditorInner({
     const pm = (editor as any)._tiptapEditor?.view;
     if (!pm) return;
     const state = pm.state;
-    if (state.plugins.some((p: any) => p.key === (wikiLinkPluginKey as any).key)) return;
-    const newState = state.reconfigure({
-      plugins: [...state.plugins, wikiLinkDecoPlugin()],
-    });
+    const hasWiki = state.plugins.some((p: any) => p.key === (wikiLinkPluginKey as any).key);
+    const hasImagePaste = state.plugins.some((p: any) => p.key === (imagePastePluginKey as any).key);
+    if (hasWiki && hasImagePaste) return;
+    const plugins = [...state.plugins];
+    if (!hasWiki) plugins.push(wikiLinkDecoPlugin());
+    if (!hasImagePaste) {
+      plugins.push(
+        imagePasteProsemirrorPlugin({
+          uploadImage: uploadImageAsset,
+          onError: onImageUploadError,
+        }),
+      );
+    }
+    const newState = state.reconfigure({ plugins });
     pm.updateState(newState);
-  }, [editor]);
+  }, [editor, uploadImageAsset, onImageUploadError]);
 
   useEffect(() => {
     if (!editor || !ready) return;
@@ -626,7 +622,7 @@ function EditorInner({
           setSourceText(syncedMdRef.current);
         }
         setEditorMode("source");
-        persistEditorMode("source");
+        saveEditorModePreference("source");
         setReady(true);
       } else {
         const text = opts?.discard ? syncedMdRef.current : sourceText;
@@ -635,7 +631,7 @@ function EditorInner({
         setFmText(nextFm);
         setVisualParseBody(body);
         setEditorMode("visual");
-        persistEditorMode("visual");
+        saveEditorModePreference("visual");
       }
       setSaveStatus("clean");
       if (autoSaveTimer.current) {
@@ -643,7 +639,7 @@ function EditorInner({
         autoSaveTimer.current = null;
       }
     },
-    [editor, fmText, sourceText, persistEditorMode],
+    [editor, fmText, sourceText],
   );
 
   const requestModeSwitch = useCallback(
@@ -841,16 +837,15 @@ function EditorInner({
 
           <div className="max-w-3xl min-h-[50vh]">
             {editorMode === "source" ? (
-              <MarkdownSourceEditor
+              <KiwiMarkdownSourceEditor
                 value={sourceText}
                 onChange={handleSourceTextChange}
                 dark={isDark}
                 onSaveShortcut={() => onSaveRef.current({ close: true })}
                 pages={wikiPages}
                 minHeight="60vh"
-                customSlashCommands={customSlashCommands}
-                loadSlashTemplate={loadSlashTemplate}
-                onSlashTemplateError={onSlashTemplateError}
+                uploadImage={uploadImageAsset}
+                onImageUploadError={onImageUploadError}
               />
             ) : visualParseError ? (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
@@ -866,7 +861,34 @@ function EditorInner({
                 </Button>
               </div>
             ) : (
-              <div className="kiwi-blocknote">
+              <div
+                className="kiwi-blocknote relative min-h-[50vh]"
+                onDragEnter={(e) => {
+                  if (!isOsFileDrag(e)) return;
+                  e.preventDefault();
+                  visualFileDragDepthRef.current += 1;
+                  setVisualFileDragActive(true);
+                }}
+                onDragLeave={(e) => {
+                  if (!isOsFileDrag(e)) return;
+                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                  visualFileDragDepthRef.current = Math.max(
+                    0,
+                    visualFileDragDepthRef.current - 1,
+                  );
+                  if (visualFileDragDepthRef.current === 0) setVisualFileDragActive(false);
+                }}
+                onDragOver={(e) => {
+                  if (!isOsFileDrag(e)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                }}
+                onDrop={() => {
+                  visualFileDragDepthRef.current = 0;
+                  setVisualFileDragActive(false);
+                }}
+              >
+                <EditorImageDropOverlay active={visualFileDragActive} />
                 <ErrorBoundary>
                   {editor && (
                     <BlockNoteView
@@ -884,11 +906,6 @@ function EditorInner({
                             [
                               ...getDefaultReactSlashMenuItems(editor as BlockNoteEditor),
                               ...kiwiSlashItems(editor as BlockNoteEditor),
-                              ...blockNoteSlashItems(
-                                editor as BlockNoteEditor,
-                                customSlashCommands,
-                                onSlashTemplateError,
-                              ),
                             ],
                             query,
                           )
@@ -955,19 +972,19 @@ function EditorInner({
         onDiscardAndSwitch={handleModeSwitchDiscard}
         busy={saving}
       />
-      {slashCommandError && (
+      {imageUploadError && (
         <div
           role="alert"
-          className="fixed bottom-4 right-4 z-50 max-w-sm rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-lg"
+          className="fixed bottom-4 left-4 z-50 max-w-sm rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-lg"
         >
           <div className="flex items-start gap-2">
             <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
-            <p className="flex-1">{slashCommandError}</p>
+            <p className="flex-1">Image upload failed: {imageUploadError}</p>
             <button
               type="button"
               className="text-destructive/80 hover:text-destructive"
               aria-label="Dismiss"
-              onClick={() => setSlashCommandError(null)}
+              onClick={() => setImageUploadError(null)}
             >
               <X className="h-4 w-4" />
             </button>
