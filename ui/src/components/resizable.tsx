@@ -12,41 +12,49 @@ type PanelGroupContextValue = {
   sizes: number[];
   setSizes: React.Dispatch<React.SetStateAction<number[]>>;
   panelCount: number;
+  onLayout?: (sizes: number[]) => void;
 };
 
 const PanelGroupContext = React.createContext<PanelGroupContextValue | null>(null);
 
 type ResizablePanelGroupProps = React.HTMLAttributes<HTMLDivElement> & {
   direction?: "horizontal" | "vertical";
+  /** Initial panel sizes (percentages). Avoids resetting persisted layout on mount. */
+  defaultSizes?: number[];
   onLayout?: (sizes: number[]) => void;
 };
 
 function ResizablePanelGroup({
   className,
   direction = "horizontal",
+  defaultSizes,
   onLayout,
   children,
   ...props
 }: ResizablePanelGroupProps) {
   const panels = React.Children.toArray(children).filter(Boolean);
   const panelCount = panels.length;
-  const [sizes, setSizes] = React.useState<number[]>(() =>
-    Array.from({ length: panelCount }, () => 100 / Math.max(panelCount, 1)),
-  );
+  const [sizes, setSizes] = React.useState<number[]>(() => {
+    if (defaultSizes?.length === panelCount) return [...defaultSizes];
+    return Array.from({ length: panelCount }, () => 100 / Math.max(panelCount, 1));
+  });
+  const onLayoutRef = React.useRef(onLayout);
+  onLayoutRef.current = onLayout;
 
   React.useEffect(() => {
     setSizes((prev) => {
       if (prev.length === panelCount) return prev;
+      if (defaultSizes?.length === panelCount) return [...defaultSizes];
       return Array.from({ length: panelCount }, () => 100 / Math.max(panelCount, 1));
     });
-  }, [panelCount]);
+  }, [panelCount, defaultSizes]);
 
-  React.useEffect(() => {
-    onLayout?.(sizes);
-  }, [sizes, onLayout]);
+  const notifyLayout = React.useCallback((next: number[]) => {
+    onLayoutRef.current?.(next);
+  }, []);
 
   return (
-    <PanelGroupContext.Provider value={{ direction, sizes, setSizes, panelCount }}>
+    <PanelGroupContext.Provider value={{ direction, sizes, setSizes, panelCount, onLayout: notifyLayout }}>
       <div
         className={cn(
           "flex h-full w-full",
@@ -126,6 +134,7 @@ function ResizableHandle({
     dragging.current = true;
     const start = ctx.direction === "horizontal" ? e.clientX : e.clientY;
     const startSizes = [...ctx.sizes];
+    let latestSizes = startSizes;
     const el = e.currentTarget.parentElement;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -140,6 +149,7 @@ function ResizableHandle({
       const next = [...startSizes];
       next[index] = left;
       next[index + 1] = right;
+      latestSizes = next;
       ctx.setSizes(next);
     };
 
@@ -147,6 +157,7 @@ function ResizableHandle({
       dragging.current = false;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      ctx.onLayout?.(latestSizes);
     };
 
     window.addEventListener("pointermove", onMove);

@@ -159,7 +159,12 @@ export function KiwiSplitPageView({
   };
 
   return (
-    <ResizablePanelGroup direction="horizontal" onLayout={handleLayout} className="h-full">
+    <ResizablePanelGroup
+      direction="horizontal"
+      defaultSizes={[leftSize, rightSize]}
+      onLayout={handleLayout}
+      className="h-full"
+    >
       <ResizablePanel index={0} defaultSize={leftSize} minSize={20} className="h-full">
         {renderPane("left", split.left.path, split.left.versionHash, false)}
       </ResizablePanel>
