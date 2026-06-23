@@ -10,7 +10,7 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Columns2, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
 import { dirOf, titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
@@ -42,6 +42,12 @@ import { PageSkeleton } from "./PageSkeleton";
 import { trackRecent } from "./KiwiFavorites";
 import { Badge } from "@kw/components/ui/badge";
 import { Button } from "@kw/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@kw/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kw/components/ui/tooltip";
 import remarkEmoji from "remark-emoji";
 import remarkSupersub from "remark-supersub";
@@ -68,6 +74,9 @@ type Props = {
   onTagClick?: (tag: string) => void;
   refreshKey?: number;
   onPublishedChanged?: () => void;
+  /** When set, render a historical revision instead of the live file. */
+  versionHash?: string;
+  onOpenInSplitView?: (path: string) => void;
 };
 
 type FrontmatterProperty = {
@@ -370,7 +379,8 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
   return "unknown";
 }
 
-export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
+export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged, versionHash, onOpenInSplitView }: Props) {
+  const isVersionPreview = Boolean(versionHash);
   const treeEntry = useMemo(() => findEntry(tree, path), [tree, path]);
   const isDir = treeEntry?.isDir ?? false;
 
@@ -391,9 +401,11 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
     setContent(null);
     setError(null);
     setLastModified(null);
-    trackRecent(path);
-    api
-      .readFile(path)
+    if (!isVersionPreview) trackRecent(path);
+    const loader = isVersionPreview && versionHash
+      ? api.readVersion(path, versionHash).then((content) => ({ content, lastModified: null as string | null }))
+      : api.readFile(path).then((r) => ({ content: r.content, lastModified: r.lastModified }));
+    loader
       .then((r) => {
         if (!cancelled) {
           setContent(r.content);
@@ -404,7 +416,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
         if (!cancelled) setError(String(e));
       });
     return () => { cancelled = true; };
-  }, [path, refreshKey, isDir]);
+  }, [path, refreshKey, isDir, isVersionPreview, versionHash]);
 
   useEffect(() => {
     if (isDir) return;
@@ -607,21 +619,30 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                     <TooltipContent side="bottom">{isStarred ? "Unstar" : "Star"}</TooltipContent>
                   </Tooltip>
                 )}
-                {onHistory && (
+                {isVersionPreview && versionHash && (
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    {versionHash.slice(0, 7)}
+                  </Badge>
+                )}
+                {!isVersionPreview && onHistory && (
                   <Button variant="outline" size="sm" onClick={onHistory}>
                     <HistoryIcon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">History</span>
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={onEdit}>
-                  <Edit className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
-                </Button>
-                <PublishButton path={path} onPublishedChanged={onPublishedChanged} />
-                <PageActions
-                  path={path}
-                  onDeleted={onDeleted}
-                  onDuplicated={onDuplicated}
-                  onMoved={onMoved}
-                />
+                {!isVersionPreview && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={onEdit}>
+                      <Edit className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
+                    </Button>
+                    <PublishButton path={path} onPublishedChanged={onPublishedChanged} />
+                    <PageActions
+                      path={path}
+                      onDeleted={onDeleted}
+                      onDuplicated={onDuplicated}
+                      onMoved={onMoved}
+                    />
+                  </>
+                )}
               </div>
             </div>
 
@@ -749,7 +770,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                         const hashIdx = raw.indexOf("#");
                         const pagePath = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
                         const anchor = hashIdx >= 0 ? raw.slice(hashIdx) : "";
-                        return (
+                        const link = (
                           <a
                             href={`#${raw}`}
                             onClick={(e) => {
@@ -769,6 +790,21 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                           >
                             {children}
                           </a>
+                        );
+                        if (!onOpenInSplitView) return link;
+                        return (
+                          <ContextMenu>
+                            <ContextMenuTrigger asChild>{link}</ContextMenuTrigger>
+                            <ContextMenuContent>
+                              <ContextMenuItem onClick={() => onNavigate(pagePath)}>
+                                Open
+                              </ContextMenuItem>
+                              <ContextMenuItem onClick={() => onOpenInSplitView(pagePath)}>
+                                <Columns2 className="h-3.5 w-3.5" />
+                                Open in Split View
+                              </ContextMenuItem>
+                            </ContextMenuContent>
+                          </ContextMenu>
                         );
                       }
                       if (h.startsWith("#kiwi-missing:")) {

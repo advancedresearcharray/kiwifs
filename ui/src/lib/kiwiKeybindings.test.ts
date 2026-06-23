@@ -29,6 +29,17 @@ describe("eventMatchesChord", () => {
     expect(eventMatchesChord(e, "Mod+K")).toBe(true);
   });
 
+  it("matches mod+backslash for split view toggle", () => {
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(eventMatchesChord(e, "mod+\\")).toBe(true);
+  });
+
   it("matches help shortcut on slash and question mark", () => {
     const slash = {
       key: "/",

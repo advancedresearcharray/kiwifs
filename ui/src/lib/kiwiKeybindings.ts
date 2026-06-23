@@ -19,7 +19,8 @@ export type KeybindingAction =
   | "shortcuts_help"
   | "undo"
   | "focus_tree_filter"
-  | "close_overlay";
+  | "close_overlay"
+  | "toggle_split_view";
 
 export type ParsedChord = {
   mod: boolean;
@@ -54,6 +55,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   undo: "mod+z",
   focus_tree_filter: "mod+alt+f",
   close_overlay: "escape",
+  toggle_split_view: "mod+\\",
 };
 
 export function normalizeChord(chord: string): string {
@@ -186,6 +188,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { action: "toggle_bases", label: "Toggle Bases" },
       { action: "toggle_timeline", label: "Toggle Timeline" },
       { action: "toggle_kanban", label: "Toggle Kanban" },
+      { action: "toggle_split_view", label: "Toggle split view" },
     ],
   },
   {

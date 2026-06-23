@@ -32,6 +32,7 @@ import { KiwiWhiteboardScreen } from "./components/KiwiWhiteboardScreen";
 import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
 import { KiwiRecentStart } from "./components/KiwiRecentStart";
+import { KiwiSplitPageView, SplitViewMobileBlocked } from "./components/KiwiSplitPageView";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
@@ -52,6 +53,14 @@ import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
 import { formatDocumentTitle } from "./lib/pageTitle";
 import { useUIConfigStore } from "./lib/uiConfigStore";
+import {
+  loadSplitViewState,
+  openSplitView,
+  saveSplitViewState,
+  toggleSplitView,
+  updateSplitPanePath,
+  type SplitViewState,
+} from "./lib/splitView";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -98,6 +107,13 @@ export default function App() {
   const [initialWhiteboardPath, setInitialWhiteboardPath] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
+  const [splitView, setSplitView] = useState<SplitViewState | null>(() => {
+    if (typeof window === "undefined" || window.innerWidth < 768) return null;
+    const loaded = loadSplitViewState();
+    return loaded?.enabled ? loaded : null;
+  });
+  const [splitEditingPath, setSplitEditingPath] = useState<string | null>(null);
+  const [splitBlocked, setSplitBlocked] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
   const treeRef = useRef<KiwiTreeHandle>(null);
   const treeFilterRef = useRef<HTMLInputElement>(null);
@@ -138,6 +154,43 @@ export default function App() {
     try { return localStorage.getItem("kiwifs-sidebar") !== "collapsed"; } catch { return true; }
   });
 
+  useEffect(() => {
+    if (!isMobile) return;
+    setSplitView(null);
+  }, [isMobile]);
+
+  const openInSplitView = useCallback((rightPath: string, rightVersion?: string | null) => {
+    if (isMobile) {
+      setSplitBlocked(true);
+      return;
+    }
+    setSplitBlocked(false);
+    const leftPath = activePath ?? rightPath;
+    if (!activePath) setActivePath(leftPath);
+    const next = openSplitView(splitView, leftPath, rightPath, rightVersion);
+    setSplitView(next);
+    setEditing(false);
+    setSplitEditingPath(null);
+    closeAllViews();
+  }, [activePath, isMobile, splitView, closeAllViews]);
+
+  const compareWithCurrent = useCallback((path: string, versionHash: string) => {
+    if (isMobile) {
+      setSplitBlocked(true);
+      return;
+    }
+    setSplitBlocked(false);
+    setActivePath(path);
+    const next = openSplitView(splitView, path, path, versionHash);
+    next.left = { path, versionHash };
+    next.right = { path, versionHash: null };
+    saveSplitViewState(next);
+    setSplitView(next);
+    setHistoryOpen(false);
+    setEditing(false);
+    setSplitEditingPath(null);
+  }, [isMobile, splitView]);
+
   const { prefs, loaded: prefsLoaded, updatePreferences } = usePreferences();
   const branding = useUIConfigStore((s) => s.branding);
   const features = useUIConfigStore((s) => s.features);
@@ -177,6 +230,18 @@ export default function App() {
   });
   const currentSpace = getCurrentSpace() || "default";
   const { recent, recordVisit } = useRecentPages(currentSpace);
+  const navigateSplitPane = useCallback((pane: "left" | "right", path: string) => {
+    if (!splitView) return;
+    if (pane === "left") {
+      setActivePath(path);
+      setSplitView(updateSplitPanePath(splitView, "left", path));
+    } else {
+      setSplitView(updateSplitPanePath(splitView, "right", path));
+    }
+    setSplitEditingPath(null);
+    setEditing(false);
+    recordVisit(path);
+  }, [splitView, recordVisit]);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
   const { bindings, conflicts } = useKeybindings();
@@ -393,6 +458,17 @@ export default function App() {
           treeFilterRef.current?.focus();
           treeFilterRef.current?.select();
           break;
+        case "toggle_split_view":
+          e.preventDefault();
+          if (isMobile) {
+            setSplitBlocked(true);
+            break;
+          }
+          setSplitBlocked(false);
+          setSplitView((current) => toggleSplitView(current, state.activePath));
+          setSplitEditingPath(null);
+          setEditing(false);
+          break;
         case "close_overlay": {
           const overlay = resolveOverlayDismiss(stateRef.current);
           if (!overlay) return;
@@ -438,7 +514,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar]);
+  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar, isMobile]);
 
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
@@ -628,6 +704,9 @@ const handleSpaceSwitch = useCallback(() => {
     }
     setActivePath(path);
     setEditing(false);
+    if (splitView?.enabled) {
+      setSplitView(updateSplitPanePath(splitView, "left", path));
+    }
     setGraphOpen(false);
     setHistoryOpen(false);
     setDataOpen(false);
@@ -781,6 +860,7 @@ const handleSpaceSwitch = useCallback(() => {
             onTreeSortModeChange={setTreeSortMode}
             onActivePathChange={setActivePath}
             onTreeRefresh={refreshTree}
+            onOpenInSplitView={(p) => openInSplitView(p)}
           />
 
           {/* Sidebar resize handle (desktop only) */}
@@ -857,6 +937,42 @@ const handleSpaceSwitch = useCallback(() => {
                 path={activePath}
                 onClose={() => setHistoryOpen(false)}
                 onRestored={() => setRefreshKey((k) => k + 1)}
+                onCompareWithCurrent={compareWithCurrent}
+              />
+            ) : splitBlocked && isMobile ? (
+              <SplitViewMobileBlocked />
+            ) : splitView?.enabled && activePath && !isMobile ? (
+              <KiwiSplitPageView
+                split={splitView}
+                tree={tree}
+                refreshKey={refreshKey}
+                editingPath={splitEditingPath}
+                onSplitChange={setSplitView}
+                onNavigatePane={navigateSplitPane}
+                onEditPane={(p) => {
+                  setSplitEditingPath(p);
+                  setEditing(false);
+                }}
+                onCloseEdit={() => setSplitEditingPath(null)}
+                editorRef={editorRef}
+                editorModePref={prefs.default_view}
+                onEditorModeChange={(mode) =>
+                  updatePreferences({ default_view: mode === "source" ? "source" : "editor" })
+                }
+                onToggleStar={toggleStar}
+                isStarred={isStarred}
+                onTogglePin={togglePin}
+                isPinned={isPinned}
+                onPublishedChanged={refreshPublishedPages}
+                onRevealInTree={(p) => {
+                  setSidebarOpen(true);
+                  setTreeRevealRequest((prev) => ({ path: p, nonce: (prev?.nonce ?? 0) + 1 }));
+                }}
+                onHistory={(p) => {
+                  setActivePath(p);
+                  setHistoryOpen(true);
+                }}
+                onRefresh={() => setRefreshKey((k) => k + 1)}
               />
             ) : editing && activePath ? (
               <KiwiEditor
@@ -904,6 +1020,7 @@ const handleSpaceSwitch = useCallback(() => {
                 }}
                 refreshKey={refreshKey}
                 onPublishedChanged={refreshPublishedPages}
+                onOpenInSplitView={(p) => openInSplitView(p)}
               />
             ) : treeLoading || !uiConfigLoaded ? (
               <div className="flex h-full items-center justify-center">
