@@ -12,21 +12,19 @@ import {
 } from "./splitView";
 
 describe("splitView", () => {
+  const storage = new Map<string, string>();
+
   beforeEach(() => {
+    storage.clear();
     vi.stubGlobal("sessionStorage", {
-      store: {} as Record<string, string>,
-      getItem(key: string) {
-        return this.store[key] ?? null;
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
       },
-      setItem(key: string, value: string) {
-        this.store[key] = value;
+      removeItem: (key: string) => {
+        storage.delete(key);
       },
-      removeItem(key: string) {
-        delete this.store[key];
-      },
-      clear() {
-        this.store = {};
-      },
+      clear: () => storage.clear(),
     });
   });
 
@@ -87,7 +85,7 @@ describe("splitView", () => {
   it("rejects invalid persisted payloads", () => {
     expect(parseSplitViewState(null)).toBeNull();
     expect(parseSplitViewState({ enabled: true })).toBeNull();
-    sessionStorage.setItem(SPLIT_VIEW_STORAGE_KEY, "{not json");
+    storage.set(SPLIT_VIEW_STORAGE_KEY, "{not json");
     expect(loadSplitViewState()).toBeNull();
   });
 });
