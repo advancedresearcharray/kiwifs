@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { autocompletion, type CompletionSource } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -7,6 +7,9 @@ import { type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { cn } from "@kw/lib/cn";
 import type { EditorSlashCommandConfig } from "@kw/lib/editorSlashCommands";
+import { editorImagePasteExtension } from "@kw/lib/editorImagePasteExtension";
+import { isOsFileDrag } from "@kw/lib/editorImagePaste";
+import { EditorImageDropOverlay } from "../EditorImageDropOverlay";
 import { markdownEditorExtensions } from "./markdownLanguage";
 import { markdownEditorTheme } from "./markdownEditorTheme";
 import { customSlashCompletionSource, slashCompletionSource } from "./markdownSlashCommands";
@@ -27,6 +30,8 @@ export type MarkdownSourceEditorProps = {
   customSlashCommands?: EditorSlashCommandConfig[];
   loadSlashTemplate?: (templatePath: string) => Promise<string>;
   onSlashTemplateError?: (message: string) => void;
+  uploadImage?: (file: File) => Promise<string>;
+  onImageUploadError?: (message: string) => void;
 };
 
 export function MarkdownSourceEditor({
@@ -41,7 +46,17 @@ export function MarkdownSourceEditor({
   customSlashCommands = [],
   loadSlashTemplate,
   onSlashTemplateError,
+  uploadImage,
+  onImageUploadError,
 }: MarkdownSourceEditorProps) {
+  const [fileDragActive, setFileDragActive] = useState(false);
+  const fileDragDepthRef = useRef(0);
+
+  const resetFileDrag = useCallback(() => {
+    fileDragDepthRef.current = 0;
+    setFileDragActive(false);
+  }, []);
+
   const extensions = useMemo(() => {
     const saveKeymap = keymap.of([
       {
@@ -80,13 +95,80 @@ export function MarkdownSourceEditor({
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       saveKeymap,
     ];
+
+    if (uploadImage) {
+      exts.push(
+        editorImagePasteExtension({
+          uploadImage,
+          onError: onImageUploadError,
+        }),
+      );
+    }
+
     return exts;
-  }, [onSaveShortcut, pages, customSlashCommands, loadSlashTemplate, onSlashTemplateError]);
+  }, [
+    onSaveShortcut,
+    pages,
+    customSlashCommands,
+    loadSlashTemplate,
+    onSlashTemplateError,
+    uploadImage,
+    onImageUploadError,
+  ]);
 
   const theme = useMemo(() => markdownEditorTheme({ dark }), [dark]);
 
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!uploadImage || !isOsFileDrag(e)) return;
+      e.preventDefault();
+      fileDragDepthRef.current += 1;
+      setFileDragActive(true);
+    },
+    [uploadImage],
+  );
+
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (!uploadImage || !isOsFileDrag(e)) return;
+      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+      fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+      if (fileDragDepthRef.current === 0) resetFileDrag();
+    },
+    [uploadImage, resetFileDrag],
+  );
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!uploadImage || !isOsFileDrag(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    },
+    [uploadImage],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!uploadImage || !isOsFileDrag(e)) return;
+      e.preventDefault();
+      resetFileDrag();
+    },
+    [uploadImage, resetFileDrag],
+  );
+
   return (
-    <div className={cn("overflow-hidden rounded-md border bg-background shadow-sm", className)} data-testid="markdown-source-editor">
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-md border bg-background shadow-sm",
+        className,
+      )}
+      data-testid="markdown-source-editor"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      <EditorImageDropOverlay active={fileDragActive} />
       <CodeMirror
         value={value}
         height="auto"
