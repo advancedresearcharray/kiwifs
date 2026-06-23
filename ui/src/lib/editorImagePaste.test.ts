@@ -65,7 +65,7 @@ describe("editorImagePaste", () => {
         },
       ],
       files: [] as unknown as FileList,
-    } as DataTransfer;
+    } as unknown as DataTransfer;
     expect(extractImageFromClipboard(data)?.name).toBe("clip.png");
   });
 
@@ -95,8 +95,8 @@ describe("editorImagePaste", () => {
   });
 
   it("detects OS file drag from dataTransfer types", () => {
-    expect(isOsFileDrag({ dataTransfer: { types: ["Files"] } as DataTransfer })).toBe(true);
-    expect(isOsFileDrag({ dataTransfer: { types: ["text/plain"] } as DataTransfer })).toBe(false);
+    expect(isOsFileDrag({ dataTransfer: { types: ["Files"] } as unknown as DataTransfer })).toBe(true);
+    expect(isOsFileDrag({ dataTransfer: { types: ["text/plain"] } as unknown as DataTransfer })).toBe(false);
     expect(isOsFileDrag({})).toBe(false);
   });
 });
