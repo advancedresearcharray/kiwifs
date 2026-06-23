@@ -5,10 +5,10 @@ import { UPLOADING_PLACEHOLDER } from "./editorImagePaste";
 
 function createMockView(initial = "") {
   let doc = initial;
-  let head = initial.length;
+  const selection = { main: { head: initial.length } };
   const view = {
     state: {
-      selection: { main: { head } },
+      selection,
       doc: {
         sliceString: (from: number, to: number) => doc.slice(from, to),
       },
@@ -22,9 +22,8 @@ function createMockView(initial = "") {
         doc = doc.slice(0, from) + insert + doc.slice(to);
       }
       if (update.selection) {
-        head = update.selection.anchor;
+        selection.main.head = update.selection.anchor;
       }
-      view.state.selection.main.head = head;
     },
     getDoc: () => doc,
   } as EditorView & { getDoc: () => string };
