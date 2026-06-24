@@ -50,6 +50,32 @@ describe("api error handling", () => {
       body: 'validation failed: frontmatter-yaml-invalid mapping key "last_reviewed" already defined',
     });
   });
+
+  it("fetches page peek metadata from /peek", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        path: "pages/guide.md",
+        title: "Guide",
+        snippet: "Intro paragraph",
+        frontmatter: { tags: ["docs"] },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    setBaseOverride("/api/kiwi");
+
+    await expect(api.peek("pages/guide.md")).resolves.toMatchObject({
+      path: "pages/guide.md",
+      title: "Guide",
+      snippet: "Intro paragraph",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/kiwi/peek?path=pages%2Fguide.md",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Actor": expect.any(String) }),
+      })
+    );
+  });
 });
 
 function jsonResponse(body: unknown, status = 200): Response {
