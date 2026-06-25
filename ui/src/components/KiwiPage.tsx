@@ -1275,6 +1275,19 @@ function SemanticFrontmatterValue({
     return <time dateTime={text}>{text}</time>;
   }
 
+  if (typeof value === "string" && /^https?:\/\/.+/.test(value)) {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary hover:underline break-all"
+      >
+        {text}
+      </a>
+    );
+  }
+
   return (
     <span className={isLong ? "block whitespace-pre-wrap break-words leading-relaxed" : "break-words"}>
       {text}
