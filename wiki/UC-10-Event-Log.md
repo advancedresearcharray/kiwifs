@@ -37,7 +37,7 @@ KiwiFS already has the building blocks for append-only event logging:
 | Queryable entries | In-memory replay | Sink-dependent | Eloquent ORM | Projections | DQL (needs entry flattening) |
 | Self-hosted | ✅ (embedded) | ✅ (embedded) | ✅ (embedded) | ✅ (server) | ✅ (single binary) |
 | Snapshots / compaction | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Agent-accessible | ❌ | ❌ | ❌ | ❌ | MCP (62 tools) |
+| Agent-accessible | ❌ | ❌ | ❌ | ❌ | MCP (68+ tools) |
 
 **KiwiFS's unique positioning:** The only event log that's human-readable markdown, git-versioned for tamper evidence, and agent-accessible via MCP. For audit trails that need to be reviewed by humans, queried by agents, and verified for integrity, markdown + git is a natural fit.
 
@@ -45,21 +45,21 @@ KiwiFS already has the building blocks for append-only event logging:
 
 | Gap | Why it matters | Industry reference |
 |-----|---------------|-------------------|
-| Append-only file mode | No enforcement preventing `PUT` overwrite on append-only files | opslog, Chronicle immutability |
+| ~~Append-only file mode~~ | ✅ Shipped: `validate_write` config enforces append-only semantics (#337) | opslog, Chronicle immutability |
 | Structured log entry format | Appended sections lack machine-parseable entry structure | opslog JSONL entries |
-| Sequence numbering | No monotonic sequence counter for gap detection | EventStoreDB stream position |
+| ~~Sequence numbering~~ | ✅ Shipped: `[sequences]` config with `kiwifs check` gap detection (#338) | EventStoreDB stream position |
 | Hash chain verification | Git provides implicit chain but `kiwifs check` doesn't verify it explicitly | audit-log `verify()` |
 | Log rotation | No automatic file splitting when logs exceed size thresholds | opslog snapshots |
-| Entry-level DQL queries | DQL queries files, not individual entries within files | EventStoreDB projections |
+| ~~Entry-level DQL queries~~ | ✅ Shipped: `FLATTEN` clause in DQL (#339) | EventStoreDB projections |
 
 ## Proposed Milestones
 
-1. **Append-only file mode** — `append_only: true` frontmatter field triggers `ValidateWrite` hook rejecting `PUT` overwrites. Only `POST /api/kiwi/file/append` allowed. Git history enforces after-the-fact immutability.
+1. ~~**Append-only file mode**~~ ✅ — Shipped: `[validate_write]` config enforces append-only semantics. `PUT` overwrites rejected for configured paths; only `POST /api/kiwi/file/append` allowed (#337).
 2. **Structured log entry format** — Convention for appended sections with heading-level timestamps and YAML metadata blocks. Indexer extracts entries into `file_meta.entries` JSON array.
-3. **Sequence numbering** — Pipeline assigns monotonic sequence number per append to files in configured directories. Stored in `.kiwi/state/sequences.json`. `kiwifs check` verifies continuity.
+3. ~~**Sequence numbering**~~ ✅ — Shipped: `[sequences]` config assigns monotonic sequence numbers per append. `kiwifs check` verifies continuity and detects gaps (#338).
 4. **Hash chain verification** — `kiwifs check --verify-chain` walks git history for append-only files and verifies commit parent chain integrity. Reports breaks.
 5. **Log rotation** — Config option `[log_rotation] max_entries = 1000`. Pipeline renames full files to `{name}-{date}.md` with `continues_from` wiki-link frontmatter.
-6. **Entry-level DQL** — `FLATTEN entries` clause in DQL queries across extracted log entries: `COUNT FROM "events/" FLATTEN entries WHERE entries.event_type = "user.signup"`.
+6. ~~**Entry-level DQL**~~ ✅ — Shipped: `FLATTEN` clause in DQL queries across extracted log entries (#339).
 
 ## Good First Issues
 

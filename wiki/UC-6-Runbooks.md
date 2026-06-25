@@ -22,7 +22,7 @@ KiwiFS already has strong alignment with structured runbook management:
 | Content health janitor (stale detection, broken links) | ✅ | `internal/janitor/` |
 | Execution staleness janitor (`last_executed`, `last_outcome`) | ✅ | `[janitor.execution_staleness]` in `.kiwi/config.toml` |
 | Webhooks with HMAC signing for Slack/PagerDuty notifications | ✅ | `internal/webhooks/` |
-| MCP tools for agent read/write/search during incidents | ✅ | `internal/mcpserver/` (62 tools) |
+| MCP tools for agent read/write/search during incidents | ✅ | `internal/mcpserver/` (68+ tools) |
 | DQL queries over frontmatter | ✅ | `internal/dataview/` |
 | SSE live updates during incident execution | ✅ | `internal/api/handlers_events.go` |
 | `kiwifs check` for CI-friendly hygiene scans | ✅ | `cmd/check.go` |
@@ -68,7 +68,7 @@ last_outcome = "failure"
 | Execution outcome schema | Convention exists for `last_executed` / `last_outcome`; missing `execution_count`, `avg_resolution_time` | PagerDuty metrics |
 | Structured append metadata | Appends lack structured per-entry metadata (timestamp, actor, outcome per step) | incident.io timeline |
 | Claim escalation metadata | Claims don't carry severity or SLA-based escalation timing | PagerDuty escalation policies |
-| Frontmatter-only merge | No way to update execution metadata without conflicting with body edits | Concurrent read/write during incidents |
+| ~~Frontmatter-only merge~~ | ✅ Shipped: `PATCH /api/kiwi/file/frontmatter` | Concurrent read/write during incidents |
 | Service-link frontmatter array | `services` field as indexed wiki-link array for "runbooks for this service" queries | Backstage service catalog |
 
 ## Proposed Milestones
@@ -77,7 +77,7 @@ last_outcome = "failure"
 2. **Execution outcome schema** — Standardize frontmatter fields: `last_executed`, `last_outcome`, `execution_count`, `avg_resolution_time`, `services`. Index for DQL.
 3. **Structured append metadata** — Extend `POST /api/kiwi/file/append` to accept per-entry metadata (actor, outcome, step_id). Each append creates a structured section with timestamp heading.
 4. **Claim escalation** — Extend claims to carry `severity` and `claimed_at`. Janitor flags claims exceeding configurable SLA thresholds.
-5. **Frontmatter-only update mode** — `PATCH /api/kiwi/file?merge=frontmatter` updates only frontmatter fields without touching the body, preventing conflicts during concurrent incident response.
+5. ~~**Frontmatter-only update mode**~~ ✅ — Shipped: `PATCH /api/kiwi/file/frontmatter` updates only frontmatter fields without touching the body.
 6. **Service-link indexing** — `services` frontmatter array indexed as wiki-links. DQL: `TABLE title, last_outcome FROM "runbooks/" WHERE services CONTAINS "[[auth-service]]"`.
 
 ## Good First Issues

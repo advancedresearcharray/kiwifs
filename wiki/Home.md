@@ -9,7 +9,7 @@
 KiwiFS is building toward multiple product surfaces that all share the same primitive: **files on disk are the source of truth**.
 
 - **[Roadmap](Roadmap)** — current focus, backlog, and how to propose new use cases
-- **[UC-1: Agent Task Orchestration](UC-1-Agent-Task-Orchestration)** — a workspace where humans and agents collaborate on tasks
+- **[UC-1: Knowledge Base](UC-1-Knowledge-Base)** — governed, high-quality knowledge base with article verification
 - **[UC-2: Team Wiki](UC-2-Team-Wiki)** — self-hosted Confluence/Outline replacement, pluggable into Cursor and Codex
 - **[UC-3: Structured Data Query](UC-3-Structured-Data-Query)** — import databases into markdown and query without RAG
 - **[UC-4: Headless CMS](UC-4-Headless-CMS)** — git-native content API for static sites and apps
@@ -19,6 +19,7 @@ KiwiFS is building toward multiple product surfaces that all share the same prim
 - **[UC-8: Prompt Library](UC-8-Prompt-Library)** — versioned prompt management with performance tracking
 - **[UC-9: Research Library](UC-9-Research-Library)** — citation graphs, reading workflows, literature synthesis
 - **[UC-10: Event Log](UC-10-Event-Log)** — tamper-evident audit trails and operation logs
+- **[UC-11: Agent Task Orchestration](UC-11-Agent-Task-Orchestration)** — a workspace where humans and agents collaborate on tasks
 
 ## Contributing
 

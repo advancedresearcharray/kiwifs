@@ -37,7 +37,7 @@ KiwiFS already has the infrastructure for prompt versioning and retrieval:
 | Playground / testing | ✅ | ✅ | ✅ | ❌ |
 | Self-hosted | ❌ (SaaS) | ✅ (OSS) | ❌ (SaaS) | ✅ (single binary) |
 | Search (semantic) | ❌ | Basic | ❌ | FTS5 + vector + DQL |
-| Agent-native access | API only | API only | API only | MCP (62 tools) + REST + NFS + S3 |
+| Agent-native access | API only | API only | API only | MCP (68+ tools) + REST + NFS + S3 |
 | Portable (no lock-in) | ❌ | Partial | ❌ | ✅ (plain `.md` files on disk) |
 
 **KiwiFS's unique positioning:** The only prompt management system where prompts are plain markdown files you own, with git history as the version control, DQL as the analytics layer, and MCP as the agent interface. No SaaS, no vendor lock-in, no separate database.
@@ -46,20 +46,20 @@ KiwiFS already has the infrastructure for prompt versioning and retrieval:
 
 | Gap | Why it matters | Industry reference |
 |-----|---------------|-------------------|
-| Template variable extraction | No indexing of `{{variable}}` placeholders from prompt body | PromptLayer template variables |
+| ~~Template variable extraction~~ | ✅ Shipped: `{{variable}}` placeholders indexed (#331) | PromptLayer template variables |
 | Variant linking | No `variant_of` frontmatter indexed as links for prompt families | PromptLayer/Langfuse A/B testing |
 | Performance metadata schema | No convention for `success_rate`, `avg_tokens`, `eval_score`, `usage_count` | Langfuse trace-linked metrics |
-| Word-level diff | Git diff is line-level; prompt edits need word-level granularity | PromptLayer version diff |
+| ~~Word-level diff~~ | ✅ Shipped: word-level diff support (#332) | PromptLayer version diff |
 | Provenance-based usage analytics | Page views track access but don't segment by actor/agent | PromptLayer per-prompt analytics |
-| Prompt init template | No scaffold for prompt library structure | PromptLayer registry organization |
+| ~~Prompt init template~~ | ✅ Shipped: `kiwifs init --template prompt` (#333) | PromptLayer registry organization |
 
 ## Proposed Milestones
 
-1. **Prompt init template** — Ship `.kiwi/templates/prompt-library/` with folder structure (`system-prompts/`, `task-prompts/`, `evaluation/`), `.kiwi/schemas/prompt.json` validating required fields (`model`, `label`), and example prompts. Wire into `kiwifs init --template prompt-library`.
+1. ~~**Prompt init template**~~ ✅ — Shipped: `kiwifs init --template prompt` with `system-prompts/`, `task-prompts/`, `evaluation/`, `.kiwi/schemas/prompt.json`, `.kiwi/schemas/rubric.json` (#333).
 2. **Performance metadata schema** — Standardize frontmatter fields: `model`, `temperature`, `max_tokens`, `label`, `success_rate`, `avg_tokens`, `eval_score`, `usage_count`, `last_tested`. DQL: `TABLE title, success_rate, usage_count FROM "prompts/" WHERE model = "claude-4" SORT success_rate DESC`.
-3. **Template variable extraction** — Index `{{variable}}` placeholders from markdown body into `file_meta.parameters`. DQL: `TABLE title, parameters FROM "prompts/" WHERE parameters CONTAINS "language"`.
+3. ~~**Template variable extraction**~~ ✅ — Shipped: `{{variable}}` placeholders indexed from markdown body (#331).
 4. **Variant linking** — Index `variant_of` frontmatter as typed links. Graph view shows prompt families. DQL: `TABLE title, success_rate FROM "prompts/" WHERE variant_of = "[[summarize-v1]]"`.
-5. **Word-level diff** — Add `?granularity=word` parameter to `/api/kiwi/diff` for prose-optimized comparisons.
+5. ~~**Word-level diff**~~ ✅ — Shipped: word-level diff for prose-optimized comparisons (#332).
 6. **Usage analytics by actor** — Extend page view analytics to segment by `X-Actor` header. DQL over analytics: "which agents use this prompt most?"
 
 ## Good First Issues

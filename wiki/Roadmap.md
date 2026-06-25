@@ -10,7 +10,7 @@ Each use case has its own wiki page with: features, industry comparison, gaps, a
 
 | UC | Name | Tracking |
 |----|------|----------|
-| UC-1 | [Agent Task Orchestration](UC-1-Agent-Task-Orchestration) | [`uc:task-orchestration`](https://github.com/kiwifs/kiwifs/labels/uc%3Atask-orchestration) |
+| UC-1 | [Knowledge Base](UC-1-Knowledge-Base) | [`uc:knowledge-base`](https://github.com/kiwifs/kiwifs/labels/uc%3Aknowledge-base) |
 | UC-2 | [Team Wiki](UC-2-Team-Wiki) | [`uc:team-wiki`](https://github.com/kiwifs/kiwifs/labels/uc%3Ateam-wiki) |
 | UC-3 | [Structured Data Query](UC-3-Structured-Data-Query) | [`uc:data-query`](https://github.com/kiwifs/kiwifs/labels/uc%3Adata-query) |
 | UC-4 | [Headless CMS](UC-4-Headless-CMS) | [`uc:headless-cms`](https://github.com/kiwifs/kiwifs/labels/uc%3Aheadless-cms) |
@@ -20,6 +20,7 @@ Each use case has its own wiki page with: features, industry comparison, gaps, a
 | UC-8 | [Prompt Library](UC-8-Prompt-Library) | [`uc:prompt-library`](https://github.com/kiwifs/kiwifs/labels/uc%3Aprompt-library) |
 | UC-9 | [Research Library](UC-9-Research-Library) | [`uc:research`](https://github.com/kiwifs/kiwifs/labels/uc%3Aresearch) |
 | UC-10 | [Event Log](UC-10-Event-Log) | [`uc:event-log`](https://github.com/kiwifs/kiwifs/labels/uc%3Aevent-log) |
+| UC-11 | [Agent Task Orchestration](UC-11-Agent-Task-Orchestration) | [`uc:task-orchestration`](https://github.com/kiwifs/kiwifs/labels/uc%3Atask-orchestration) |
 | — | _Your idea here_ | [Open a Discussion](https://github.com/kiwifs/kiwifs/discussions) |
 
 ---
@@ -46,11 +47,11 @@ These are core platform milestones that benefit all use cases. See [`docs/ROADMA
 | Milestone | Key items | Status |
 |-----------|-----------|--------|
 | v0.1 Foundation | REST, UI, git, FTS, protocols, multi-space | ✅ Done |
-| v0.2 Embeddable | MCP server, DQL, memory model, widget system | ✅ Done |
-| v0.2 Embeddable | React npm package, pipeline/JS hooks | 🔲 Planned |
-| v0.3 Import/Export | 18 import sources, JSONL/CSV export, MkDocs export | ✅ Done |
-| v0.4 Webhooks/Analytics | Content analytics, page views, OpenAPI spec, KiwiDocs, PDF export | ✅ Done |
-| v0.5 Access Control | RBAC, editorial states, retention | 🔲 Planned |
+| v0.2 Embeddable | MCP server, DQL, memory model | ✅ Done |
+| v0.3 Import/Export | 19 import sources, JSONL/CSV/Parquet export, MkDocs export | ✅ Done |
+| v0.4 Webhooks/Analytics | Webhooks, content analytics, page views, OpenAPI spec, PDF export | ✅ Done |
+| v0.5 Workflows/Schemas | 12 templates, workflows, schemas, widgets, tasks, publishing, canvas, ONNX | ✅ Done |
+| v0.6 Access Control | RBAC, React npm package, pipeline/JS hooks, retention | 🔲 Planned |
 
 ---
 

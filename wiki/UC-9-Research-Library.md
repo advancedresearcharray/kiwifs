@@ -38,7 +38,7 @@ KiwiFS already has strong alignment with literature management workflows:
 | Semantic search | ❌ | ❌ | ✅ | ❌ | ✅ (7 embedding backends) |
 | Reading workflow | Tags | Manual | ❌ | ❌ | Workflow state machine |
 | Collaborative | Zotero Groups | ❌ (local only) | ❌ | ❌ | Multi-space + share links |
-| Agent-accessible | ❌ | ❌ | API only | ❌ | MCP (62 tools) |
+| Agent-accessible | ❌ | ❌ | API only | ❌ | MCP (68+ tools) |
 | Self-hosted | ✅ | ✅ (local) | ❌ (SaaS) | ❌ (SaaS) | ✅ (single binary) |
 
 **KiwiFS's unique positioning:** The only tool combining citation graph visualization, contradiction detection, semantic search, structured queries, and agent-native access in one self-hosted system. A research agent can search the literature, find contradicting claims, and synthesize findings — all through MCP.
@@ -47,21 +47,21 @@ KiwiFS already has strong alignment with literature management workflows:
 
 | Gap | Why it matters | Industry reference |
 |-----|---------------|-------------------|
-| BibTeX import/export | Standard interchange format for academic references | Zotero, Mendeley, LaTeX |
+| ~~BibTeX import/export~~ | ✅ Shipped: `kiwifs import --from bibtex` (#335) | Zotero, Mendeley, LaTeX |
 | DOI/arXiv metadata fetch | Single-paper ingest from identifier without manual entry | Zotero browser connector |
 | Typed link relations | No distinction between `cites`, `extends`, `contradicts`, `reviews` in links | Semantic Scholar citation types |
 | Author normalization | Author name variants ("J. Smith" vs "Smith, John") not resolved | Zotero author disambiguation |
-| Reading workflow config | No default reading pipeline shipping with init | Zotero + Obsidian reading workflow |
-| Graph filtering by link type | Graph shows all links; can't filter to "show only citations" | Connected Papers view |
+| ~~Reading workflow config~~ | ✅ Shipped: `kiwifs init --template research` includes reading workflow | Zotero + Obsidian reading workflow |
+| ~~Graph filtering by link type~~ | ✅ Shipped: graph view link-type filter (#340) | Connected Papers view |
 
 ## Proposed Milestones
 
-1. **Research init template** — Ship `.kiwi/templates/research/` with `papers/`, `notes/`, `reviews/` folders, `.kiwi/workflows/reading.json` (`unread → reading → annotated → summarized → incorporated`), `.kiwi/schemas/paper.json`, and example literature notes. Wire into `kiwifs init --template research`.
-2. **BibTeX importer** — `kiwifs import --from bibtex --file references.bib` converts entries to markdown with frontmatter (`doi`, `authors`, `year`, `venue`, `bibtex_key`, `abstract`). Export: `kiwifs export --format bibtex`.
-3. **DOI/arXiv metadata ingest** — `kiwi_cite` MCP tool that takes a DOI or arXiv ID, fetches metadata from Crossref/Semantic Scholar API, and writes a markdown file with correct frontmatter.
+1. ~~**Research init template**~~ ✅ — Shipped: `kiwifs init --template research` with `papers/`, `notes/`, `reviews/`, `.kiwi/workflows/reading.json`, `.kiwi/schemas/paper.json`.
+2. ~~**BibTeX importer**~~ ✅ — Shipped: `kiwifs import --from bibtex --file references.bib` (#335).
+3. ~~**DOI/arXiv metadata ingest**~~ ✅ — Shipped: `kiwi_cite` MCP tool fetches metadata and writes a markdown file (#336).
 4. **Typed link relations** — Index `cites`, `extends`, `reviews` frontmatter arrays as typed wiki-links. Graph queries filter by relation type.
 5. **Author normalization** — `FormatWrite` hook normalizes `authors` array entries to canonical form via `.kiwi/authors.json` lookup table.
-6. **Graph link-type filtering** — UI filter on graph view to show only specific link types (citations, contradictions, extensions).
+6. ~~**Graph link-type filtering**~~ ✅ — Shipped: UI filter on graph view to show only specific link types (#340).
 
 ## Good First Issues
 
