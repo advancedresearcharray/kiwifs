@@ -1,6 +1,5 @@
 export type UIFeatureKey =
   | "graph"
-  | "bookmarks"
   | "kanban"
   | "canvas"
   | "whiteboard"
@@ -10,7 +9,6 @@ export type UIFeatureKey =
 
 export const DEFAULT_UI_FEATURES: Record<UIFeatureKey, boolean> = {
   graph: true,
-  bookmarks: true,
   kanban: true,
   canvas: true,
   whiteboard: true,

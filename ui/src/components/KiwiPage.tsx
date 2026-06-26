@@ -19,7 +19,6 @@ import { KiwiBreadcrumb } from "./KiwiBreadcrumb";
 import { KiwiToC } from "./KiwiToC";
 import { KiwiBacklinks } from "./KiwiBacklinks";
 import { KiwiComments } from "./KiwiComments";
-import { KiwiBookmarks } from "./KiwiBookmarks";
 import { KiwiQuery } from "./KiwiQuery";
 import { PageActions } from "./PageActions";
 import { PublishButton } from "./PublishButton";
@@ -385,7 +384,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
   const [lastAuthor, setLastAuthor] = useState<string | null>(null);
   const [versionError, setVersionError] = useState(false);
   const [commentError, setCommentError] = useState(false);
-  const [myNote, setMyNote] = useState<string | null>(null);
+  const [localNote, setLocalNote] = useState<string | null>(null);
   const proseRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -412,9 +411,9 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
   useEffect(() => {
     if (isDir) return;
     let cancelled = false;
-    setMyNote(null);
-    api.readMyNote(path).then((note) => {
-      if (!cancelled) setMyNote(note);
+    setLocalNote(null);
+    api.readLocalNote(path).then((note) => {
+      if (!cancelled) setLocalNote(note);
     });
     return () => { cancelled = true; };
   }, [path, refreshKey, isDir]);
@@ -1050,15 +1049,15 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
 
               {/* ── Footer zone: fixed order, collapsible ── */}
               <div className="mt-12 space-y-2">
-                {myNote && (
+                {localNote && (
                   <CollapsibleFooterSection
                     icon={<NotebookPen className="h-4 w-4" />}
                     title="My Notes"
-                    storageKey="footer-my-notes"
+                    storageKey="footer-local-notes"
                     defaultOpen
-                    className="kiwi-my-notes-section"
+                    className="kiwi-local-notes-section"
                   >
-                    <div className="kiwi-prose kiwi-my-notes">
+                    <div className="kiwi-prose kiwi-local-notes">
                       <ErrorBoundary>
                         <ReactMarkdown
                           remarkPlugins={[
@@ -1102,7 +1101,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                             pre: ({ children }) => <>{children}</>,
                           }}
                         >
-                          {stripObsidianComments(myNote.replace(/^---[\s\S]*?---\n*/, ""))}
+                          {stripObsidianComments(localNote.replace(/^---[\s\S]*?---\n*/, ""))}
                         </ReactMarkdown>
                       </ErrorBoundary>
                     </div>
@@ -1123,12 +1122,6 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                     refreshKey={refreshKey}
                   />
                 </CollapsibleFooterSection>
-
-                <KiwiBookmarks
-                  path={path}
-                  containerRef={proseRef}
-                  renderKey={content}
-                />
 
                 <CollapsibleFooterSection
                   icon={<Link2 className="h-4 w-4" />}

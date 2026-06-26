@@ -66,7 +66,7 @@ export function PageTracker({ onNavigate, stateName = "progress" }: Props) {
     let cancelled = false;
     Promise.all([
       api.tree(),
-      api.getMyState<ProgressState>(stateName),
+      api.getLocalState<ProgressState>(stateName),
     ]).then(([t, p]) => {
       if (cancelled) return;
       setTree(t);
@@ -87,7 +87,7 @@ export function PageTracker({ onNavigate, stateName = "progress" }: Props) {
       } else {
         next[pagePath] = { done: true, doneAt: new Date().toISOString().slice(0, 10) };
       }
-      api.putMyState(stateName, next);
+      api.putLocalState(stateName, next);
       return next;
     });
   }, [stateName]);

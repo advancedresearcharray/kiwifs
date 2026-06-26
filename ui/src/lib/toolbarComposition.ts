@@ -3,7 +3,6 @@ import type { UIFeatureKey } from "./uiFeatures";
 /** Built-in header view buttons (excludes New page + theme toggle). */
 export const TOOLBAR_BUILTIN_VIEW_IDS = [
   "graph",
-  "bookmarks",
   "bases",
   "canvas",
   "whiteboard",
@@ -21,7 +20,6 @@ export const DEFAULT_TOOLBAR_VIEWS: ToolbarBuiltinViewId[] = [
 /** Maps toolbar view ids to [ui.features] keys. */
 export const TOOLBAR_VIEW_FEATURE: Record<ToolbarBuiltinViewId, UIFeatureKey> = {
   graph: "graph",
-  bookmarks: "bookmarks",
   bases: "bases",
   canvas: "canvas",
   whiteboard: "whiteboard",
@@ -33,7 +31,6 @@ export const TOOLBAR_VIEW_FEATURE: Record<ToolbarBuiltinViewId, UIFeatureKey> = 
 const ALLOWED = new Set<string>([
   ...TOOLBAR_BUILTIN_VIEW_IDS,
   "data_sources",
-  "bookmarks",
 ]);
 
 function normalizeToolbarViewId(id: string): ToolbarBuiltinViewId | null {
