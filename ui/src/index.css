@@ -58,6 +58,12 @@
   line-height: var(--line-height-base);
   max-width: var(--content-max-width);
 }
+.kiwi-prose ::selection {
+  background-color: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+:is(.dark) .kiwi-prose ::selection {
+  background-color: color-mix(in srgb, var(--primary) 55%, transparent);
+}
 .kiwi-prose h1 {
   font-size: calc(var(--heading-1-size) * var(--heading-scale));
   line-height: var(--line-height-tight);

@@ -1108,20 +1108,12 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                   </CollapsibleFooterSection>
                 )}
 
-                <CollapsibleFooterSection
-                  icon={<MessageSquareQuote className="h-4 w-4" />}
-                  title="Comments"
-                  storageKey="footer-comments"
-                  defaultOpen={commentCount > 0}
-                  className="kiwi-comments-section"
-                >
-                  <KiwiComments
-                    path={path}
-                    containerRef={proseRef}
-                    renderKey={content}
-                    refreshKey={refreshKey}
-                  />
-                </CollapsibleFooterSection>
+                <KiwiComments
+                  path={path}
+                  containerRef={proseRef}
+                  renderKey={content}
+                  refreshKey={refreshKey}
+                />
 
                 <CollapsibleFooterSection
                   icon={<Link2 className="h-4 w-4" />}
