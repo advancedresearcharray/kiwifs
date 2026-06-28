@@ -2877,7 +2877,7 @@ func StreamableHTTPHandler(s *server.MCPServer, authToken string) http.Handler {
 		server.WithEndpointPath("/mcp"),
 		server.WithStateLess(true),
 	)
-	return bearerAuth(authToken, mcpHandler)
+	return bearerAuth(authToken, wrapMCP2026(mcpHandler, s))
 }
 
 func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) http.Handler {
