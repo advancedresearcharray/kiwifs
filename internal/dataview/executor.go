@@ -381,6 +381,23 @@ func compareTaskValues(left, right any, op Operator) bool {
 			return lf >= rf
 		}
 	}
+	lt, lok := normalizeComparableTime(left)
+	rt, rok := normalizeComparableTime(right)
+	if lok && rok {
+		switch op {
+		case OpLt:
+			return lt.Before(rt)
+		case OpGt:
+			return lt.After(rt)
+		case OpLte:
+			return !lt.After(rt)
+		case OpGte:
+			return !lt.Before(rt)
+		}
+	}
+	if lok || rok {
+		return false
+	}
 	ls, rs := fmt.Sprintf("%v", left), fmt.Sprintf("%v", right)
 	cmp := strings.Compare(ls, rs)
 	switch op {
@@ -394,6 +411,26 @@ func compareTaskValues(left, right any, op Operator) bool {
 		return cmp >= 0
 	}
 	return false
+}
+
+// normalizeComparableTime parses ISO date or datetime strings for temporal comparisons.
+func normalizeComparableTime(v any) (time.Time, bool) {
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return time.Time{}, false
+	}
+	layouts := []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02"}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), true
+		}
+	}
+	if len(s) >= 10 {
+		if t, err := time.Parse("2006-01-02", s[:10]); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func toFloat(v any) (float64, bool) {
@@ -467,8 +504,71 @@ func evalTaskField(expr Expr, t taskRow) any {
 		return nil
 	case *Literal:
 		return e.Value
+	case *FuncCall:
+		return evalFuncCall(e, t)
 	}
 	return nil
+}
+
+func evalFuncCall(fc *FuncCall, t taskRow) any {
+	switch strings.ToLower(fc.Name) {
+	case "now":
+		if len(fc.Args) != 0 {
+			return nil
+		}
+		return time.Now().UTC().Format(time.RFC3339)
+	case "date":
+		if len(fc.Args) != 1 {
+			return nil
+		}
+		return evalDateLiteral(fc.Args[0], t)
+	case "days_ago":
+		if len(fc.Args) != 1 {
+			return nil
+		}
+		days, ok := evalNumericArg(fc.Args[0], t)
+		if !ok {
+			return nil
+		}
+		return time.Now().UTC().AddDate(0, 0, -int(days)).Format(time.RFC3339)
+	default:
+		return nil
+	}
+}
+
+func evalDateLiteral(expr Expr, t taskRow) any {
+	raw := evalScalarString(expr, t)
+	if raw == "" {
+		return nil
+	}
+	if parsed, ok := normalizeComparableTime(raw); ok {
+		return parsed.Format("2006-01-02")
+	}
+	return nil
+}
+
+func evalScalarString(expr Expr, t taskRow) string {
+	switch e := expr.(type) {
+	case *Literal:
+		if s, ok := e.Value.(string); ok {
+			return s
+		}
+	case *FieldRef:
+		if v := evalTaskField(e, t); v != nil {
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return ""
+}
+
+func evalNumericArg(expr Expr, t taskRow) (float64, bool) {
+	switch e := expr.(type) {
+	case *Literal:
+		return toFloat(e.Value)
+	case *FieldRef:
+		return toFloat(evalTaskField(e, t))
+	}
+	return 0, false
 }
 
 func (e *Executor) execSelect(ctx context.Context, sqlStr string, args []any, plan *QueryPlan) (*QueryResult, error) {

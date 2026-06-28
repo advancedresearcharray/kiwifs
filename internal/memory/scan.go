@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/kiwifs/kiwifs/internal/links"
 	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	"gopkg.in/yaml.v3"
@@ -15,15 +17,29 @@ import (
 type Report struct {
 	EpisodicCount int `json:"episodic_count"`
 	TotalEpisodic int `json:"total_episodic"`
-	TotalUnmerged int `json:"total_unmerged"`
+	TotalUnmerged  int `json:"total_unmerged"`
+	Contradictions int `json:"contradictions"`
 	// Cumulative merged-from entries seen across the tree (duplicates count).
 	MergedFromRefs int `json:"merged_from_refs"`
+	// CoveragePct is the percentage of episodic files referenced by merged-from.
+	CoveragePct float64 `json:"coverage_pct"`
+	// AvgAgeDays is the mean age in days of active (or unset-status) pages.
+	AvgAgeDays float64 `json:"avg_age_days"`
+	// ExpiredCount is pages whose expires_at is in the past.
+	ExpiredCount int `json:"expired_count"`
+	// ContestedCount is pages with memory_status: contested.
+	ContestedCount int `json:"contested_count"`
+	// ScopeCounts maps scope frontmatter values to page counts.
+	ScopeCounts map[string]int `json:"scope_counts"`
 	// Distinct ref keys: type:id, or type:path:relpath for path-only entries.
 	// Omitted in JSON; use for debugging only.
 	MergedKeySet map[string]struct{} `json:"-"`
-	Episodes     []EpisodicFile      `json:"episodic_files"`
-	Unmerged     []EpisodicFile      `json:"unmerged"`
-	Warnings     []string            `json:"warnings,omitempty"`
+	// activeAgeSumDays and activePageCount accumulate freshness during Scan.
+	activeAgeSumDays float64 `json:"-"`
+	activePageCount  int     `json:"-"`
+	Episodes         []EpisodicFile `json:"episodic_files"`
+	Unmerged         []EpisodicFile `json:"unmerged"`
+	Warnings         []string       `json:"warnings,omitempty"`
 }
 
 // EpisodicFile is one file classified as holding episodic memory.
@@ -61,6 +77,7 @@ func Scan(ctx context.Context, store storage.Storage, opt Options) (*Report, err
 
 	rep := &Report{
 		MergedKeySet: make(map[string]struct{}),
+		ScopeCounts:  make(map[string]int),
 	}
 	var err error
 	err = storage.Walk(ctx, store, "/", func(e storage.Entry) error {
@@ -74,7 +91,7 @@ func Scan(ctx context.Context, store storage.Storage, opt Options) (*Report, err
 		if rerr != nil {
 			return rerr
 		}
-		return processFile(e.Path, b, prefix, rep)
+		return processFile(e.Path, b, e.ModTime, prefix, rep)
 	})
 	if err != nil {
 		return nil, err
@@ -82,7 +99,7 @@ func Scan(ctx context.Context, store storage.Storage, opt Options) (*Report, err
 	return finishReport(rep, opt), nil
 }
 
-func processFile(path string, b []byte, prefix string, rep *Report) error {
+func processFile(path string, b []byte, modTime time.Time, prefix string, rep *Report) error {
 	fm, _ := markdown.Frontmatter(b)
 	if fm == nil {
 		fm = map[string]any{}
@@ -90,6 +107,8 @@ func processFile(path string, b []byte, prefix string, rep *Report) error {
 	npath := filepath.ToSlash(path)
 	mk, _ := fm["memory_kind"].(string)
 	mk = strings.ToLower(strings.TrimSpace(mk))
+
+	accumulateHealthMetrics(fm, modTime, rep)
 
 	// Index merged-from from every file (any page may cite episodes).
 	mergeList, w := extractMergedFrom(fm)
@@ -120,7 +139,17 @@ func processFile(path string, b []byte, prefix string, rep *Report) error {
 		rep.Warnings = append(rep.Warnings, w...)
 		rep.Episodes = append(rep.Episodes, ef)
 	}
+	if pageHasContradiction(fm) {
+		rep.Contradictions++
+	}
 	return nil
+}
+
+func pageHasContradiction(fm map[string]any) bool {
+	if MemoryStatus(fm) == StatusContested {
+		return true
+	}
+	return len(links.ExtractContradicts(fm)) > 0
 }
 
 func finishReport(r *Report, opt Options) *Report {
@@ -132,9 +161,36 @@ func finishReport(r *Report, opt Options) *Report {
 	}
 	r.TotalEpisodic = len(r.Episodes)
 	r.TotalUnmerged = len(r.Unmerged)
+	r.CoveragePct = coveragePercent(r.TotalEpisodic, r.TotalUnmerged)
+	if r.activePageCount > 0 {
+		r.AvgAgeDays = r.activeAgeSumDays / float64(r.activePageCount)
+	}
+	if len(r.ScopeCounts) == 0 {
+		r.ScopeCounts = nil
+	}
 	r.Episodes = paginateEpisodicFiles(r.Episodes, opt.Limit, opt.Offset)
 	r.Unmerged = paginateEpisodicFiles(r.Unmerged, opt.Limit, opt.Offset)
 	return r
+}
+
+func accumulateHealthMetrics(fm map[string]any, modTime time.Time, rep *Report) {
+	status := MemoryStatus(fm)
+	if status == StatusActive {
+		if !modTime.IsZero() {
+			rep.activeAgeSumDays += time.Since(modTime).Hours() / 24
+			rep.activePageCount++
+		}
+	}
+	if status == StatusContested {
+		rep.ContestedCount++
+	}
+	if expiresAt, ok := parseFrontmatterDate(fm, "expires_at"); ok && expiresAt.Before(time.Now()) {
+		rep.ExpiredCount++
+	}
+	if raw, ok := fm["scope"]; ok {
+		scope, _ := raw.(string)
+		rep.ScopeCounts[strings.TrimSpace(scope)]++
+	}
 }
 
 func paginateEpisodicFiles(files []EpisodicFile, limit, offset int) []EpisodicFile {

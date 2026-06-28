@@ -30,8 +30,9 @@ type importRequest struct {
 	TableID     string          `json:"table_id"`
 	Project     string          `json:"project"`
 	Query       string          `json:"query"`
-	Columns     []string        `json:"columns"`
-	IDColumn    string          `json:"id_column"`
+	Columns        []string               `json:"columns"`
+	FieldMappings  []importer.FieldMapping `json:"field_mappings,omitempty"`
+	IDColumn       string                 `json:"id_column"`
 	Prefix      string          `json:"prefix"`
 	DryRun      bool            `json:"dry_run"`
 	Limit       int             `json:"limit"`
@@ -114,10 +115,11 @@ func (h *Handlers) Import(c echo.Context) error {
 	}
 
 	opts := importer.Options{
-		Prefix:   req.Prefix,
-		IDColumn: req.IDColumn,
-		Columns:  columns,
-		DryRun:   req.DryRun,
+		Prefix:        req.Prefix,
+		IDColumn:      req.IDColumn,
+		Columns:       columns,
+		FieldMappings: req.FieldMappings,
+		DryRun:        req.DryRun,
 		Limit:    req.Limit,
 		Actor:    actor,
 		FullSync: !req.DryRun && req.Limit == 0 && importer.IsSyncable(req.From),
@@ -387,6 +389,11 @@ func buildBuiltinSource(req importRequest) (importer.Source, error) {
 			return nil, fmt.Errorf("file is required for json/jsonl")
 		}
 		return importer.NewJSON(req.File)
+	case "bibtex":
+		if req.File == "" {
+			return nil, fmt.Errorf("file is required for bibtex")
+		}
+		return importer.NewBibTeX(req.File)
 	case "notion":
 		apiKey := req.APIKey
 		if apiKey == "" {
@@ -584,6 +591,10 @@ type previewRequest struct {
 	Project     string          `json:"project"`
 	Credentials json.RawMessage `json:"credentials,omitempty" swaggertype:"object"`
 	APIKey      string          `json:"api_key,omitempty"`
+	Prefix      string          `json:"prefix,omitempty"`
+	IDColumn    string          `json:"id_column,omitempty"`
+	Columns     []string        `json:"columns,omitempty"`
+	FieldMappings []importer.FieldMapping `json:"field_mappings,omitempty"`
 	Limit       int             `json:"limit"`
 
 	AirbyteConfig map[string]any `json:"airbyte_config,omitempty"`
@@ -629,8 +640,68 @@ func (h *Handlers) ImportPreview(c echo.Context) error {
 		limit = 5
 	}
 
-	// Build an importRequest to reuse buildAPISource
-	ir := importRequest{
+	ir := previewToImportRequest(req)
+	ir.Prefix = req.Prefix
+	ir.IDColumn = req.IDColumn
+	ir.Columns = req.Columns
+	ir.FieldMappings = req.FieldMappings
+	ir.Limit = limit
+
+	src, err := buildAPISource(ir)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	defer src.Close()
+
+	previews, err := streamImportPreviews(c.Request().Context(), src, limit, recordPreviewOptsFromRequest(req))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, previewResponse{Records: previews})
+}
+
+type inferFieldsResponse struct {
+	Fields []importer.InferredField `json:"fields"`
+}
+
+// ImportInferFields godoc
+//
+//	@Summary		Infer import field types
+//	@Description	Samples records from a source and returns suggested field mappings with detected types.
+//	@Tags			import
+//	@Security		BearerAuth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		previewRequest	true	"Infer-fields request (same shape as preview)"
+//	@Success		200		{object}	inferFieldsResponse
+//	@Failure		400		{object}	map[string]string	"Invalid request body or source configuration details"
+//	@Failure		500		{object}	map[string]string	"Internal server or sampling error"
+//	@Router			/api/kiwi/import/infer-fields [post]
+func (h *Handlers) ImportInferFields(c echo.Context) error {
+	var req previewRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.From == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "from is required")
+	}
+
+	ir := previewToImportRequest(req)
+	src, err := buildAPISource(ir)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	defer src.Close()
+
+	fields, err := inferFieldsFromSource(c.Request().Context(), src)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, inferFieldsResponse{Fields: fields})
+}
+
+func previewToImportRequest(req previewRequest) importRequest {
+	return importRequest{
 		From:          req.From,
 		DSN:           req.DSN,
 		URI:           req.URI,
@@ -644,20 +715,41 @@ func (h *Handlers) ImportPreview(c echo.Context) error {
 		Project:       req.Project,
 		Credentials:   req.Credentials,
 		APIKey:        req.APIKey,
-		Limit:         limit,
 		AirbyteConfig: req.AirbyteConfig,
 		AirbyteImage:  req.AirbyteImage,
 		Streams:       req.Streams,
 		Via:           req.Via,
 	}
+}
 
-	src, err := buildAPISource(ir)
+func inferFieldsFromSource(ctx context.Context, src importer.Source) ([]importer.InferredField, error) {
+	rows, err := importer.SampleSourceFields(ctx, src, 100)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		return nil, err
 	}
-	defer src.Close()
+	return importer.InferMappingFields(rows), nil
+}
 
-	ctx := c.Request().Context()
+func recordPreviewOptsFromRequest(req previewRequest) importer.RecordPreviewOpts {
+	return importer.RecordPreviewOpts{
+		Prefix:        req.Prefix,
+		IDColumn:      req.IDColumn,
+		Columns:       req.Columns,
+		FieldMappings: req.FieldMappings,
+	}
+}
+
+func recordPreviewOptsFromImportRequest(req importRequest) importer.RecordPreviewOpts {
+	return importer.RecordPreviewOpts{
+		Prefix:        req.Prefix,
+		IDColumn:      req.IDColumn,
+		Columns:       req.Columns,
+		FieldMappings: req.FieldMappings,
+	}
+}
+
+func streamImportPreviews(ctx context.Context, src importer.Source, limit int, base importer.RecordPreviewOpts) ([]previewRecord, error) {
+	base.SourceName = src.Name()
 	records, errs := src.Stream(ctx)
 
 	var previews []previewRecord
@@ -666,39 +758,20 @@ func (h *Handlers) ImportPreview(c echo.Context) error {
 		if count >= limit {
 			break
 		}
-		fm := make(map[string]any, len(rec.Fields)+2)
-		for k, v := range rec.Fields {
-			fm[k] = v
-		}
-		fm["_source"] = src.Name()
-		fm["_source_id"] = rec.SourceID
-
-		title := rec.PrimaryKey
-		if t, ok := rec.Fields["title"].(string); ok && t != "" {
-			title = t
-		} else if t, ok := rec.Fields["name"].(string); ok && t != "" {
-			title = t
-		}
-
-		path := fmt.Sprintf("%s/%s.md", src.Name(), importer.SanitizePath(rec.PrimaryKey))
-		body := fmt.Sprintf("# %s\n\n> Auto-imported from %s (row %s)", title, rec.Table, rec.SourceID)
-
+		item := importer.BuildPreviewItem(rec, base)
 		previews = append(previews, previewRecord{
-			Path:        path,
-			Frontmatter: fm,
-			BodyPreview: body,
+			Path:        item.Path,
+			Frontmatter: item.Frontmatter,
+			BodyPreview: item.BodyPreview,
 		})
 		count++
 	}
-
-	// Drain any errors
 	for err := range errs {
 		if err != nil && len(previews) == 0 {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			return nil, err
 		}
 	}
-
-	return c.JSON(http.StatusOK, previewResponse{Records: previews})
+	return previews, nil
 }
 
 // --- Connection CRUD endpoints (Phase 3) ---
@@ -1381,7 +1454,7 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	if from == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "from is required")
 	}
-	supported := map[string]bool{"csv": true, "json": true, "jsonl": true, "yaml": true, "excel": true, "sqlite": true}
+	supported := map[string]bool{"csv": true, "json": true, "jsonl": true, "yaml": true, "bibtex": true, "excel": true, "sqlite": true}
 	if !supported[from] {
 		return echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("file upload not supported for %q — use the path-based import", from))
@@ -1414,6 +1487,8 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 			ext = ".jsonl"
 		case "yaml":
 			ext = ".yaml"
+		case "bibtex":
+			ext = ".bib"
 		case "excel":
 			ext = ".xlsx"
 		case "sqlite":
@@ -1438,6 +1513,12 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	idColumn := c.FormValue("id_column")
 	table := c.FormValue("table") // for sqlite
 	query := c.FormValue("query") // for sqlite
+	var fieldMappings []importer.FieldMapping
+	if raw := c.FormValue("field_mappings"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &fieldMappings); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid field_mappings JSON")
+		}
+	}
 
 	// Determine what to call the data if no prefix given
 	if prefix == "" {
@@ -1453,9 +1534,10 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	ir.IDColumn = idColumn
 	ir.Table = table
 	ir.Query = query
+	ir.FieldMappings = fieldMappings
 
 	switch from {
-	case "csv", "json", "jsonl", "yaml", "excel":
+	case "csv", "json", "jsonl", "yaml", "bibtex", "excel":
 		ir.File = tmpPath
 	case "sqlite":
 		ir.DB = tmpPath
@@ -1465,52 +1547,31 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	}
 
 	if mode == "preview" {
-		ir.Limit = 5
 		apiSrc, err := buildAPISource(ir)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 		defer apiSrc.Close()
 
-		ctx := c.Request().Context()
-		records, errs := apiSrc.Stream(ctx)
-
-		var previews []previewRecord
-		count := 0
-		for rec := range records {
-			if count >= 5 {
-				break
-			}
-			fm := make(map[string]any, len(rec.Fields)+2)
-			for k, v := range rec.Fields {
-				fm[k] = v
-			}
-			fm["_source"] = apiSrc.Name()
-			fm["_source_id"] = rec.SourceID
-
-			title := rec.PrimaryKey
-			if t, ok := rec.Fields["title"].(string); ok && t != "" {
-				title = t
-			} else if t, ok := rec.Fields["name"].(string); ok && t != "" {
-				title = t
-			}
-
-			path := fmt.Sprintf("%s/%s.md", prefix, importer.SanitizePath(rec.PrimaryKey))
-			body := fmt.Sprintf("# %s\n\n> Auto-imported from %s (row %s)", title, rec.Table, rec.SourceID)
-
-			previews = append(previews, previewRecord{
-				Path:        path,
-				Frontmatter: fm,
-				BodyPreview: body,
-			})
-			count++
-		}
-		for err := range errs {
-			if err != nil && len(previews) == 0 {
-				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-			}
+		previews, err := streamImportPreviews(c.Request().Context(), apiSrc, 5, recordPreviewOptsFromImportRequest(ir))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		return c.JSON(http.StatusOK, previewResponse{Records: previews})
+	}
+
+	if mode == "infer-fields" {
+		apiSrc, err := buildAPISource(ir)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		defer apiSrc.Close()
+
+		fields, err := inferFieldsFromSource(c.Request().Context(), apiSrc)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, inferFieldsResponse{Fields: fields})
 	}
 
 	// Run actual import
@@ -1526,9 +1587,10 @@ func (h *Handlers) ImportUpload(c echo.Context) error {
 	}
 
 	opts := importer.Options{
-		Prefix:   ir.Prefix,
-		IDColumn: ir.IDColumn,
-		Actor:    actor,
+		Prefix:        ir.Prefix,
+		IDColumn:      ir.IDColumn,
+		FieldMappings: ir.FieldMappings,
+		Actor:         actor,
 		Limit:    ir.Limit,
 	}
 

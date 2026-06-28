@@ -34,3 +34,31 @@ strategy = "git"
 [auth]
 type = "none"
 # type = "apikey" / "perspace" / "oidc" ...
+
+# [ui]
+# keybindings_file = ".kiwi/keybindings.json"
+#
+# [ui.keybindings]
+# search = "Ctrl+J"
+# new_page = "Ctrl+N"
+# graph = "Ctrl+G"
+# save = "Ctrl+S"
+# toggle_sidebar = "Ctrl+B"
+# shortcuts_help = "Ctrl+/"
+
+# [links]
+# typed_fields = ["supersedes", "superseded_by", "variant_of", "cites", "extends", "services", "contradicts"]
+
+# [janitor]
+# stale_days = 90
+# startup_scan = true
+
+# Runbook execution staleness (UC-6). Flags files under directory when a date
+# field is too old or when flag_values frontmatter matches (e.g. failed runs).
+# [janitor.execution_staleness]
+# directory = "runbooks/"
+# date_field = "last_executed"
+# max_age_days = 90
+#
+# [janitor.execution_staleness.flag_values]
+# last_outcome = "failure"

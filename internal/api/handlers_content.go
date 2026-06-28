@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -277,6 +278,47 @@ func shortID(id string) string {
 	return id
 }
 
+var customCSSScriptTag = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script>`)
+
+func sanitizeCustomCSS(css string) string {
+	return customCSSScriptTag.ReplaceAllString(css, "")
+}
+
+func (h *Handlers) customCSSRelPath() string {
+	rel := strings.TrimSpace(h.ui.CustomCSS)
+	if rel == "" {
+		return ".kiwi/custom.css"
+	}
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if filepath.IsAbs(rel) || strings.Contains(rel, "..") {
+		return ".kiwi/custom.css"
+	}
+	return rel
+}
+
+// GetCustomCSS godoc
+//
+//	@Summary		Get custom CSS overrides
+//	@Description	Reads and returns the workspace custom CSS file configured via [ui] custom_css (default .kiwi/custom.css). Returns empty body if the file does not exist. Script tags are stripped.
+//	@Tags			theme
+//	@Security		BearerAuth
+//	@Produce		text/css
+//	@Success		200		{string}	string
+//	@Failure		500		{object}	map[string]string
+//	@Router			/api/kiwi/custom.css [get]
+func (h *Handlers) GetCustomCSS(c echo.Context) error {
+	p := filepath.Join(h.root, h.customCSSRelPath())
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.String(http.StatusOK, "")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	c.Response().Header().Set("Content-Type", "text/css; charset=utf-8")
+	return c.String(http.StatusOK, sanitizeCustomCSS(string(data)))
+}
+
 // GetTheme godoc
 //
 //	@Summary		Get theme configuration
@@ -302,8 +344,32 @@ func (h *Handlers) GetTheme(c echo.Context) error {
 	return c.JSON(http.StatusOK, theme)
 }
 
+type sidebarSectionResponse struct {
+	Label string   `json:"label"`
+	Paths []string `json:"paths"`
+}
+
+type sidebarConfigResponse struct {
+	Pinned   []string                 `json:"pinned"`
+	Hidden   []string                 `json:"hidden"`
+	Sections []sidebarSectionResponse `json:"sections"`
+}
+
+type brandingConfigResponse struct {
+	Name           string `json:"name"`
+	LogoURL        string `json:"logoUrl"`
+	FaviconURL     string `json:"faviconUrl"`
+	WelcomeTitle   string `json:"welcomeTitle"`
+	WelcomeMessage string `json:"welcomeMessage"`
+}
+
 type uiConfigResponse struct {
-	ThemeLocked bool `json:"themeLocked"`
+	ThemeLocked  bool                   `json:"themeLocked"`
+	StartPage    string                 `json:"startPage"`
+	Sidebar      sidebarConfigResponse  `json:"sidebar"`
+	Branding     brandingConfigResponse `json:"branding"`
+	Features     map[string]bool        `json:"features"`
+	ToolbarViews *[]string              `json:"toolbarViews"`
 }
 
 // UIConfig godoc
@@ -315,8 +381,44 @@ type uiConfigResponse struct {
 //	@Success		200		{object}	uiConfigResponse
 //	@Router			/api/kiwi/ui-config [get]
 func (h *Handlers) UIConfig(c echo.Context) error {
+	sections := make([]sidebarSectionResponse, 0, len(h.ui.Sidebar.ResolvedSections()))
+	for _, sec := range h.ui.Sidebar.ResolvedSections() {
+		sections = append(sections, sidebarSectionResponse{
+			Label: sec.Label,
+			Paths: sec.Paths,
+		})
+	}
+	pinned := h.ui.Sidebar.Pinned
+	if pinned == nil {
+		pinned = []string{}
+	}
+	hidden := h.ui.Sidebar.Hidden
+	if hidden == nil {
+		hidden = []string{}
+	}
+	var toolbarViews *[]string
+	if h.ui.Toolbar.Views != nil {
+		views := h.ui.Toolbar.Views
+		toolbarViews = &views
+	}
+	b := h.ui.Branding
 	return c.JSON(http.StatusOK, uiConfigResponse{
 		ThemeLocked: h.ui.ThemeLocked,
+		StartPage:   h.ui.ResolvedStartPage(),
+		Sidebar: sidebarConfigResponse{
+			Pinned:   pinned,
+			Hidden:   hidden,
+			Sections: sections,
+		},
+		Branding: brandingConfigResponse{
+			Name:           b.Name,
+			LogoURL:        b.LogoURL,
+			FaviconURL:     b.FaviconURL,
+			WelcomeTitle:   b.WelcomeTitle,
+			WelcomeMessage: b.WelcomeMessage,
+		},
+		Features:     h.ui.Features.Resolved(),
+		ToolbarViews: toolbarViews,
 	})
 }
 
@@ -348,7 +450,12 @@ func (h *Handlers) Janitor(c echo.Context) error {
 		}
 	}
 
-	scanner := janitor.New(h.root, h.store, h.searcher, staleDays)
+	var execOpts []janitor.Option
+	if h.cfg != nil && h.cfg.Janitor.ExecutionStaleness.Enabled() {
+		es := h.cfg.Janitor.ExecutionStaleness
+		execOpts = janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
+	}
+	scanner := janitor.New(h.root, h.store, h.searcher, staleDays, execOpts...)
 	result, err := scanner.Scan(c.Request().Context())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())

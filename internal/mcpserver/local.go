@@ -40,12 +40,36 @@ type LocalBackend struct {
 	dvExec   *dataview.Executor
 	draftMgr *draft.Manager
 
-	once sync.Once
-	err  error
+	once     sync.Once
+	err      error
+	ownStack bool
 }
 
 func NewLocalBackend(root string) *LocalBackend {
-	return &LocalBackend{root: root}
+	return &LocalBackend{root: root, ownStack: true}
+}
+
+// NewStackBackend returns an MCP backend backed by an existing bootstrap.Stack.
+// The caller retains stack lifetime; Close is a no-op.
+func NewStackBackend(stack *bootstrap.Stack) Backend {
+	b := &LocalBackend{root: stack.Root, stack: stack, ownStack: false}
+	b.once.Do(func() {
+		if sq, ok := stack.Searcher.(*search.SQLite); ok {
+			b.dvExec = dataview.NewExecutor(sq.ReadDB())
+			timeout := 5 * time.Second
+			maxRows := 10000
+			if stack.Config != nil {
+				if t, err := time.ParseDuration(stack.Config.Dataview.QueryTimeout); err == nil && t > 0 {
+					timeout = t
+				}
+				if stack.Config.Dataview.MaxScanRows > 0 {
+					maxRows = stack.Config.Dataview.MaxScanRows
+				}
+			}
+			b.dvExec.SetLimits(maxRows, timeout)
+		}
+	})
+	return b
 }
 
 func (b *LocalBackend) init() error {
@@ -286,13 +310,45 @@ func (b *LocalBackend) Tree(ctx context.Context, path string) (json.RawMessage, 
 }
 
 func (b *LocalBackend) Search(ctx context.Context, query string, limit, offset int, pathPrefix string) ([]SearchResult, error) {
+	return b.searchWithOptions(ctx, query, limit, offset, pathPrefix, search.SearchOptions{})
+}
+
+func (b *LocalBackend) SearchScoped(ctx context.Context, query string, limit, offset int, pathPrefix, scope string) ([]SearchResult, error) {
+	return b.searchWithOptions(ctx, query, limit, offset, pathPrefix, search.SearchOptions{Scope: scope})
+}
+
+func (b *LocalBackend) SearchWithRecency(ctx context.Context, query string, limit, offset int, pathPrefix string, recencyWeight float64) ([]SearchResult, error) {
+	return b.searchWithOptions(ctx, query, limit, offset, pathPrefix, search.SearchOptions{RecencyWeight: recencyWeight})
+}
+
+func (b *LocalBackend) searchWithOptions(ctx context.Context, query string, limit, offset int, pathPrefix string, opts search.SearchOptions) ([]SearchResult, error) {
 	if err := b.init(); err != nil {
 		return nil, err
 	}
-	results, err := b.stack.Searcher.Search(ctx, query, limit, offset, pathPrefix)
+	var (
+		results []search.Result
+		err     error
+	)
+	if opts.IncludeSuperseded || opts.RecencyWeight > 0 || opts.Scope != "" {
+		if os, ok := b.stack.Searcher.(search.OptionsSearcher); ok {
+			results, err = os.SearchWithOptions(ctx, query, limit, offset, pathPrefix, opts)
+		} else if opts.Scope != "" {
+			return nil, fmt.Errorf("scope search requires sqlite search backend")
+		} else {
+			results, err = b.stack.Searcher.Search(ctx, query, limit, offset, pathPrefix)
+		}
+	} else {
+		results, err = b.stack.Searcher.Search(ctx, query, limit, offset, pathPrefix)
+	}
 	if err != nil {
 		return nil, err
 	}
+	out := mapSearchResults(results)
+	tracing.Record(ctx, tracing.Event{Kind: tracing.KindSearch, Query: query, HitCount: len(out)})
+	return out, nil
+}
+
+func mapSearchResults(results []search.Result) []SearchResult {
 	out := make([]SearchResult, len(results))
 	for i, r := range results {
 		snippet := r.Snippet
@@ -303,8 +359,7 @@ func (b *LocalBackend) Search(ctx context.Context, query string, limit, offset i
 			Score:   r.Score,
 		}
 	}
-	tracing.Record(ctx, tracing.Event{Kind: tracing.KindSearch, Query: query, HitCount: len(out)})
-	return out, nil
+	return out
 }
 
 var markTagRe = regexp.MustCompile(`</?mark>`)
@@ -314,6 +369,10 @@ func stripMarkTags(s string) string {
 }
 
 func (b *LocalBackend) SearchSemantic(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	return b.SearchSemanticScoped(ctx, query, limit, "")
+}
+
+func (b *LocalBackend) SearchSemanticScoped(ctx context.Context, query string, limit int, scope string) ([]SearchResult, error) {
 	if err := b.init(); err != nil {
 		return nil, err
 	}
@@ -323,9 +382,26 @@ func (b *LocalBackend) SearchSemantic(ctx context.Context, query string, limit i
 	if limit <= 0 {
 		limit = vectorstore.DefaultTopK
 	}
-	results, err := b.stack.Vectors.Search(ctx, query, limit)
+	searchLimit := limit
+	if scope != "" && searchLimit < 200 {
+		searchLimit = 200
+	}
+	results, err := b.stack.Vectors.Search(ctx, query, searchLimit)
 	if err != nil {
 		return nil, err
+	}
+	if scope != "" {
+		sf, ok := b.stack.Searcher.(search.ScopeFilterer)
+		if !ok {
+			return nil, fmt.Errorf("scope search requires sqlite search backend")
+		}
+		results, err = filterVectorResultsByScope(ctx, sf, results, scope)
+		if err != nil {
+			return nil, err
+		}
+		if len(results) > limit {
+			results = results[:limit]
+		}
 	}
 	out := make([]SearchResult, len(results))
 	for i, r := range results {
@@ -336,6 +412,31 @@ func (b *LocalBackend) SearchSemantic(ctx context.Context, query string, limit i
 		}
 	}
 	return out, nil
+}
+
+func filterVectorResultsByScope(ctx context.Context, sf search.ScopeFilterer, results []vectorstore.Result, scope string) ([]vectorstore.Result, error) {
+	if scope == "" || len(results) == 0 {
+		return results, nil
+	}
+	paths := make([]string, len(results))
+	for i, result := range results {
+		paths[i] = result.Path
+	}
+	kept, err := sf.FilterByScope(ctx, paths, scope)
+	if err != nil {
+		return nil, err
+	}
+	keep := make(map[string]bool, len(kept))
+	for _, path := range kept {
+		keep[path] = true
+	}
+	filtered := results[:0]
+	for _, result := range results {
+		if keep[result.Path] {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered, nil
 }
 
 type metaQuerier interface {
@@ -632,7 +733,7 @@ func (b *LocalBackend) Backlinks(ctx context.Context, path string) ([]Backlink, 
 	}
 	out := make([]Backlink, len(entries))
 	for i, e := range entries {
-		out[i] = Backlink{Path: e.Path, Count: e.Count}
+		out[i] = Backlink{Path: e.Path, Count: e.Count, Relation: e.Relation}
 	}
 	return out, nil
 }
@@ -749,7 +850,7 @@ func (b *LocalBackend) Health(_ context.Context) error {
 }
 
 func (b *LocalBackend) Close() error {
-	if b.stack != nil {
+	if b.stack != nil && b.ownStack {
 		return b.stack.Close()
 	}
 	return nil
@@ -762,11 +863,11 @@ type localEngagementStats struct {
 }
 
 type localAnalytics struct {
-	TotalPages int                `json:"total_pages"`
-	TotalWords int                `json:"total_words"`
-	Health     localHealthStats   `json:"health"`
-	Coverage   localCoverageStats `json:"coverage"`
-	TopUpdated []localPageStat    `json:"top_updated"`
+	TotalPages int                  `json:"total_pages"`
+	TotalWords int                  `json:"total_words"`
+	Health     localHealthStats     `json:"health"`
+	Coverage   localCoverageStats   `json:"coverage"`
+	TopUpdated []localPageStat      `json:"top_updated"`
 	Engagement localEngagementStats `json:"engagement"`
 }
 
@@ -2403,24 +2504,26 @@ func (b *LocalBackend) WorkflowAdvance(ctx context.Context, path, targetState, a
 		return nil, err
 	}
 
-	// Update frontmatter
-	fmRaw, body, err := markdown.SplitFrontmatter([]byte(content))
-	if err != nil || len(fmRaw) == 0 {
-		return nil, fmt.Errorf("cannot split frontmatter")
-	}
-	fm["state"] = targetState
-	newFM, err := yamlMarshal(fm)
+	updated, err := markdown.SetFrontmatterField([]byte(content), "state", targetState)
 	if err != nil {
-		return nil, fmt.Errorf("marshal frontmatter: %w", err)
+		return nil, fmt.Errorf("update state: %w", err)
+	}
+	syncStatus := false
+	if _, hasStatus := fm["status"]; hasStatus {
+		if typ, _ := fm["type"].(string); typ == "adr" {
+			syncStatus = true
+		} else if cur, _ := fm["status"].(string); cur == currentState {
+			syncStatus = true
+		}
+	}
+	if syncStatus {
+		updated, err = markdown.SetFrontmatterField(updated, "status", targetState)
+		if err != nil {
+			return nil, fmt.Errorf("update status: %w", err)
+		}
 	}
 
-	var buf strings.Builder
-	buf.WriteString("---\n")
-	buf.Write(newFM)
-	buf.WriteString("---\n")
-	buf.Write(body)
-
-	etag, err := b.WriteFile(ctx, path, buf.String(), actor, "")
+	etag, err := b.WriteFile(ctx, path, string(updated), actor, "")
 	if err != nil {
 		return nil, err
 	}

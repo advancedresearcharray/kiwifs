@@ -1,0 +1,19 @@
+{
+  "name": "reading",
+  "states": [
+    { "name": "unread", "color": "#6b7280" },
+    { "name": "reading", "color": "#3b82f6", "wip_limit": 10 },
+    { "name": "annotated", "color": "#f59e0b" },
+    { "name": "summarized", "color": "#8b5cf6" },
+    { "name": "incorporated", "color": "#22c55e", "terminal": true }
+  ],
+  "transitions": [
+    { "from": "unread", "to": "reading" },
+    { "from": "reading", "to": "annotated" },
+    { "from": "reading", "to": "unread" },
+    { "from": "annotated", "to": "summarized" },
+    { "from": "annotated", "to": "reading" },
+    { "from": "summarized", "to": "incorporated" },
+    { "from": "summarized", "to": "annotated" }
+  ]
+}

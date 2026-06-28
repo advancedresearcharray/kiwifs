@@ -32,6 +32,8 @@ import {
 } from "@kw/lib/editorMode";
 import { formatDistanceToNow } from "date-fns";
 import { MarkdownSourceEditor } from "./editor/MarkdownSourceEditor";
+import { blockNoteSlashItems, loadSlashCommandTemplate } from "@kw/lib/editorSlashCommands";
+import { useEditorSlashCommands } from "../hooks/useEditorSlashCommands";
 import {
   Dialog,
   DialogContent,
@@ -154,9 +156,11 @@ type Props = {
   onSaved: (path: string) => void;
   onNavigate?: (path: string) => void;
   saveRef?: React.MutableRefObject<SaveHandle | null>;
+  editorModePref?: "editor" | "source";
+  onEditorModeChange?: (mode: EditorMode) => void;
 };
 
-export function KiwiEditor({ path, tree, onClose, onSaved, onNavigate, saveRef }: Props) {
+export function KiwiEditor({ path, tree, onClose, onSaved, onNavigate, saveRef, editorModePref, onEditorModeChange }: Props) {
   const [initialMd, setInitialMd] = useState<string | null>(null);
   const etagRef = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -236,6 +240,8 @@ export function KiwiEditor({ path, tree, onClose, onSaved, onNavigate, saveRef }
       onSaved={onSaved}
       onNavigate={onNavigate}
       saveRef={saveRef}
+      editorModePref={editorModePref}
+      onEditorModeChange={onEditorModeChange}
     />
   );
 }
@@ -373,6 +379,8 @@ function EditorInner({
   onSaved,
   onNavigate,
   saveRef,
+  editorModePref,
+  onEditorModeChange,
 }: {
   path: string;
   tree?: import("@kw/lib/api").TreeEntry | null;
@@ -386,6 +394,8 @@ function EditorInner({
   onSaved: (p: string) => void;
   onNavigate?: (path: string) => void;
   saveRef?: React.MutableRefObject<SaveHandle | null>;
+  editorModePref?: "editor" | "source";
+  onEditorModeChange?: (mode: EditorMode) => void;
 }) {
   const [editorMode, setEditorMode] = useState<EditorMode>(() => loadEditorModePreference());
   const [sourceText, setSourceText] = useState(initialMd);
@@ -414,6 +424,28 @@ function EditorInner({
   const [lastEdit, setLastEdit] = useState<{ author: string; date: string } | null>(null);
 
   const wikiPages = useMemo(() => wikiPagesFromTree(tree), [tree]);
+  const customSlashCommands = useEditorSlashCommands();
+  const [slashCommandError, setSlashCommandError] = useState<string | null>(null);
+  const slashCommandErrorTimer = useRef<number | null>(null);
+  const onSlashTemplateError = useCallback((message: string) => {
+    setSlashCommandError(message);
+    if (slashCommandErrorTimer.current !== null) {
+      window.clearTimeout(slashCommandErrorTimer.current);
+    }
+    slashCommandErrorTimer.current = window.setTimeout(() => {
+      setSlashCommandError(null);
+      slashCommandErrorTimer.current = null;
+    }, 6000);
+  }, []);
+  const loadSlashTemplate = useCallback((templatePath: string) => loadSlashCommandTemplate(templatePath), []);
+
+  useEffect(() => {
+    return () => {
+      if (slashCommandErrorTimer.current !== null) {
+        window.clearTimeout(slashCommandErrorTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     syncedMdRef.current = initialMd;
@@ -424,6 +456,19 @@ function EditorInner({
     setSaveStatus("clean");
     setVisualParseError(null);
   }, [path, initialMd, frontmatterSplit.frontmatter, initialVisualBody]);
+
+  useEffect(() => {
+    if (!editorModePref) return;
+    setEditorMode(editorModePref === "source" ? "source" : "visual");
+  }, [editorModePref]);
+
+  const persistEditorMode = useCallback(
+    (mode: EditorMode) => {
+      saveEditorModePreference(mode);
+      onEditorModeChange?.(mode);
+    },
+    [onEditorModeChange],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -581,7 +626,7 @@ function EditorInner({
           setSourceText(syncedMdRef.current);
         }
         setEditorMode("source");
-        saveEditorModePreference("source");
+        persistEditorMode("source");
         setReady(true);
       } else {
         const text = opts?.discard ? syncedMdRef.current : sourceText;
@@ -590,7 +635,7 @@ function EditorInner({
         setFmText(nextFm);
         setVisualParseBody(body);
         setEditorMode("visual");
-        saveEditorModePreference("visual");
+        persistEditorMode("visual");
       }
       setSaveStatus("clean");
       if (autoSaveTimer.current) {
@@ -598,7 +643,7 @@ function EditorInner({
         autoSaveTimer.current = null;
       }
     },
-    [editor, fmText, sourceText],
+    [editor, fmText, sourceText, persistEditorMode],
   );
 
   const requestModeSwitch = useCallback(
@@ -803,6 +848,9 @@ function EditorInner({
                 onSaveShortcut={() => onSaveRef.current({ close: true })}
                 pages={wikiPages}
                 minHeight="60vh"
+                customSlashCommands={customSlashCommands}
+                loadSlashTemplate={loadSlashTemplate}
+                onSlashTemplateError={onSlashTemplateError}
               />
             ) : visualParseError ? (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
@@ -836,6 +884,11 @@ function EditorInner({
                             [
                               ...getDefaultReactSlashMenuItems(editor as BlockNoteEditor),
                               ...kiwiSlashItems(editor as BlockNoteEditor),
+                              ...blockNoteSlashItems(
+                                editor as BlockNoteEditor,
+                                customSlashCommands,
+                                onSlashTemplateError,
+                              ),
                             ],
                             query,
                           )
@@ -902,6 +955,25 @@ function EditorInner({
         onDiscardAndSwitch={handleModeSwitchDiscard}
         busy={saving}
       />
+      {slashCommandError && (
+        <div
+          role="alert"
+          className="fixed bottom-4 right-4 z-50 max-w-sm rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-lg"
+        >
+          <div className="flex items-start gap-2">
+            <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
+            <p className="flex-1">{slashCommandError}</p>
+            <button
+              type="button"
+              className="text-destructive/80 hover:text-destructive"
+              aria-label="Dismiss"
+              onClick={() => setSlashCommandError(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

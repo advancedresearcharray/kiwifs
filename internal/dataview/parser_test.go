@@ -98,6 +98,33 @@ func TestParseQuery_Flatten(t *testing.T) {
 	}
 }
 
+func TestParseQuery_FlattenNestedEventLog(t *testing.T) {
+	q := `TABLE entries.event_type, entries.actor
+FROM "events/"
+FLATTEN entries
+WHERE entries.event_type = "user.signup"
+SORT entries.timestamp DESC`
+	plan, err := ParseQuery(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Flatten != "entries" {
+		t.Errorf("flatten = %q, want entries", plan.Flatten)
+	}
+	if plan.From != "events/" {
+		t.Errorf("from = %q, want events/", plan.From)
+	}
+	if len(plan.Fields) != 2 || plan.Fields[0].Expr != "entries.event_type" {
+		t.Errorf("fields = %v", plan.Fields)
+	}
+	if plan.Where == nil {
+		t.Fatal("expected WHERE clause")
+	}
+	if len(plan.Sorts) != 1 || plan.Sorts[0].Field != "entries.timestamp" || plan.Sorts[0].Order != "desc" {
+		t.Errorf("sorts = %v", plan.Sorts)
+	}
+}
+
 func TestParseQuery_DefaultLimit(t *testing.T) {
 	plan, err := ParseQuery(`LIST`)
 	if err != nil {

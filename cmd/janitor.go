@@ -4,11 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
-	"github.com/kiwifs/kiwifs/internal/janitor"
-	"github.com/kiwifs/kiwifs/internal/search"
-	"github.com/kiwifs/kiwifs/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +25,24 @@ Reports:
   - no-review-date — has owner but no next-review
   - decision-found — meeting note contains decision language
 
+  - expired-memory — memory past expires_at or ttl
+  - execution-stale — runbook not executed recently or last run failed
+
+Runbook execution staleness is opt-in via .kiwi/config.toml:
+
+  [janitor.execution_staleness]
+  directory = "runbooks/"
+  date_field = "last_executed"
+  max_age_days = 90
+
+  [janitor.execution_staleness.flag_values]
+  last_outcome = "failure"
+
+Files under directory with date_field older than max_age_days are flagged.
+Any flag_values match (e.g. last_outcome = failure) is flagged regardless of
+age. max_age_days falls back to stale_days when unset; date_field defaults to
+last_executed. The same rule applies to kiwifs check and GET /api/kiwi/janitor.
+
 Exits 0 on a clean run, 1 if any error-severity issues are found.`,
 	Example: `  kiwifs janitor --root ~/my-knowledge
   kiwifs janitor --root /data/knowledge --stale-days 60 --json`,
@@ -43,30 +57,9 @@ func init() {
 }
 
 func runJanitor(cmd *cobra.Command, args []string) error {
-	root, _ := cmd.Flags().GetString("root")
-	staleDays, _ := cmd.Flags().GetInt("stale-days")
-	asJSON, _ := cmd.Flags().GetBool("json")
-
-	abs, err := filepath.Abs(root)
+	result, _, _, asJSON, err := runKnowledgeScan(cmd)
 	if err != nil {
-		return fmt.Errorf("janitor: %w", err)
-	}
-
-	store, err := storage.NewLocal(abs)
-	if err != nil {
-		return fmt.Errorf("janitor: open storage: %w", err)
-	}
-	var searcher search.Searcher
-	sq, sqerr := search.NewSQLite(abs, store)
-	if sqerr == nil {
-		defer sq.Close()
-		searcher = sq
-	}
-
-	scanner := janitor.New(abs, store, searcher, staleDays)
-	result, err := scanner.Scan(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("janitor: %w", err)
+		return err
 	}
 
 	if asJSON {
@@ -80,7 +73,13 @@ func runJanitor(cmd *cobra.Command, args []string) error {
 	}
 
 	if result.HasErrors() {
-		return fmt.Errorf("janitor: %d error-severity issue(s) found", len(result.Issues))
+		errCount := 0
+		for _, is := range result.Issues {
+			if is.Severity == "error" {
+				errCount++
+			}
+		}
+		return fmt.Errorf("janitor: %d error-severity issue(s) found", errCount)
 	}
 	return nil
 }

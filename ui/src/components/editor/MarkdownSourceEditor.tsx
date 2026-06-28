@@ -6,9 +6,10 @@ import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { cn } from "@kw/lib/cn";
+import type { EditorSlashCommandConfig } from "@kw/lib/editorSlashCommands";
 import { markdownEditorExtensions } from "./markdownLanguage";
 import { markdownEditorTheme } from "./markdownEditorTheme";
-import { slashCompletionSource } from "./markdownSlashCommands";
+import { customSlashCompletionSource, slashCompletionSource } from "./markdownSlashCommands";
 import {
   wikiLinkCompletionSource,
   type WikiPage,
@@ -23,6 +24,9 @@ export type MarkdownSourceEditorProps = {
   className?: string;
   onSaveShortcut?: () => void;
   pages?: WikiPage[];
+  customSlashCommands?: EditorSlashCommandConfig[];
+  loadSlashTemplate?: (templatePath: string) => Promise<string>;
+  onSlashTemplateError?: (message: string) => void;
 };
 
 export function MarkdownSourceEditor({
@@ -34,6 +38,9 @@ export function MarkdownSourceEditor({
   className,
   onSaveShortcut,
   pages = [],
+  customSlashCommands = [],
+  loadSlashTemplate,
+  onSlashTemplateError,
 }: MarkdownSourceEditorProps) {
   const extensions = useMemo(() => {
     const saveKeymap = keymap.of([
@@ -48,6 +55,11 @@ export function MarkdownSourceEditor({
     ]);
 
     const completionSources: CompletionSource[] = [slashCompletionSource];
+    if (customSlashCommands.length > 0 && loadSlashTemplate && onSlashTemplateError) {
+      completionSources.push(
+        customSlashCompletionSource(customSlashCommands, loadSlashTemplate, onSlashTemplateError),
+      );
+    }
     if (pages.length > 0) {
       completionSources.push(wikiLinkCompletionSource(pages));
     }
@@ -69,7 +81,7 @@ export function MarkdownSourceEditor({
       saveKeymap,
     ];
     return exts;
-  }, [onSaveShortcut, pages]);
+  }, [onSaveShortcut, pages, customSlashCommands, loadSlashTemplate, onSlashTemplateError]);
 
   const theme = useMemo(() => markdownEditorTheme({ dark }), [dark]);
 

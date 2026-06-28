@@ -16,23 +16,27 @@ KiwiFS is a single Go binary that turns a folder of markdown files into a search
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  Web UI (embedded via go:embed)                    │  │
-│  │  shadcn/ui · CodeMirror · react-markdown · Sigma.js │  │
+│  │  shadcn/ui · BlockNote · Shiki · Recharts · Sigma  │  │
+│  │  Kanban · Canvas (ReactFlow) · Excalidraw · Typst  │  │
 │  └────────────────────┬───────────────────────────────┘  │
 │                       │                                  │
 │  ┌────────────────────▼───────────────────────────────┐  │
 │  │  Access Protocols                                  │  │
-│  │  REST :3333 · MCP · NFS :2049 · S3 :3334 · WebDAV │  │
+│  │  REST :3333 · MCP (stdio/HTTP) · NFS :2049         │  │
+│  │  S3 :3334 · WebDAV :3335 · FUSE                    │  │
 │  └────────────────────┬───────────────────────────────┘  │
 │                       │                                  │
 │  ┌────────────────────▼───────────────────────────────┐  │
 │  │  Write Pipeline                                    │  │
-│  │  Storage → Git commit → Index update → SSE event   │  │
+│  │  Validate → Schema → Storage → Git → Index → SSE   │  │
+│  │  Webhooks · Workflow · Sequences · Format hooks     │  │
 │  └────────────────────┬───────────────────────────────┘  │
 │                       │                                  │
 │  ┌────────────────────▼───────────────────────────────┐  │
 │  │  Core                                              │  │
 │  │  Storage · Git versioning · FTS5 + Vector search   │  │
-│  │  Watcher (fsnotify) · SSE events · Schema/lint     │  │
+│  │  Watcher · SSE · Schema · Workflows · Claims       │  │
+│  │  DQL · Analytics · Janitor · Drafts · Publishing   │  │
 │  └────────────────────┬───────────────────────────────┘  │
 │                       │                                  │
 │  ┌────────────────────▼───────────────────────────────┐  │
@@ -74,11 +78,15 @@ Client (REST / NFS / S3 / WebDAV / FUSE / MCP)
   ▼
 Write Pipeline (single mutex)
   │
-  ├── 1. Write file to disk (atomic: tmp → fsync → rename → dirsync)
-  ├── 2. Git add + commit (atomic, audit trail)
-  ├── 3. Update search index (FTS5 + vector + metadata)
-  ├── 4. Update wiki link index (backlinks)
-  └── 5. Broadcast SSE event to connected clients
+  ├── 1. Validate write (append-only guards, schema validation)
+  ├── 2. Format hooks (sequences, auto-numbering)
+  ├── 3. Write file to disk (atomic: tmp → fsync → rename → dirsync)
+  ├── 4. Git add + commit (atomic, audit trail)
+  ├── 5. Update search index (FTS5 + vector + metadata)
+  ├── 6. Update wiki link index (backlinks, typed links)
+  ├── 7. Update workflow state (if workflow-driven)
+  ├── 8. Broadcast SSE event to connected clients
+  └── 9. Fire webhooks (HMAC-signed, async with retry)
 ```
 
 The mutex serializes all writes. This is intentional: knowledge bases are read-heavy (agents and humans read far more than they write), and serialization eliminates an entire class of concurrency bugs. For write-heavy workloads, the bottleneck is git, not the mutex.
@@ -124,7 +132,7 @@ Two independent interfaces that can be mixed and matched:
 |---|---|
 | OpenAI, Ollama, Cohere, Vertex AI, Bedrock, custom HTTP | sqlite-vec (default), Qdrant, pgvector, Pinecone, Weaviate, Milvus |
 
-Default setup (sqlite-vec + OpenAI) needs one env var and zero infrastructure. For fully offline: Ollama + sqlite-vec.
+Default setup (sqlite-vec + OpenAI) needs one env var and zero infrastructure. For fully offline: Ollama + sqlite-vec, or ONNX local embedder (built with `-tags onnx`) for zero-service vector search.
 
 ---
 
@@ -133,7 +141,7 @@ Default setup (sqlite-vec + OpenAI) needs one env var and zero infrastructure. F
 | Protocol | Port | Use case | Implementation |
 |---|---|---|---|
 | **REST API** | 3333 | Web frontend, scripts, CI/CD | Echo (Go) |
-| **MCP** | stdio / 8080 | AI agents (Claude, Cursor, etc.) | In-process or HTTP |
+| **MCP** | stdio / HTTP | AI agents (Claude, Cursor, etc.) | In-process, HTTP, or `/mcp` on main server |
 | **NFS** | 2049 | Docker, Kubernetes (native mount) | `willscott/go-nfs` (userspace, pure Go) |
 | **S3** | 3334 | Backup, data pipelines | `gofakes3` (minimal S3 surface) |
 | **WebDAV** | 3335 | Windows mapped drives, legacy tools | `golang.org/x/net/webdav` |
@@ -174,14 +182,15 @@ knowledge/                    (user content)
 kiwifs/
 ├── cmd/              CLI commands (serve, init, mcp, query, import, export, ...)
 ├── internal/
-│   ├── api/          REST API handlers
+│   ├── api/          REST API handlers + OpenAPI
 │   ├── bootstrap/    Dependency wiring
-│   ├── pipeline/     Write pipeline (git + index + SSE)
+│   ├── pipeline/     Write pipeline (validate + schema + git + index + SSE + webhooks)
 │   ├── search/       grep + SQLite FTS5 + metadata index
-│   ├── storage/      Filesystem abstraction
+│   ├── storage/      Filesystem abstraction + tree ordering
 │   ├── vectorstore/  Vector search backends
+│   ├── embed/        ONNX runtime local embedder
 │   ├── versioning/   Git, copy-on-write, noop
-│   ├── mcpserver/    MCP server (62 tools)
+│   ├── mcpserver/    MCP server (68+ tools)
 │   ├── nfs/          NFS server
 │   ├── s3/           S3-compatible API
 │   ├── webdav/       WebDAV server
@@ -189,13 +198,25 @@ kiwifs/
 │   ├── spaces/       Multi-space manager
 │   ├── dataview/     DQL parser and query engine
 │   ├── importer/     Data import from 19 sources
-│   ├── exporter/     Export to JSONL/CSV
-│   ├── janitor/      Scheduled health scans
+│   ├── exporter/     Export to JSONL/CSV/Parquet
+│   ├── docexport/    Document export (PDF/HTML/slides/MkDocs)
+│   ├── janitor/      Scheduled health + execution staleness scans
 │   ├── memory/       Episodic vs semantic memory
 │   ├── comments/     Inline comment annotations
-│   └── links/        Wiki link extraction and backlinks
+│   ├── links/        Wiki link extraction, typed links, backlinks
+│   ├── workflow/     Workflow state machines + Kanban
+│   ├── claims/       Task claim/lease store
+│   ├── schema/       JSON Schema validation engine
+│   ├── webhooks/     HMAC-signed outbound webhooks
+│   ├── analytics/    Page views, search analytics, content gaps
+│   ├── draft/        Isolated draft workspaces with merge
+│   ├── rbac/         Share links, publishing, public pages
+│   ├── jsoncanvas/   Obsidian JSON Canvas format
+│   ├── views/        Saved DQL view definitions
+│   ├── clipper/      Web clip / content capture
+│   └── events/       SSE event hub
 ├── pkg/kiwi/         Public Go library
-├── ui/               React + TypeScript + shadcn/ui
+├── ui/               React + TypeScript + shadcn/ui + BlockNote
 └── main.go
 ```
 
@@ -221,10 +242,16 @@ kiwifs/
 | Library | Purpose | License |
 |---|---|---|
 | shadcn/ui + Radix | UI primitives, accessible components | MIT |
+| BlockNote | Block-based markdown editor | MIT |
 | CodeMirror | Markdown source editor | MIT |
-| react-markdown | Markdown rendering | MIT |
+| Shiki | Syntax highlighting with line highlights | MIT |
+| Recharts | Charts (bar, line, area, pie, radar, scatter) | MIT |
 | Sigma.js + Graphology | Knowledge graph visualization | MIT |
+| ReactFlow | Canvas / flow diagram editor | MIT |
+| Excalidraw | Whiteboard editor | MIT |
+| Typst (WASM) | In-browser PDF export | Apache 2.0 |
 | cmdk | Command palette (Cmd+K) | MIT |
+| dnd-kit | Drag-and-drop (tree, Kanban) | MIT |
 
 ---
 

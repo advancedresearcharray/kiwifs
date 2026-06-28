@@ -34,13 +34,14 @@ type Source interface {
 
 // Options controls the import pipeline behaviour.
 type Options struct {
-	Prefix   string // path prefix in kiwifs (default: table/collection name)
-	IDColumn string // column to use as filename (default: auto-detect primary key)
-	Columns  []string
-	DryRun   bool
-	Limit    int
-	Actor    string
-	FullSync bool // when true, files not seen in this run are archived (tombstoned)
+	Prefix         string // path prefix in kiwifs (default: table/collection name)
+	IDColumn       string // column to use as filename (default: auto-detect primary key)
+	Columns        []string
+	FieldMappings  []FieldMapping
+	DryRun         bool
+	Limit          int
+	Actor          string
+	FullSync       bool // when true, files not seen in this run are archived (tombstoned)
 }
 
 // Stats is returned by Run with import counts.
@@ -96,6 +97,9 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 			if len(opts.Columns) > 0 {
 				fields = filterColumns(fields, opts.Columns)
 			}
+			if len(opts.FieldMappings) > 0 {
+				fields = ApplyFieldMappings(fields, opts.FieldMappings)
+			}
 
 			pk := rec.PrimaryKey
 			if opts.IDColumn != "" {
@@ -105,6 +109,26 @@ func Run(ctx context.Context, src Source, pipe *pipeline.Pipeline, opts Options)
 			}
 			if pk == "" {
 				pk = fmt.Sprintf("row_%d", count)
+			}
+
+			// Binary assets (e.g. Confluence attachments) are written as-is
+			// without the .md extension or frontmatter wrapping.
+			if isBin, _ := fields["_is_binary"].(bool); isBin {
+				if binData, ok := fields["_binary_data"].([]byte); ok {
+					binPath := fmt.Sprintf("%s/%s", prefix, sanitizePath(pk))
+					seenPaths[binPath] = true
+					if !opts.DryRun {
+						if _, err := pipe.Write(ctx, binPath, binData, actor); err != nil {
+							stats.Errors = append(stats.Errors, fmt.Sprintf("%s: %v", binPath, err))
+						} else {
+							stats.Imported++
+						}
+					} else {
+						stats.Imported++
+					}
+					count++
+					continue
+				}
 			}
 
 			path := fmt.Sprintf("%s/%s.md", prefix, sanitizePath(pk))

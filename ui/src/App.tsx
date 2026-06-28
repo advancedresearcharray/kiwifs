@@ -31,13 +31,27 @@ import { KiwiCanvasScreen } from "./components/KiwiCanvasScreen";
 import { KiwiWhiteboardScreen } from "./components/KiwiWhiteboardScreen";
 import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
+import { KiwiRecentStart } from "./components/KiwiRecentStart";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
-import { dispatchPageChanged } from "./lib/hostConfig";
+import { dispatchPageChanged, getHostConfig, getToolbarBuiltinViews } from "./lib/hostConfig";
+import {
+  filterToolbarViewsByFeatures,
+  resolveToolbarViews,
+  type ToolbarBuiltinViewId,
+} from "./lib/toolbarComposition";
 import { useRecentPages } from "./hooks/useRecentPages";
 import { useStarredPages } from "./hooks/useStarredPages";
 import { usePinnedPages } from "./hooks/usePinnedPages";
+import { useKeybindings } from "./hooks/useKeybindings";
+import { useUIConfig } from "./hooks/useUIConfig";
+import { usePreferences } from "./hooks/usePreferences";
+import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
+import { resolveOverlayDismiss } from "./lib/overlayDismiss";
+import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
+import { formatDocumentTitle } from "./lib/pageTitle";
+import { useUIConfigStore } from "./lib/uiConfigStore";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -53,6 +67,8 @@ import { HostToolbarActions } from "./components/HostToolbarActions";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
+  const demoPath = getHostConfig().demo?.initialPath;
+  if (demoPath) return demoPath;
   const pathname = window.location.pathname;
   const hash = window.location.hash.replace(/^#\/?/, "");
   const raw = pathname.startsWith("/page/")
@@ -121,6 +137,33 @@ export default function App() {
     if (typeof window !== "undefined" && window.innerWidth < 768) return false;
     try { return localStorage.getItem("kiwifs-sidebar") !== "collapsed"; } catch { return true; }
   });
+
+  const { prefs, loaded: prefsLoaded, updatePreferences } = usePreferences();
+  const branding = useUIConfigStore((s) => s.branding);
+  const features = useUIConfigStore((s) => s.features);
+  const serverToolbarViews = useUIConfigStore((s) => s.toolbarViews);
+  const toolbarViews = filterToolbarViewsByFeatures(
+    resolveToolbarViews(
+      serverToolbarViews === undefined ? null : serverToolbarViews,
+      getToolbarBuiltinViews(),
+    ),
+    features,
+  );
+
+  useEffect(() => {
+    if (!prefsLoaded || prefs.sidebar_collapsed === undefined) return;
+    if (typeof window !== "undefined" && window.innerWidth < 768) return;
+    setSidebarOpen(!prefs.sidebar_collapsed);
+  }, [prefsLoaded, prefs.sidebar_collapsed]);
+
+  const toggleSidebar = useCallback((open: boolean) => {
+    setSidebarOpen(open);
+    if (!isMobile) {
+      try { localStorage.setItem("kiwifs-sidebar", open ? "open" : "collapsed"); } catch {}
+      updatePreferences({ sidebar_collapsed: !open });
+    }
+  }, [isMobile, updatePreferences]);
+
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const saved = localStorage.getItem("kiwifs-sidebar-width");
@@ -128,23 +171,62 @@ export default function App() {
     } catch { return 272; }
   });
   const resizing = useRef(false);
-  const { theme, toggleTheme } = useTheme();
+  const { theme, toggleTheme, themeLocked } = useTheme({
+    serverPrefs: prefsLoaded ? prefs : null,
+    onPresetChange: (preset) => updatePreferences({ theme: preset }),
+  });
   const currentSpace = getCurrentSpace() || "default";
   const { recent, recordVisit } = useRecentPages(currentSpace);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
+  const { bindings, conflicts } = useKeybindings();
+  const { config: uiConfig, loaded: uiConfigLoaded } = useUIConfig();
+  const resolvedStartPage = resolveStartPage(uiConfig.startPage);
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
   const treeReconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLocalTreeMutationAtRef = useRef(0);
   const suppressTreeEventsUntilRef = useRef(0);
-  const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen });
-  stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen };
+  const stateRef = useRef({
+    editing,
+    activePath,
+    shortcutsOpen,
+    newOpen,
+    searchOpen,
+    graphOpen,
+    historyOpen,
+    dataOpen,
+    basesOpen,
+    canvasOpen,
+    whiteboardOpen,
+    timelineOpen,
+    kanbanOpen,
+  });
+  stateRef.current = {
+    editing,
+    activePath,
+    shortcutsOpen,
+    newOpen,
+    searchOpen,
+    graphOpen,
+    historyOpen,
+    dataOpen,
+    basesOpen,
+    canvasOpen,
+    whiteboardOpen,
+    timelineOpen,
+    kanbanOpen,
+  };
 
   useEffect(() => {
     dispatchPageChanged(activePath);
   }, [activePath]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.title = formatDocumentTitle(activePath, branding.name);
+  }, [activePath, branding.name]);
 
   const scheduleTreeReconcile = useCallback((delayMs = 800) => {
     if (treeReconcileTimerRef.current) {
@@ -216,67 +298,147 @@ export default function App() {
   }, [refreshKey, spaceKey, refreshPublishedPages]);
 
   useEffect(() => {
-    if (!tree || activePath) return;
-    const firstMd = firstMarkdown(tree);
-    if (firstMd) setActivePath(firstMd);
-  }, [tree, activePath]);
+    if (!tree || !uiConfigLoaded || activePath) return;
+    if (!shouldApplyStartPage(activePath, hasDeepLinkPath())) return;
+    if (resolvedStartPage.mode === "dashboard") {
+      setActivePath(resolveDashboardPath(tree));
+      return;
+    }
+    if (resolvedStartPage.mode === "path") {
+      setActivePath(resolvedStartPage.path);
+    }
+  }, [tree, uiConfigLoaded, activePath, resolvedStartPage]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      const mod = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
-      if (mod && key === "k") {
-        e.preventDefault();
-        setSearchOpen((v) => !v);
-      } else if (mod && key === "n") {
-        e.preventDefault();
-        setNewFolder(undefined);
-        setNewOpen(true);
-      } else if (mod && key === "e") {
-        const { activePath, graphOpen, historyOpen, dataOpen } = stateRef.current;
-        if (!activePath || graphOpen || historyOpen || dataOpen) return;
-        e.preventDefault();
-        setEditing((v) => !v);
-      } else if (mod && key === "s") {
-        if (!stateRef.current.editing) return;
-        e.preventDefault();
-        editorRef.current?.save().catch(() => {});
-      } else if (mod && e.shiftKey && key === "e") {
-        if (!stateRef.current.editing) return;
-        e.preventDefault();
-        editorRef.current?.toggleMode?.();
-      } else if (mod && e.shiftKey && key === "b") {
-        e.preventDefault();
-        setBasesOpen((v) => !v);
-      } else if (mod && e.shiftKey && key === "t") {
-        e.preventDefault();
-        setTimelineOpen((v) => !v);
-      } else if (mod && e.shiftKey && key === "w") {
-        e.preventDefault();
-        setKanbanOpen((v) => !v);
-      } else if (mod && (key === "/" || key === "?")) {
-        e.preventDefault();
-        setShortcutsOpen((v) => !v);
-      } else if (mod && key === "z" && !e.shiftKey) {
-        if (stateRef.current.editing) return;
-        e.preventDefault();
-        undoFileOp()
-          .then((msg) => {
-            if (msg) setRefreshKey((k) => k + 1);
-          })
-          .catch(() => {});
-      } else if (mod && e.altKey && key === "f") {
-        e.preventDefault();
-        treeFilterRef.current?.focus();
-        treeFilterRef.current?.select();
-      } else if (e.key === "Escape") {
-        setSearchOpen(false);
+      const action = matchBoundAction(e, bindings);
+      if (!action) return;
+
+      const state = stateRef.current;
+      switch (action) {
+        case "search":
+          e.preventDefault();
+          setSearchOpen((v) => !v);
+          break;
+        case "new_page":
+          e.preventDefault();
+          setNewFolder(undefined);
+          setNewOpen(true);
+          break;
+        case "toggle_editor": {
+          const { activePath, graphOpen, historyOpen, dataOpen } = state;
+          if (!activePath || graphOpen || historyOpen || dataOpen) return;
+          e.preventDefault();
+          setEditing((v) => !v);
+          break;
+        }
+        case "save":
+          if (!state.editing) return;
+          e.preventDefault();
+          editorRef.current?.save().catch(() => {});
+          break;
+        case "toggle_mode":
+          if (!state.editing) return;
+          e.preventDefault();
+          editorRef.current?.toggleMode?.();
+          break;
+        case "toggle_sidebar":
+          e.preventDefault();
+          toggleSidebar(!sidebarOpen);
+          break;
+        case "graph": {
+          e.preventDefault();
+          const next = !state.graphOpen;
+          closeAllViews();
+          setGraphOpen(next);
+          break;
+        }
+        case "toggle_bases": {
+          e.preventDefault();
+          const next = !state.basesOpen;
+          closeAllViews();
+          setBasesOpen(next);
+          break;
+        }
+        case "toggle_timeline": {
+          e.preventDefault();
+          const next = !state.timelineOpen;
+          closeAllViews();
+          setTimelineOpen(next);
+          break;
+        }
+        case "toggle_kanban": {
+          e.preventDefault();
+          const next = !state.kanbanOpen;
+          closeAllViews();
+          setKanbanOpen(next);
+          break;
+        }
+        case "shortcuts_help":
+          e.preventDefault();
+          setShortcutsOpen((v) => !v);
+          break;
+        case "undo":
+          if (state.editing) return;
+          e.preventDefault();
+          undoFileOp()
+            .then((msg) => {
+              if (msg) setRefreshKey((k) => k + 1);
+            })
+            .catch(() => {});
+          break;
+        case "focus_tree_filter":
+          e.preventDefault();
+          treeFilterRef.current?.focus();
+          treeFilterRef.current?.select();
+          break;
+        case "close_overlay": {
+          const overlay = resolveOverlayDismiss(stateRef.current);
+          if (!overlay) return;
+          e.preventDefault();
+          switch (overlay) {
+            case "shortcuts":
+              setShortcutsOpen(false);
+              break;
+            case "new":
+              setNewOpen(false);
+              break;
+            case "search":
+              setSearchOpen(false);
+              break;
+            case "graph":
+              setGraphOpen(false);
+              break;
+            case "history":
+              setHistoryOpen(false);
+              break;
+            case "data":
+              setDataOpen(false);
+              break;
+            case "bases":
+              setBasesOpen(false);
+              break;
+            case "canvas":
+              setCanvasOpen(false);
+              break;
+            case "whiteboard":
+              setWhiteboardOpen(false);
+              break;
+            case "timeline":
+              setTimelineOpen(false);
+              break;
+            case "kanban":
+              setKanbanOpen(false);
+              break;
+          }
+          break;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar]);
 
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
@@ -344,9 +506,42 @@ const handleSpaceSwitch = useCallback(() => {
   }, []);
 
   const isCloudMode = typeof window !== "undefined" && (window as any).__kiwi_cloud_mode__;
+  const isDemoMode = Boolean(getHostConfig().demo);
   const fromPopState = useRef(false);
+
   useEffect(() => {
-    if (isCloudMode) return;
+    if (!uiConfigLoaded) return;
+    const initialView = getHostConfig().demo?.initialView;
+    if (!initialView) return;
+    closeAllViews();
+    switch (initialView) {
+      case "graph":
+        setGraphOpen(true);
+        break;
+      case "kanban":
+        setKanbanOpen(true);
+        break;
+      case "bases":
+        setBasesOpen(true);
+        break;
+      case "timeline":
+        setTimelineOpen(true);
+        break;
+      case "canvas":
+        setCanvasOpen(true);
+        break;
+      case "whiteboard":
+        setWhiteboardOpen(true);
+        break;
+      case "data":
+        setDataOpen(true);
+        break;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiConfigLoaded]);
+
+  useEffect(() => {
+    if (isCloudMode || isDemoMode) return;
     if (!activePath) {
       if (window.location.pathname !== "/") {
         window.history.pushState(null, "", "/");
@@ -364,10 +559,10 @@ const handleSpaceSwitch = useCallback(() => {
         window.history.pushState(null, "", target);
       }
     }
-  }, [activePath, spaceKey, isCloudMode]);
+  }, [activePath, spaceKey, isCloudMode, isDemoMode]);
 
   useEffect(() => {
-    if (isCloudMode) return;
+    if (isCloudMode || isDemoMode) return;
     const onPopState = () => {
       const pathname = window.location.pathname;
       if (pathname.startsWith("/page/")) {
@@ -392,7 +587,7 @@ const handleSpaceSwitch = useCallback(() => {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [isCloudMode]);
+  }, [isCloudMode, isDemoMode]);
 
   function revealActivePageInTree() {
     if (!activePath) return;
@@ -402,8 +597,7 @@ const handleSpaceSwitch = useCallback(() => {
 
   function navigate(path: string) {
     if (!path) {
-      const firstMd = tree ? firstMarkdown(tree) : null;
-      if (firstMd) setActivePath(firstMd);
+      setActivePath(null);
       if (isMobile) setSidebarOpen(false);
       return;
     }
@@ -450,12 +644,13 @@ const handleSpaceSwitch = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
-  const toggleSidebar = useCallback((open: boolean) => {
-    setSidebarOpen(open);
-    if (!isMobile) {
-      try { localStorage.setItem("kiwifs-sidebar", open ? "open" : "collapsed"); } catch {}
-    }
-  }, [isMobile]);
+  const atStartPage =
+    !activePath &&
+    uiConfigLoaded &&
+    !treeLoading &&
+    shouldApplyStartPage(activePath, hasDeepLinkPath());
+  const showWelcomeStart = atStartPage && resolvedStartPage.mode === "welcome";
+  const showRecentStart = atStartPage && resolvedStartPage.mode === "recent";
 
   return (
     <TooltipProvider delayDuration={250}>
@@ -474,8 +669,8 @@ const handleSpaceSwitch = useCallback(() => {
                 : <PanelLeftOpen className="h-4 w-4" />}
             </ToolbarButton>
             <div className="flex items-center gap-2">
-              <img src="/kiwifs.png" alt="KiwiFS" className="h-7 w-7 shrink-0" />
-              <span className="font-semibold text-sm hidden sm:inline">KiwiFS</span>
+              <img src={branding.logoUrl} alt={branding.name} className="h-7 w-7 shrink-0" />
+              <span className="font-semibold text-sm hidden sm:inline">{branding.name}</span>
             </div>
           </div>
 
@@ -489,41 +684,60 @@ const handleSpaceSwitch = useCallback(() => {
               <SearchIcon className="h-3.5 w-3.5 shrink-0" />
               <span className="flex-1 text-left truncate hidden sm:inline">Search pages…</span>
               <kbd className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono hidden sm:inline">
-                {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}K
+                {formatChordDisplay(bindings.search)}
               </kbd>
             </button>
           </div>
 
           {/* Right zone: actions */}
           <div className="flex items-center gap-0.5">
-            <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label="New page (⌘N)">
+            <ToolbarButton onClick={() => { setNewFolder(undefined); setNewOpen(true); }} label={`New page (${formatChordDisplay(bindings.new_page)})`}>
               <Plus className="h-4 w-4" />
             </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !graphOpen; closeAllViews(); setGraphOpen(next); }} label="Knowledge graph">
-              <Network className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !basesOpen; closeAllViews(); setBasesOpen(next); }} label="Bases">
-              <LayoutGrid className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !canvasOpen; closeAllViews(); setCanvasOpen(next); }} label="Canvas">
-              <Presentation className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !whiteboardOpen; closeAllViews(); setWhiteboardOpen(next); }} label="Whiteboard">
-              <PenTool className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !timelineOpen; closeAllViews(); setTimelineOpen(next); }} label="Timeline">
-              <Clock4 className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !kanbanOpen; closeAllViews(); setKanbanOpen(next); }} label="Kanban">
-              <Columns3 className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton onClick={() => { const next = !dataOpen; closeAllViews(); setDataOpen(next); }} label="Data sources">
-              <Database className="h-4 w-4" />
-            </ToolbarButton>
+            <BuiltinToolbarViews
+              views={toolbarViews}
+              onToggle={(id) => {
+                const wasOpen = {
+                  graph: graphOpen,
+                  bases: basesOpen,
+                  canvas: canvasOpen,
+                  whiteboard: whiteboardOpen,
+                  timeline: timelineOpen,
+                  kanban: kanbanOpen,
+                  data: dataOpen,
+                }[id];
+                closeAllViews();
+                switch (id) {
+                  case "graph":
+                    setGraphOpen(!wasOpen);
+                    break;
+                  case "bases":
+                    setBasesOpen(!wasOpen);
+                    break;
+                  case "canvas":
+                    setCanvasOpen(!wasOpen);
+                    break;
+                  case "whiteboard":
+                    setWhiteboardOpen(!wasOpen);
+                    break;
+                  case "timeline":
+                    setTimelineOpen(!wasOpen);
+                    break;
+                  case "kanban":
+                    setKanbanOpen(!wasOpen);
+                    break;
+                  case "data":
+                    setDataOpen(!wasOpen);
+                    break;
+                }
+              }}
+            />
             <HostToolbarActions />
-            <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </ToolbarButton>
+            {!themeLocked && (
+              <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </ToolbarButton>
+            )}
           </div>
         </header>
 
@@ -551,6 +765,7 @@ const handleSpaceSwitch = useCallback(() => {
             treeSortMode={treeSortMode}
             refreshKey={refreshKey}
             kanbanOpen={kanbanOpen}
+            sidebarConfig={uiConfig.sidebar}
             starred={starred}
             pinned={pinned}
             recent={recent}
@@ -648,6 +863,10 @@ const handleSpaceSwitch = useCallback(() => {
                 path={activePath}
                 tree={tree}
                 saveRef={editorRef}
+                editorModePref={prefs.default_view}
+                onEditorModeChange={(mode) =>
+                  updatePreferences({ default_view: mode === "source" ? "source" : "editor" })
+                }
                 onClose={() => setEditing(false)}
                 onNavigate={navigate}
                 onSaved={() => {
@@ -686,19 +905,33 @@ const handleSpaceSwitch = useCallback(() => {
                 refreshKey={refreshKey}
                 onPublishedChanged={refreshPublishedPages}
               />
-            ) : treeLoading ? (
+            ) : treeLoading || !uiConfigLoaded ? (
               <div className="flex h-full items-center justify-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               </div>
-            ) : (
+            ) : showRecentStart ? (
+              <KiwiRecentStart
+                onOpen={(p) => navigate(p)}
+                onEdit={(p) => {
+                  setActivePath(p);
+                  setEditing(true);
+                }}
+              />
+            ) : showWelcomeStart ? (
               <WelcomeScreen
+                branding={branding}
+                bindings={bindings}
                 onNewPage={() => { setNewFolder(undefined); setNewOpen(true); }}
                 onSearch={() => setSearchOpen(true)}
-                onGraph={() => setGraphOpen(true)}
-                onData={() => setDataOpen(true)}
-                onBases={() => setBasesOpen(true)}
+                onGraph={features.graph ? () => setGraphOpen(true) : undefined}
+                onData={features.data_sources ? () => setDataOpen(true) : undefined}
+                onBases={features.bases ? () => setBasesOpen(true) : undefined}
                 onTimeline={() => setTimelineOpen(true)}
               />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              </div>
             )}
           </main>
         </div>
@@ -730,6 +963,8 @@ const handleSpaceSwitch = useCallback(() => {
       <KeyboardShortcuts
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
+        bindings={bindings}
+        conflicts={conflicts}
       />
     </TooltipProvider>
   );
@@ -738,26 +973,34 @@ const handleSpaceSwitch = useCallback(() => {
 /* ── Welcome Screen ── */
 
 function WelcomeScreen({
+  branding,
+  bindings,
   onNewPage,
   onSearch,
   onData,
 }: {
+  branding: { name: string; logoUrl: string; welcomeTitle: string; welcomeMessage: string; hasCustomLogo: boolean };
+  bindings: Record<KeybindingAction, string>;
   onNewPage: () => void;
   onSearch: () => void;
   onGraph?: () => void;
-  onData: () => void;
+  onData?: () => void;
   onBases?: () => void;
   onTimeline?: () => void;
 }) {
   return (
     <div className="grid place-items-center h-full text-muted-foreground">
       <div className="text-center max-w-md">
-        <img src="/kiwi-mascot.png" alt="KiwiFS" className="h-24 mx-auto mb-4" />
+        {branding.hasCustomLogo ? (
+          <img src={branding.logoUrl} alt={branding.name} className="h-24 mx-auto mb-4 object-contain" />
+        ) : (
+          <img src="/kiwi-mascot.png" alt={branding.name} className="h-24 mx-auto mb-4" />
+        )}
         <div className="text-2xl font-semibold mb-2 text-foreground">
-          Welcome to KiwiFS
+          {branding.welcomeTitle}
         </div>
         <div className="text-sm mb-6">
-          Your knowledge base is ready. Get started by creating a page or exploring existing content.
+          {branding.welcomeMessage}
         </div>
         <div className="flex flex-col gap-2 items-center">
           <Button onClick={onNewPage} className="gap-2">
@@ -768,21 +1011,63 @@ function WelcomeScreen({
             <SearchIcon className="h-4 w-4" />
             Search pages
             <kbd className="ml-1 text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-              {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}K
+              {formatChordDisplay(bindings.search)}
             </kbd>
           </Button>
-          <Button variant="ghost" onClick={onData} className="gap-2 text-muted-foreground">
-            <Database className="h-4 w-4" />
-            Import from a source
-          </Button>
+          {onData && (
+            <Button variant="ghost" onClick={onData} className="gap-2 text-muted-foreground">
+              <Database className="h-4 w-4" />
+              Import from a source
+            </Button>
+          )}
         </div>
         <div className="mt-8 text-xs space-y-1">
-          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">⌘N</kbd> New page</div>
-          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">⌘E</kbd> Toggle editor</div>
-          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">⌘/</kbd> Keyboard shortcuts</div>
+          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{formatChordDisplay(bindings.new_page)}</kbd> New page</div>
+          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{formatChordDisplay(bindings.toggle_editor)}</kbd> Toggle editor</div>
+          <div><kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{formatChordDisplay(bindings.shortcuts_help)}</kbd> Keyboard shortcuts</div>
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── Built-in toolbar view buttons ── */
+
+const BUILTIN_TOOLBAR_BUTTONS: Record<
+  ToolbarBuiltinViewId,
+  { label: string; Icon: typeof Network }
+> = {
+  graph: { label: "Knowledge graph", Icon: Network },
+  bases: { label: "Bases", Icon: LayoutGrid },
+  canvas: { label: "Canvas", Icon: Presentation },
+  whiteboard: { label: "Whiteboard", Icon: PenTool },
+  timeline: { label: "Timeline", Icon: Clock4 },
+  kanban: { label: "Kanban", Icon: Columns3 },
+  data: { label: "Data sources", Icon: Database },
+};
+
+function BuiltinToolbarViews({
+  views,
+  onToggle,
+}: {
+  views: ToolbarBuiltinViewId[];
+  onToggle: (id: ToolbarBuiltinViewId) => void;
+}) {
+  return (
+    <>
+      {views.map((id) => {
+        const { label, Icon } = BUILTIN_TOOLBAR_BUTTONS[id];
+        return (
+          <ToolbarButton
+            key={id}
+            onClick={() => onToggle(id)}
+            label={label}
+          >
+            <Icon className="h-4 w-4" />
+          </ToolbarButton>
+        );
+      })}
+    </>
   );
 }
 

@@ -58,6 +58,12 @@
   line-height: var(--line-height-base);
   max-width: var(--content-max-width);
 }
+.kiwi-prose ::selection {
+  background-color: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+:is(.dark) .kiwi-prose ::selection {
+  background-color: color-mix(in srgb, var(--primary) 55%, transparent);
+}
 .kiwi-prose h1 {
   font-size: calc(var(--heading-1-size) * var(--heading-scale));
   line-height: var(--line-height-tight);
@@ -385,8 +391,7 @@
 /* ─── Code block header (title + language label) ─── */
 .kiwi-code-header {
   @apply flex items-center justify-between px-4 py-1.5 text-xs text-muted-foreground
-         border border-border border-b-0 rounded-t-lg;
-  background: var(--code-bg);
+         border-b border-border;
 }
 .kiwi-code-title {
   @apply font-medium text-foreground/80;
@@ -394,17 +399,28 @@
 .kiwi-code-lang {
   @apply text-muted-foreground/70 font-mono;
 }
-.kiwi-shiki-with-header {
-  @apply mt-0 rounded-t-none;
-}
-.kiwi-code-header + .kiwi-shiki-with-header {
-  @apply border-t-0;
-}
 
 /* ─── Shiki code blocks ─── */
 .kiwi-shiki {
   @apply border border-border rounded-lg;
+  background: var(--code-bg);
   filter: var(--kiwi-shiki-filter);
+}
+.kiwi-shiki pre {
+  @apply border-0 m-0 rounded-none;
+  background: transparent !important;
+}
+
+/* ─── Widget inputs ─── */
+.kiwi-widget input[type="text"],
+.kiwi-widget input:not([type]) {
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.kiwi-widget input[type="text"]:focus,
+.kiwi-widget input:not([type]):focus {
+  border-color: hsl(var(--primary)) !important;
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3);
 }
 
 /* ─── Code block line highlighting ─── */
@@ -421,6 +437,30 @@
 }
 .kiwi-shiki .kiwi-diff-del {
   @apply block -mx-4 px-4 bg-red-500/10;
+}
+
+/* ─── Local Notes (personal annotations overlay) ─── */
+.kiwi-local-notes-section {
+  border-color: hsl(var(--primary) / 0.2);
+  background: hsl(var(--primary) / 0.02);
+}
+
+/* ─── CodeRunner (editable code blocks with execution) ─── */
+.kiwi-code-runner pre,
+.kiwi-code-runner textarea {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.875rem;
+  line-height: 1.625;
+  letter-spacing: 0;
+  word-spacing: 0;
+  tab-size: 4;
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+.kiwi-code-runner pre code {
+  background: transparent !important;
 }
 
 /* ─── Scrollbar ─── */

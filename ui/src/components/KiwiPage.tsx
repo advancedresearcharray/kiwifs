@@ -10,7 +10,7 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, NotebookPen, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
 import { dirOf, titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
@@ -35,6 +35,10 @@ import { KiwiTabs } from "./KiwiTabs";
 import { KiwiColumns } from "./KiwiColumns";
 import { ExcalidrawMarkdownPreview, isExcalidrawMarkdown } from "./ExcalidrawMarkdownPreview";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { KiwiWidget } from "./KiwiWidget";
+import { CodeRunner } from "@kw/widgets/CodeRunner";
+import { PageTracker } from "@kw/widgets/PageTracker";
+
 import { PageSkeleton } from "./PageSkeleton";
 import { trackRecent } from "./KiwiFavorites";
 import { Badge } from "@kw/components/ui/badge";
@@ -380,6 +384,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
   const [lastAuthor, setLastAuthor] = useState<string | null>(null);
   const [versionError, setVersionError] = useState(false);
   const [commentError, setCommentError] = useState(false);
+  const [localNote, setLocalNote] = useState<string | null>(null);
   const proseRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -400,6 +405,16 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
       .catch((e) => {
         if (!cancelled) setError(String(e));
       });
+    return () => { cancelled = true; };
+  }, [path, refreshKey, isDir]);
+
+  useEffect(() => {
+    if (isDir) return;
+    let cancelled = false;
+    setLocalNote(null);
+    api.readLocalNote(path).then((note) => {
+      if (!cancelled) setLocalNote(note);
+    });
     return () => { cancelled = true; };
   }, [path, refreshKey, isDir]);
 
@@ -797,9 +812,21 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                       );
                     },
                     code: ({ className, children, node, ...rest }: any) => {
-                      const match = /language-([A-Za-z0-9_-]+)/.exec(className || "");
+                      const match = /language-([A-Za-z0-9_:.-]+)/.exec(className || "");
                       const lang = match ? match[1] : undefined;
                       const raw = String(children).replace(/\n$/, "");
+                      if (lang === "widget:code") {
+                        const codeMeta: string = node?.data?.meta || node?.properties?.metastring || "";
+                        const codeLangMatch = codeMeta.match(/lang=(\w+)/);
+                        const codeLang = codeLangMatch ? codeLangMatch[1] : "python";
+                        return <CodeRunner source={raw} lang={codeLang} />;
+                      }
+                      if (lang === "widget:tracker") {
+                        return <PageTracker onNavigate={onNavigate} stateName={raw.trim() || "progress"} />;
+                      }
+                      if (lang?.startsWith("widget:")) {
+                        return <KiwiWidget name={lang.slice("widget:".length)} source={raw} />;
+                      }
                       if (lang === "kiwi-query") {
                         return <KiwiQuery source={raw} onNavigate={onNavigate} isComputedView={parsed.meta?.["kiwi-view"] === true} />;
                       }
@@ -1022,20 +1049,71 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
 
               {/* ── Footer zone: fixed order, collapsible ── */}
               <div className="mt-12 space-y-2">
-                <CollapsibleFooterSection
-                  icon={<MessageSquareQuote className="h-4 w-4" />}
-                  title="Comments"
-                  storageKey="footer-comments"
-                  defaultOpen={commentCount > 0}
-                  className="kiwi-comments-section"
-                >
-                  <KiwiComments
-                    path={path}
-                    containerRef={proseRef}
-                    renderKey={content}
-                    refreshKey={refreshKey}
-                  />
-                </CollapsibleFooterSection>
+                {localNote && (
+                  <CollapsibleFooterSection
+                    icon={<NotebookPen className="h-4 w-4" />}
+                    title="My Notes"
+                    storageKey="footer-local-notes"
+                    defaultOpen
+                    className="kiwi-local-notes-section"
+                  >
+                    <div className="kiwi-prose kiwi-local-notes">
+                      <ErrorBoundary>
+                        <ReactMarkdown
+                          remarkPlugins={[
+                            remarkGfm,
+                            remarkMath,
+                            remarkMark,
+                            remarkInlineTags,
+                            remarkEmoji,
+                            remarkSupersub,
+                            remarkDefinitionList,
+                            remarkDirective,
+                            remarkKiwiDirectives,
+                            [remarkWikiLinks, { resolver }],
+                          ]}
+                          rehypePlugins={[
+                            rehypeCodeMeta,
+                            rehypeRaw,
+                            [rehypeSanitize, sanitizeSchema],
+                            rehypeKatex,
+                            rehypeSlug,
+                          ]}
+                          components={{
+                            code: ({ className, children, node, ...rest }: any) => {
+                              const match = /language-([A-Za-z0-9_:.-]+)/.exec(className || "");
+                              const lang = match ? match[1] : undefined;
+                              const raw = String(children).replace(/\n$/, "");
+                              if (lang === "widget:code") {
+                                const codeMeta: string = node?.data?.meta || node?.properties?.metastring || "";
+                                const codeLangMatch = codeMeta.match(/lang=(\w+)/);
+                                const codeLang = codeLangMatch ? codeLangMatch[1] : "python";
+                                return <CodeRunner source={raw} lang={codeLang} />;
+                              }
+                              if (!lang || !raw.includes("\n")) {
+                                return <code className={className} {...rest}>{children}</code>;
+                              }
+                              const meta: string = node?.data?.meta || node?.properties?.metastring || "";
+                              const titleMatch = meta.match(/title="([^"]+)"/);
+                              const title = titleMatch ? titleMatch[1] : undefined;
+                              return <ShikiCode code={raw} lang={lang} title={title} />;
+                            },
+                            pre: ({ children }) => <>{children}</>,
+                          }}
+                        >
+                          {stripObsidianComments(localNote.replace(/^---[\s\S]*?---\n*/, ""))}
+                        </ReactMarkdown>
+                      </ErrorBoundary>
+                    </div>
+                  </CollapsibleFooterSection>
+                )}
+
+                <KiwiComments
+                  path={path}
+                  containerRef={proseRef}
+                  renderKey={content}
+                  refreshKey={refreshKey}
+                />
 
                 <CollapsibleFooterSection
                   icon={<Link2 className="h-4 w-4" />}
@@ -1187,6 +1265,19 @@ function SemanticFrontmatterValue({
 
   if (isDateLikeString(value)) {
     return <time dateTime={text}>{text}</time>;
+  }
+
+  if (typeof value === "string" && /^https?:\/\/.+/.test(value)) {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary hover:underline break-all"
+      >
+        {text}
+      </a>
+    );
   }
 
   return (

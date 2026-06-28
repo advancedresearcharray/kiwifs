@@ -19,6 +19,7 @@ import (
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/kiwifs/kiwifs/internal/docexport"
 	"github.com/kiwifs/kiwifs/internal/lockdir"
+	"github.com/kiwifs/kiwifs/internal/mcpserver"
 	kiwinfs "github.com/kiwifs/kiwifs/internal/nfs"
 	kiwis3 "github.com/kiwifs/kiwifs/internal/s3"
 	"github.com/kiwifs/kiwifs/internal/spaces"
@@ -157,6 +158,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer stack.Close()
 
+	if err := wireMCPHTTP(stack); err != nil {
+		return err
+	}
+
 	// Log availability of external document export tools (Pandoc, Marp,
 	// MkDocs, etc.) so operators know which export formats are usable.
 	docexport.LogDeps("")
@@ -281,6 +286,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// single-space mode. The default space is registered first (fallback
 	// for non-prefixed requests) so existing clients keep working.
 	spaceMgr := spaces.NewManager(cfg)
+	spaceMgr.OnStackCreated = func(s *bootstrap.Stack) {
+		mcpSrv, _, err := mcpserver.New(mcpserver.Options{
+			Backend: mcpserver.NewStackBackend(s),
+			Emitter: s.Emitter,
+		})
+		if err != nil {
+			log.Printf("mcp init for space: %v", err)
+			return
+		}
+		s.Server.SetMCPHandler(mcpserver.StreamableHTTPHandler(mcpSrv, mcpserver.AuthTokenFromConfig(s.Config)))
+	}
 	if err := spaceMgr.RegisterStack("default", root, stack); err != nil {
 		return fmt.Errorf("register default space: %w", err)
 	}
@@ -413,5 +429,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	log.Printf("shutdown complete")
+	return nil
+}
+
+func wireMCPHTTP(stack *bootstrap.Stack) error {
+	mcpSrv, _, err := mcpserver.New(mcpserver.Options{
+		Backend: mcpserver.NewStackBackend(stack),
+		Emitter: stack.Emitter,
+	})
+	if err != nil {
+		return fmt.Errorf("mcp init: %w", err)
+	}
+	stack.Server.SetMCPHandler(mcpserver.StreamableHTTPHandler(mcpSrv, mcpserver.AuthTokenFromConfig(stack.Config)))
 	return nil
 }

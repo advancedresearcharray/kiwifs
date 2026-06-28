@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kiwifs/kiwifs/internal/bootstrap"
@@ -19,6 +20,7 @@ var importCmd = &cobra.Command{
   kiwifs import --from json --file data.json
   kiwifs import --from jsonl --file data.jsonl
   kiwifs import --from yaml --file data.yaml
+  kiwifs import --from bibtex --file references.bib
   kiwifs import --from excel --file students.xlsx --sheet "Sheet1"
   kiwifs import --from sqlite --db /path/to/data.db --table students
   kiwifs import --from postgres --dsn "postgres://user:pass@host/db" --table students
@@ -40,7 +42,7 @@ var importCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(importCmd)
 
-	importCmd.Flags().String("from", "", "source type: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch")
+	importCmd.Flags().String("from", "", "source type: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, bibtex, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch")
 	importCmd.MarkFlagRequired("from")
 
 	importCmd.Flags().StringP("root", "r", "./knowledge", "knowledge root directory")
@@ -74,10 +76,16 @@ func init() {
 	importCmd.Flags().String("index", "", "index name (elasticsearch)")
 	importCmd.Flags().Bool("api", false, "use live API mode (confluence)")
 	importCmd.Flags().String("space", "", "space key (confluence API mode)")
+	importCmd.Flags().Bool("infer-schema", false, "infer JSON Schema from csv/json/jsonl sample and print to stdout")
+	importCmd.Flags().Bool("save-schema", false, "save inferred schema to .kiwi/schemas/<name>.json (only with --infer-schema)")
 }
 
 func runImport(cmd *cobra.Command, _ []string) error {
 	from, _ := cmd.Flags().GetString("from")
+	inferSchema, _ := cmd.Flags().GetBool("infer-schema")
+	if inferSchema {
+		return runInferSchema(cmd, from)
+	}
 	root, _ := cmd.Flags().GetString("root")
 
 	src, err := buildSource(cmd, from)
@@ -273,6 +281,13 @@ func buildSource(cmd *cobra.Command, from string) (importer.Source, error) {
 		}
 		return importer.NewYAML(filePath)
 
+	case "bibtex":
+		filePath, _ := cmd.Flags().GetString("file")
+		if filePath == "" {
+			return nil, fmt.Errorf("--file is required for bibtex")
+		}
+		return importer.NewBibTeX(filePath)
+
 	case "markdown":
 		path, _ := cmd.Flags().GetString("path")
 		if path == "" {
@@ -342,6 +357,52 @@ func buildSource(cmd *cobra.Command, from string) (importer.Source, error) {
 		return importer.NewElasticsearch(esURL, index, nil)
 
 	default:
-		return nil, fmt.Errorf("unknown source type: %s (supported: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch)", from)
+		return nil, fmt.Errorf("unknown source type: %s (supported: markdown, postgres, mysql, firestore, sqlite, mongodb, csv, json, jsonl, yaml, bibtex, excel, notion, airtable, gsheets, obsidian, confluence, dynamodb, redis, elasticsearch)", from)
 	}
+}
+
+func runInferSchema(cmd *cobra.Command, from string) error {
+	file, _ := cmd.Flags().GetString("file")
+	if file == "" {
+		return fmt.Errorf("--file is required with --infer-schema")
+	}
+	saveSchema, _ := cmd.Flags().GetBool("save-schema")
+	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+
+	var props map[string]any
+	switch from {
+	case "csv":
+		rows, err := importer.SampleCSVRows(file, 100)
+		if err != nil {
+			return err
+		}
+		props = importer.InferFieldTypes(rows)
+	case "json", "jsonl":
+		rows, err := importer.SampleJSONRowsNative(file, 100)
+		if err != nil {
+			return err
+		}
+		props = importer.InferFieldTypesNative(rows)
+	default:
+		return fmt.Errorf("--infer-schema supports --from csv, json, jsonl (got %q)", from)
+	}
+
+	out, err := importer.SchemaDocument(name, props)
+	if err != nil {
+		return err
+	}
+
+	if saveSchema {
+		dir := filepath.Join(".kiwi", "schemas")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", dir, err)
+		}
+		path := filepath.Join(dir, name+".json")
+		if err := os.WriteFile(path, out, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		fmt.Fprintf(os.Stderr, "saved schema to %s\n", path)
+	}
+	fmt.Println(string(out))
+	return nil
 }

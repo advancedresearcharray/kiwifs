@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -69,25 +70,52 @@ func (h *Handlers) Version(c echo.Context) error {
 // Diff godoc
 //
 //	@Summary		Get diff between two versions
-//	@Description	Returns a standard diff for a file between two commit hashes/versions.
+//	@Description	Returns a diff for a file between two commit hashes/versions. Use granularity=word for word-level diffs.
 //	@Tags			versions
 //	@Security		BearerAuth
-//	@Param			path	query		string	true	"Path of the file (must start with '/')"
-//	@Param			from	query		string	true	"Source version/commit hash"
-//	@Param			to		query		string	true	"Target version/commit hash"
-//	@Success		200		{string}	string	"Raw diff string"
-//	@Failure		400		{object}	map[string]string
-//	@Failure		500		{object}	map[string]string
+//	@Param			path			query		string	true	"Path of the file (must start with '/')"
+//	@Param			from			query		string	true	"Source version/commit hash"
+//	@Param			to				query		string	true	"Target version/commit hash"
+//	@Param			granularity		query		string	false	"Diff granularity: line (default) or word"
+//	@Success		200				{string}	string	"Raw diff string"
+//	@Failure		400				{object}	map[string]string
+//	@Failure		500				{object}	map[string]string
+//	@Failure		501				{object}	map[string]string
 //	@Router			/api/kiwi/diff [get]
 func (h *Handlers) Diff(c echo.Context) error {
 	path := c.QueryParam("path")
 	from := c.QueryParam("from")
 	to := c.QueryParam("to")
+	granularity := c.QueryParam("granularity")
+	if granularity == "" {
+		granularity = "line"
+	}
 	if path == "" || from == "" || to == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "path, from, and to are required")
 	}
-	diff, err := h.versioner.Diff(c.Request().Context(), path, from, to)
+	if granularity != "line" && granularity != "word" {
+		return echo.NewHTTPError(http.StatusBadRequest, "granularity must be line or word")
+	}
+
+	var (
+		diff string
+		err  error
+	)
+	if granularity == "word" {
+		wd, ok := h.versioner.(interface {
+			WordDiff(context.Context, string, string, string) (string, error)
+		})
+		if !ok {
+			return echo.NewHTTPError(http.StatusNotImplemented, versioning.ErrWordDiffUnsupported.Error())
+		}
+		diff, err = wd.WordDiff(c.Request().Context(), path, from, to)
+	} else {
+		diff, err = h.versioner.Diff(c.Request().Context(), path, from, to)
+	}
 	if err != nil {
+		if errors.Is(err, versioning.ErrWordDiffUnsupported) {
+			return echo.NewHTTPError(http.StatusNotImplemented, err.Error())
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.String(http.StatusOK, diff)

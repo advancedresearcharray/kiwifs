@@ -242,3 +242,49 @@ func TestDelete_NotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent workflow")
 	}
 }
+
+func TestSyncStatusOnAdvance(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adr always syncs status", func(t *testing.T) {
+		fm := map[string]any{
+			"type":   "adr",
+			"status": "proposed",
+			"state":  "proposed",
+		}
+		SyncStatusOnAdvance(fm, "proposed", "accepted")
+		if fm["status"] != "accepted" {
+			t.Fatalf("status = %v, want accepted", fm["status"])
+		}
+	})
+
+	t.Run("mirrored status syncs when equal to state", func(t *testing.T) {
+		fm := map[string]any{
+			"status": "draft",
+			"state":  "draft",
+		}
+		SyncStatusOnAdvance(fm, "draft", "review")
+		if fm["status"] != "review" {
+			t.Fatalf("status = %v, want review", fm["status"])
+		}
+	})
+
+	t.Run("independent status left unchanged", func(t *testing.T) {
+		fm := map[string]any{
+			"status": "verified",
+			"state":  "published",
+		}
+		SyncStatusOnAdvance(fm, "published", "archived")
+		if fm["status"] != "verified" {
+			t.Fatalf("status = %v, want verified (unchanged)", fm["status"])
+		}
+	})
+
+	t.Run("no status field is noop", func(t *testing.T) {
+		fm := map[string]any{"state": "draft"}
+		SyncStatusOnAdvance(fm, "draft", "review")
+		if _, ok := fm["status"]; ok {
+			t.Fatal("status should not be added")
+		}
+	})
+}

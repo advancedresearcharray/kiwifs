@@ -36,7 +36,8 @@ func Build(root string, source storage.Storage, cfg config.VectorConfig) (*Servi
 }
 
 func buildEmbedder(ctx context.Context, cfg config.EmbedderConfig) (embed.Embedder, error) {
-	switch cfg.Provider {
+	provider := cfg.ResolvedProvider()
+	switch provider {
 	case "", "openai", "azure-openai":
 		return embed.NewOpenAI(cfg.APIKey, cfg.Model, cfg.BaseURL, cfg.Dimensions)
 	case "ollama":
@@ -76,7 +77,7 @@ func buildEmbedder(ctx context.Context, cfg config.EmbedderConfig) (embed.Embedd
 			OutputName:    cfg.OutputName,
 		})
 	default:
-		return nil, fmt.Errorf("unknown embedder provider %q (want openai | ollama | http | cohere | voyage | bedrock | vertex | onnx)", cfg.Provider)
+		return nil, fmt.Errorf("unknown embedder provider %q (want openai | ollama | http | cohere | voyage | bedrock | vertex | onnx)", provider)
 	}
 }
 

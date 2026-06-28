@@ -1,5 +1,285 @@
 # Changelog
 
+## [0.19.40](https://github.com/kiwifs/kiwifs/compare/v0.19.39...v0.19.40) (2026-06-25)
+
+
+### Features
+
+* add CodeRunner widget for browser-side code execution ([#356](https://github.com/kiwifs/kiwifs/issues/356)) ([99ca02a](https://github.com/kiwifs/kiwifs/commit/99ca02a35925ed5257cd88c1e512df698c2514b7))
+* align templates with use cases — add kb, cms, data, log; rename knowledge→memory, prompt-library→prompt ([#408](https://github.com/kiwifs/kiwifs/issues/408)) ([29c241a](https://github.com/kiwifs/kiwifs/commit/29c241aee5deee3e1028b13062004f2a02bd8698))
+* **api:** add frontmatter-only PATCH mode for file updates ([#364](https://github.com/kiwifs/kiwifs/issues/364)) ([703b621](https://github.com/kiwifs/kiwifs/commit/703b621619627a862fff04a7c280a5f581f663d2))
+* **api:** add word-level diff granularity ([#401](https://github.com/kiwifs/kiwifs/issues/401)) ([a729921](https://github.com/kiwifs/kiwifs/commit/a7299213b0d0e43f5d94546eb682d16550445679)), closes [#333](https://github.com/kiwifs/kiwifs/issues/333)
+* **api:** PATCH /api/kiwi/file?merge=frontmatter with If-Match ETag, body preservation, and git commit ([703b621](https://github.com/kiwifs/kiwifs/commit/703b621619627a862fff04a7c280a5f581f663d2))
+* **demo:** interactive template gallery on demo.kiwifs.com ([#412](https://github.com/kiwifs/kiwifs/issues/412)) ([e921478](https://github.com/kiwifs/kiwifs/commit/e9214785fcf6a4ce6d19806d19862bf01054a520))
+* **demo:** redesign gallery with prominent storybook link and card gradients ([#414](https://github.com/kiwifs/kiwifs/issues/414)) ([1645e15](https://github.com/kiwifs/kiwifs/commit/1645e154bed0c200b9a7415ea643828a0232a024))
+* **dql:** add DATE(), NOW(), and BETWEEN temporal evaluation ([#370](https://github.com/kiwifs/kiwifs/issues/370)) ([91ff702](https://github.com/kiwifs/kiwifs/commit/91ff7021d1dbd2b00521d136609233d54fdd6951))
+* **dql:** add FLATTEN clause for querying nested arrays ([#342](https://github.com/kiwifs/kiwifs/issues/342)) ([fe6ef5b](https://github.com/kiwifs/kiwifs/commit/fe6ef5bb875d3840111c74a85fa94ba203c34d21))
+* **dql:** DATE(), NOW(), BETWEEN temporal evaluation with ISO-8601 comparisons and timezone normalization ([91ff702](https://github.com/kiwifs/kiwifs/commit/91ff7021d1dbd2b00521d136609233d54fdd6951))
+* **dql:** FLATTEN dot notation for nested array objects - adds array/object type guards and subfield extraction ([fe6ef5b](https://github.com/kiwifs/kiwifs/commit/fe6ef5bb875d3840111c74a85fa94ba203c34d21))
+* **exporter:** MkDocs static site export (Closes [#103](https://github.com/kiwifs/kiwifs/issues/103)) ([#399](https://github.com/kiwifs/kiwifs/issues/399)) ([37be175](https://github.com/kiwifs/kiwifs/commit/37be175902902cd21777db12d687deb8422afce2))
+* **importer:** add BibTeX import source (closes [#335](https://github.com/kiwifs/kiwifs/issues/335)) ([f5e7f34](https://github.com/kiwifs/kiwifs/commit/f5e7f3429d79f93f3d3a84f6b86bbe16766eedab))
+* **janitor:** add execution staleness rule for runbooks ([#411](https://github.com/kiwifs/kiwifs/issues/411)) ([0b1fabd](https://github.com/kiwifs/kiwifs/commit/0b1fabdbb9467f26a1c929b84998a59d0c3ee4c9))
+* **links:** add configurable typed-link indexing for frontmatter fields ([#369](https://github.com/kiwifs/kiwifs/issues/369)) ([96ce165](https://github.com/kiwifs/kiwifs/commit/96ce165e7052208893fbe23af0b5e520450995fc))
+* **links:** index supersedes and superseded_by as backlinks (closes [#329](https://github.com/kiwifs/kiwifs/issues/329)) ([bff7827](https://github.com/kiwifs/kiwifs/commit/bff7827994c14fe7a2d5756da2e8c510bcad7669))
+* local notes overlay — show .local/ annotations on page ([#440](https://github.com/kiwifs/kiwifs/issues/440)) ([a63eba0](https://github.com/kiwifs/kiwifs/commit/a63eba024cff067d6764829a6cc747cb67073790))
+* local-state API + PageTracker widget ([#441](https://github.com/kiwifs/kiwifs/issues/441)) ([2b7ef1c](https://github.com/kiwifs/kiwifs/commit/2b7ef1cd936d852c7b0f2f32423b345ccc2e84f1))
+* **mcp:** add kiwi_cite tool for DOI/arXiv metadata fetch (closes [#336](https://github.com/kiwifs/kiwifs/issues/336)) ([243f24c](https://github.com/kiwifs/kiwifs/commit/243f24ce0b928a0d5e8fb131fac9d9bbadc582c8))
+* **pipeline:** add auto-sequence FormatWrite hook for directories (closes [#330](https://github.com/kiwifs/kiwifs/issues/330)) ([ddd91bc](https://github.com/kiwifs/kiwifs/commit/ddd91bc7b4c3ba8dba17e6ef88918c8a350fb5fa))
+* **pipeline:** add configurable ValidateWrite hooks via config.toml ([#343](https://github.com/kiwifs/kiwifs/issues/343)) ([e3399bd](https://github.com/kiwifs/kiwifs/commit/e3399bda183a5426804a073f4d40627f7d547ca2))
+* **pipeline:** config-driven ValidateWrite hooks for append-only and immutable-body guards ([e3399bd](https://github.com/kiwifs/kiwifs/commit/e3399bda183a5426804a073f4d40627f7d547ca2))
+* **pipeline:** enforce append_only frontmatter on PUT overwrites ([#400](https://github.com/kiwifs/kiwifs/issues/400)) ([5d6bcee](https://github.com/kiwifs/kiwifs/commit/5d6bcee23fb78871b2806b9d8e3659915091a2bd))
+* **pipeline:** monotonic sequence numbering on append (Closes [#338](https://github.com/kiwifs/kiwifs/issues/338)) ([#402](https://github.com/kiwifs/kiwifs/issues/402)) ([a8fe010](https://github.com/kiwifs/kiwifs/commit/a8fe0101333f054dcfd23326531761fc5affbc96))
+* **search:** extract template variables at index time ([#403](https://github.com/kiwifs/kiwifs/issues/403)) ([6f1c8b3](https://github.com/kiwifs/kiwifs/commit/6f1c8b3afc112cb9a3242a3dc15d8f7e8335f9fe)), closes [#332](https://github.com/kiwifs/kiwifs/issues/332)
+* **ui:** add branding config and feature flags for header views (closes [#344](https://github.com/kiwifs/kiwifs/issues/344), [#345](https://github.com/kiwifs/kiwifs/issues/345)) ([d5b9b3f](https://github.com/kiwifs/kiwifs/commit/d5b9b3f2d2e56ed78ab36319d95c6cbceb37ba86))
+* **ui:** add configurable slash commands for editor extensions ([#378](https://github.com/kiwifs/kiwifs/issues/378)) ([e230a21](https://github.com/kiwifs/kiwifs/commit/e230a21228f2a58cdd33693c86992feb79f67bb2))
+* **ui:** add configurable slash commands for editor extensions (closes [#351](https://github.com/kiwifs/kiwifs/issues/351)) ([2506a6c](https://github.com/kiwifs/kiwifs/commit/2506a6cc4ac4de4f9d7b2d1630d55022553a649b))
+* **ui:** add custom CSS injection via .kiwi/custom.css ([#357](https://github.com/kiwifs/kiwifs/issues/357)) ([6a7c2b7](https://github.com/kiwifs/kiwifs/commit/6a7c2b7bbf054f279dbc903f6d81011be62e2629))
+* **ui:** add data structure visualizers and utility widget components ([#320](https://github.com/kiwifs/kiwifs/issues/320)) ([f48381a](https://github.com/kiwifs/kiwifs/commit/f48381acd22fc84672c7b3ecccc6ac200f314642))
+* **ui:** add keyboard shortcuts config for custom keybindings ([#358](https://github.com/kiwifs/kiwifs/issues/358)) ([13f8131](https://github.com/kiwifs/kiwifs/commit/13f81312df4a94d5842fd38827c164cf8974907a))
+* **ui:** add link-type filter controls to graph view ([#409](https://github.com/kiwifs/kiwifs/issues/409)) ([75fee2c](https://github.com/kiwifs/kiwifs/commit/75fee2cc7f994dcda0899b564857a0fd910cdd52))
+* **ui:** add per-user preferences API + wire themeLocked (closes [#346](https://github.com/kiwifs/kiwifs/issues/346), [#353](https://github.com/kiwifs/kiwifs/issues/353)) ([ec76b62](https://github.com/kiwifs/kiwifs/commit/ec76b624a0e5b675889c6b2d7ed7fd7e394071f9))
+* **ui:** add sidebar structure config for pinned pages and sections (closes [#350](https://github.com/kiwifs/kiwifs/issues/350)) ([28d9ae6](https://github.com/kiwifs/kiwifs/commit/28d9ae6f97537c87449fccee0bc509aac21198be))
+* **ui:** add startup splash / dashboard page config (closes [#354](https://github.com/kiwifs/kiwifs/issues/354)) ([7749570](https://github.com/kiwifs/kiwifs/commit/7749570d0bada5482a92fc4dfdeb4577ad809f2c))
+* **ui:** add toolbar composition config to show/hide/reorder buttons (closes [#349](https://github.com/kiwifs/kiwifs/issues/349)) ([a2141fd](https://github.com/kiwifs/kiwifs/commit/a2141fd59d48741f1b9e4321dea574f69336a1ea))
+* **ui:** apply workspace theme to published reader pages ([#407](https://github.com/kiwifs/kiwifs/issues/407)) ([f86e293](https://github.com/kiwifs/kiwifs/commit/f86e29372b4956b5c4f1752b89ba5b1717c6ba12))
+* **ui:** complete branding config with document.title and regression tests ([#404](https://github.com/kiwifs/kiwifs/issues/404)) ([d47b82d](https://github.com/kiwifs/kiwifs/commit/d47b82dfd2903e3fd38d3712a6f02b5c6689a2ec))
+* **workspace:** ship ADR init template with workflow and schema ([#406](https://github.com/kiwifs/kiwifs/issues/406)) ([db2e629](https://github.com/kiwifs/kiwifs/commit/db2e62991432de5b9d5fdadc49b16eda2afb47b1))
+* **workspace:** ship prompt library init template and schema (closes [#331](https://github.com/kiwifs/kiwifs/issues/331)) ([b65b058](https://github.com/kiwifs/kiwifs/commit/b65b05878196e35db38ff4de1bc7fcf9bd63d7b4))
+* **workspace:** ship research library init template with reading workflow ([#405](https://github.com/kiwifs/kiwifs/issues/405)) ([2904465](https://github.com/kiwifs/kiwifs/commit/2904465c615ad956de9886354902f5ecc668ca81))
+* **workspace:** ship runbook init template and frontmatter schema ([#418](https://github.com/kiwifs/kiwifs/issues/418)) ([58a51d3](https://github.com/kiwifs/kiwifs/commit/58a51d393f512cf4e9cf7f297357027c50dc7eb7))
+
+
+### Bug Fixes
+
+* **ci:** auto-merge Cursor agent fix ([#360](https://github.com/kiwifs/kiwifs/issues/360)) ([ffae2e1](https://github.com/kiwifs/kiwifs/commit/ffae2e1df7d9ddd1bf1f8724347401af5ca17662))
+* **ci:** auto-merge Cursor agent fix ([#377](https://github.com/kiwifs/kiwifs/issues/377)) ([aee1097](https://github.com/kiwifs/kiwifs/commit/aee1097b663697fb2a0454daff56c2f1ab2a6a1d))
+* **ci:** auto-merge Cursor agent fix ([#393](https://github.com/kiwifs/kiwifs/issues/393)) ([2c59003](https://github.com/kiwifs/kiwifs/commit/2c59003c297f74c0029141d35ec902d93ed9b0ae))
+* **ci:** auto-merge Cursor agent fix ([#395](https://github.com/kiwifs/kiwifs/issues/395)) ([11b1d51](https://github.com/kiwifs/kiwifs/commit/11b1d51859e4ce01c2f09776c1520293958eed77))
+* **ci:** auto-merge Cursor agent fix ([#417](https://github.com/kiwifs/kiwifs/issues/417)) ([ba0de5c](https://github.com/kiwifs/kiwifs/commit/ba0de5cb154a88949e439ce3e01d66d77e3ac8a8))
+* **ci:** unlock spam moderation log before posting tracking comments ([#397](https://github.com/kiwifs/kiwifs/issues/397)) ([769dc1d](https://github.com/kiwifs/kiwifs/commit/769dc1d0fc517ea911be6d48d9029539e6de6aae))
+* CodeRunner header — Run button always visible, remove clutter ([ea6f081](https://github.com/kiwifs/kiwifs/commit/ea6f081e42d4b6fab10a4767aef6de530c2369f8))
+* **demo:** tweak gallery subtitle wording ([#413](https://github.com/kiwifs/kiwifs/issues/413)) ([98c98c0](https://github.com/kiwifs/kiwifs/commit/98c98c0e31e04919dc30e00807774a9ebb2c495f))
+* **dql:** prevent string fallback when comparing temporal values with non-date strings ([#381](https://github.com/kiwifs/kiwifs/issues/381)) ([c84099a](https://github.com/kiwifs/kiwifs/commit/c84099ae3d3107d256bbeb84da22a2b08a8e5332))
+* **links:** clear stale typed links and validate typed field names (closes [#323](https://github.com/kiwifs/kiwifs/issues/323)) ([b656867](https://github.com/kiwifs/kiwifs/commit/b65686799584ccd9a3cdf06d9acb3066d39f2802))
+* **links:** flatten nested arrays in typed link frontmatter extraction ([3ca5c61](https://github.com/kiwifs/kiwifs/commit/3ca5c61da1fd82b63656cdc07a14c5bcb32999cf))
+* move Copy to header, remove pyodide progress text ([33d4aa6](https://github.com/kiwifs/kiwifs/commit/33d4aa60165fdebf5432b4d5f66f40e445612a24))
+* move ShikiCode copy button into header ([ec8e506](https://github.com/kiwifs/kiwifs/commit/ec8e5060f9a1063c139124151b9b2032ce23d235))
+* redesign CodeRunner to match ShikiCode visual style ([#359](https://github.com/kiwifs/kiwifs/issues/359)) ([162703e](https://github.com/kiwifs/kiwifs/commit/162703e3ace1a2e053abe3c2d1e845f025968474))
+* render URL frontmatter values as clickable links ([d235488](https://github.com/kiwifs/kiwifs/commit/d235488c18a161c12696c3614e1b6cfbd67206d4))
+* **spaces:** wire MCP handler into dynamically created spaces ([516c3f7](https://github.com/kiwifs/kiwifs/commit/516c3f7c9116dde350c012463e8949e5f3ee2c90))
+* **test:** skip Elasticsearch integration test when image is not cached ([16b0fb3](https://github.com/kiwifs/kiwifs/commit/16b0fb3943bba162c5782ebcb4ac9c9f20e76482))
+* **toc:** make ON THIS PAGE nav scrollable when content overflows ([#439](https://github.com/kiwifs/kiwifs/issues/439)) ([42deab3](https://github.com/kiwifs/kiwifs/commit/42deab31c070ca9eae367083d410cb6fae47bda0))
+* **toc:** reduce max-height from calc(100vh-6rem) to 60vh ([254385e](https://github.com/kiwifs/kiwifs/commit/254385e4b5073689501742c5b73af037d5acec9a))
+* **ui:** priority-dismiss overlays on Escape for keybindings ([58f567a](https://github.com/kiwifs/kiwifs/commit/58f567ab6a53c12edbad439672f059c464e69039)), closes [#355](https://github.com/kiwifs/kiwifs/issues/355)
+* **ui:** tone down inline #tag badge — use muted colors instead of primary ([#415](https://github.com/kiwifs/kiwifs/issues/415)) ([517b3bc](https://github.com/kiwifs/kiwifs/commit/517b3bc07e471f76a4a8c2eb56c25673743ce7de))
+* **webui:** wire injectBranding and remove unused imports ([02d767f](https://github.com/kiwifs/kiwifs/commit/02d767fa15a3e234e626b0c45022addeb9bca8d4))
+* **workspace:** preserve ADR frontmatter on workflow advance ([#410](https://github.com/kiwifs/kiwifs/issues/410)) ([c4deecd](https://github.com/kiwifs/kiwifs/commit/c4deecde77cf080b649ab9ffac8a9d01d46abeb1)), closes [#328](https://github.com/kiwifs/kiwifs/issues/328)
+
+## [0.19.39](https://github.com/kiwifs/kiwifs/compare/v0.19.38...v0.19.39) (2026-06-15)
+
+
+### Bug Fixes
+
+* **links:** CommonMark-compliant extraction and contradicts normalization ([#318](https://github.com/kiwifs/kiwifs/issues/318)) ([a2405de](https://github.com/kiwifs/kiwifs/commit/a2405def34360450600a12fa731af4b44ff1946e))
+
+## [0.19.38](https://github.com/kiwifs/kiwifs/compare/v0.19.37...v0.19.38) (2026-06-15)
+
+
+### Features
+
+* **memory:** index contradicts frontmatter as backlinks ([#310](https://github.com/kiwifs/kiwifs/issues/310)) ([acc49b0](https://github.com/kiwifs/kiwifs/commit/acc49b0ad30cc0c9baac57d6b6f3f4a4efb3468b))
+
+
+### Bug Fixes
+
+* **serve:** mount MCP Streamable HTTP on main server ([#315](https://github.com/kiwifs/kiwifs/issues/315)) ([95c287f](https://github.com/kiwifs/kiwifs/commit/95c287fb5360d78a4511bf694e04df3a921df19c))
+
+## [0.19.37](https://github.com/kiwifs/kiwifs/compare/v0.19.36...v0.19.37) (2026-06-14)
+
+
+### Bug Fixes
+
+* **links:** skip wikilinks inside indented code blocks ([#309](https://github.com/kiwifs/kiwifs/issues/309)) ([e41a762](https://github.com/kiwifs/kiwifs/commit/e41a762fdb69df0056feab359efebf4f02592506))
+
+## [0.19.36](https://github.com/kiwifs/kiwifs/compare/v0.19.35...v0.19.36) (2026-06-14)
+
+
+### Features
+
+* **api:** add content negotiation to public reader endpoint ([#307](https://github.com/kiwifs/kiwifs/issues/307)) ([d3686da](https://github.com/kiwifs/kiwifs/commit/d3686da8092130bbf2023e855f703b5eec2dbcbc))
+* **memory:** add coverage, freshness, and scope metrics to report ([#304](https://github.com/kiwifs/kiwifs/issues/304)) ([e8237d4](https://github.com/kiwifs/kiwifs/commit/e8237d4041617f7c5b0a86b0e420eedc182efc56)), closes [#258](https://github.com/kiwifs/kiwifs/issues/258)
+
+## [0.19.35](https://github.com/kiwifs/kiwifs/compare/v0.19.34...v0.19.35) (2026-06-13)
+
+
+### Bug Fixes
+
+* **lint:** skip wikilinks inside code blocks and inline code ([#305](https://github.com/kiwifs/kiwifs/issues/305)) ([562047d](https://github.com/kiwifs/kiwifs/commit/562047d2f84e1d1ef534592993a5287337e68376)), closes [#301](https://github.com/kiwifs/kiwifs/issues/301)
+
+## [0.19.34](https://github.com/kiwifs/kiwifs/compare/v0.19.33...v0.19.34) (2026-06-10)
+
+
+### Bug Fixes
+
+* **embed:** recover from panic in tokenizer library on malformed JSON ([#294](https://github.com/kiwifs/kiwifs/issues/294)) ([a7eb050](https://github.com/kiwifs/kiwifs/commit/a7eb0508bd2733fbbdd52e7cf92a382cc33728ef))
+
+## [0.19.33](https://github.com/kiwifs/kiwifs/compare/v0.19.32...v0.19.33) (2026-06-10)
+
+
+### Features
+
+* **search:** complete ONNX embedder acceptance for issue [#102](https://github.com/kiwifs/kiwifs/issues/102) ([#290](https://github.com/kiwifs/kiwifs/issues/290)) ([0ccaf1e](https://github.com/kiwifs/kiwifs/commit/0ccaf1e7fe6f5130ab7b9c54a302ff507770c6ae))
+
+## [0.19.32](https://github.com/kiwifs/kiwifs/compare/v0.19.31...v0.19.32) (2026-06-10)
+
+
+### Bug Fixes
+
+* **ci:** auto-merge Cursor agent fix ([#289](https://github.com/kiwifs/kiwifs/issues/289)) ([f87a286](https://github.com/kiwifs/kiwifs/commit/f87a28695b6a6cd5a8ce470674c6669882b73497))
+
+## [0.19.31](https://github.com/kiwifs/kiwifs/compare/v0.19.30...v0.19.31) (2026-06-10)
+
+
+### Features
+
+* **ui:** add Shiki syntax highlighting to CodeHighlight widget ([1810ebf](https://github.com/kiwifs/kiwifs/commit/1810ebfee66767f3a2f0b8e3469866e33d4bb170))
+
+
+### Bug Fixes
+
+* **ui:** strip wiki link syntax from ToC heading text ([a7ceadf](https://github.com/kiwifs/kiwifs/commit/a7ceadf2b91de027842059cb3d1352e02b5d9eef))
+
+## [0.19.30](https://github.com/kiwifs/kiwifs/compare/v0.19.29...v0.19.30) (2026-06-10)
+
+
+### Features
+
+* **ui:** widget:live playback engine, reusable components, and cache fix ([#287](https://github.com/kiwifs/kiwifs/issues/287)) ([01425e3](https://github.com/kiwifs/kiwifs/commit/01425e3828e005ddffd603110805b9db439c11a9))
+
+
+### Bug Fixes
+
+* **ui:** remove gap between code block header and content ([#285](https://github.com/kiwifs/kiwifs/issues/285)) ([1750db6](https://github.com/kiwifs/kiwifs/commit/1750db6481dc4aa90e1e4c7ba8fb7d5967c7bd24))
+
+## [0.19.29](https://github.com/kiwifs/kiwifs/compare/v0.19.28...v0.19.29) (2026-06-10)
+
+
+### Features
+
+* **ui:** add widget system for embedding React components in markdown ([#281](https://github.com/kiwifs/kiwifs/issues/281)) ([195d481](https://github.com/kiwifs/kiwifs/commit/195d481aed06f44fac9cfbf6f0d01c6940ee0b90))
+* **ui:** add widget:live (react-live) and playback engine ([#284](https://github.com/kiwifs/kiwifs/issues/284)) ([539f25a](https://github.com/kiwifs/kiwifs/commit/539f25aaa57ef6ca6c490c5fdd0cfbbf390df69c))
+
+## [0.19.28](https://github.com/kiwifs/kiwifs/compare/v0.19.27...v0.19.28) (2026-06-09)
+
+
+### Bug Fixes
+
+* **ui:** allow folder collapse toggle in KiwiTree ([#280](https://github.com/kiwifs/kiwifs/issues/280)) ([ccb7bb4](https://github.com/kiwifs/kiwifs/commit/ccb7bb4018fea4f2fec6e5a941f76c65dea1dde1))
+
+## [0.19.27](https://github.com/kiwifs/kiwifs/compare/v0.19.26...v0.19.27) (2026-06-09)
+
+
+### Bug Fixes
+
+* **exporter:** handle code blocks, deep nav hierarchy, and anchors in MkDocs export ([#278](https://github.com/kiwifs/kiwifs/issues/278)) ([d2162f8](https://github.com/kiwifs/kiwifs/commit/d2162f886eca77130a6dc1275ea5325af8d03798))
+
+## [0.19.26](https://github.com/kiwifs/kiwifs/compare/v0.19.25...v0.19.26) (2026-06-09)
+
+
+### Features
+
+* **exporter:** add MkDocs static site project export ([#275](https://github.com/kiwifs/kiwifs/issues/275)) ([ae83920](https://github.com/kiwifs/kiwifs/commit/ae839203f476b4717f75441e0a888e1d81abf881))
+
+
+### Bug Fixes
+
+* **api:** handle copied public page title suffixes ([#276](https://github.com/kiwifs/kiwifs/issues/276)) ([d6d0d9b](https://github.com/kiwifs/kiwifs/commit/d6d0d9b8de239880e5296e703d52ed3471143d7f))
+
+## [0.19.25](https://github.com/kiwifs/kiwifs/compare/v0.19.24...v0.19.25) (2026-06-06)
+
+
+### Features
+
+* **search:** add scope filter to search APIs ([#271](https://github.com/kiwifs/kiwifs/issues/271)) ([b92f982](https://github.com/kiwifs/kiwifs/commit/b92f982a164521678d50af3549ddf0dd9ec34c01))
+
+## [0.19.24](https://github.com/kiwifs/kiwifs/compare/v0.19.23...v0.19.24) (2026-06-06)
+
+
+### Bug Fixes
+
+* **importer:** make ExtractKeywords deterministic for single-doc corpus ([#267](https://github.com/kiwifs/kiwifs/issues/267)) ([2f649fa](https://github.com/kiwifs/kiwifs/commit/2f649fa29471839e11fa1842ceaeb71a11058d86))
+
+## [0.19.23](https://github.com/kiwifs/kiwifs/compare/v0.19.22...v0.19.23) (2026-06-06)
+
+
+### Bug Fixes
+
+* **janitor:** TTL overflow, malformed date warnings, error count, root validation, search case ([#268](https://github.com/kiwifs/kiwifs/issues/268)) ([b5fb62a](https://github.com/kiwifs/kiwifs/commit/b5fb62abcbb68953c138f50a92a816a5f933ab7a))
+
+## [0.19.22](https://github.com/kiwifs/kiwifs/compare/v0.19.21...v0.19.22) (2026-06-06)
+
+
+### Features
+
+* **import:** rewrite Confluence export page links to wiki paths ([#249](https://github.com/kiwifs/kiwifs/issues/249)) ([b7459b1](https://github.com/kiwifs/kiwifs/commit/b7459b11aecf4afde20303c81f5134ed2ca2c25a))
+* **memory:** add memory_status frontmatter indexing and search filtering ([#261](https://github.com/kiwifs/kiwifs/issues/261)) ([1f346f1](https://github.com/kiwifs/kiwifs/commit/1f346f1f44960c6b2a3506f24207309cf94c8640))
+
+## [0.19.21](https://github.com/kiwifs/kiwifs/compare/v0.19.20...v0.19.21) (2026-06-05)
+
+
+### Bug Fixes
+
+* **import:** schema path, wizard routing, binary attachments, img tags, panel macro ([#247](https://github.com/kiwifs/kiwifs/issues/247)) ([b88f123](https://github.com/kiwifs/kiwifs/commit/b88f123823fd6205d77e666b5178f692fa3923ea))
+
+## [0.19.20](https://github.com/kiwifs/kiwifs/compare/v0.19.19...v0.19.20) (2026-06-05)
+
+
+### Features
+
+* **import:** save inferred schema to .kiwi/schemas ([#236](https://github.com/kiwifs/kiwifs/issues/236)) ([c62b221](https://github.com/kiwifs/kiwifs/commit/c62b221170aa811073044d74c3f6ff84ad3a30f5))
+
+## [0.19.19](https://github.com/kiwifs/kiwifs/compare/v0.19.18...v0.19.19) (2026-06-05)
+
+
+### Bug Fixes
+
+* **update:** handle platform-suffixed binary names + add test coverage ([#244](https://github.com/kiwifs/kiwifs/issues/244)) ([cbd7203](https://github.com/kiwifs/kiwifs/commit/cbd720300740a81247bf6c650e05f84ef5a73fe3))
+
+## [0.19.18](https://github.com/kiwifs/kiwifs/compare/v0.19.17...v0.19.18) (2026-06-05)
+
+
+### Bug Fixes
+
+* **update:** match actual asset names and extract binary from archive ([#242](https://github.com/kiwifs/kiwifs/issues/242)) ([abbedf9](https://github.com/kiwifs/kiwifs/commit/abbedf9a4485e1afc33211650b933493553c75f6))
+
+## [0.19.17](https://github.com/kiwifs/kiwifs/compare/v0.19.16...v0.19.17) (2026-06-04)
+
+
+### Bug Fixes
+
+* **import:** use native JSON types for schema inference ([#233](https://github.com/kiwifs/kiwifs/issues/233)) ([8a2aaec](https://github.com/kiwifs/kiwifs/commit/8a2aaecedfbba85c9cb2f0bb0172e268c611c3d9))
+
+## [0.19.16](https://github.com/kiwifs/kiwifs/compare/v0.19.15...v0.19.16) (2026-06-04)
+
+
+### Features
+
+* **kanban:** show blocked-by dependencies on workflow board ([#230](https://github.com/kiwifs/kiwifs/issues/230)) ([ebda43e](https://github.com/kiwifs/kiwifs/commit/ebda43e1a267e81e0e5fda88e9251892b29866e8))
+* **mcp:** add kiwi_task_create and kiwi_task_progress tools ([#225](https://github.com/kiwifs/kiwifs/issues/225)) ([7c6f896](https://github.com/kiwifs/kiwifs/commit/7c6f8964876ce5c1e0f4ace7efb925e1c3f47d9d))
+* **workspace:** ship default tasks workflow and task template ([#224](https://github.com/kiwifs/kiwifs/issues/224)) ([55f27ce](https://github.com/kiwifs/kiwifs/commit/55f27ce8157369f50702a9baa1c906cb284b756d))
+
+
+### Bug Fixes
+
+* **mcp:** correct appendTaskProgress slice indexing that duplicated content ([#228](https://github.com/kiwifs/kiwifs/issues/228)) ([cca26bf](https://github.com/kiwifs/kiwifs/commit/cca26bf1e94cc7ffe5d1165f9bb9ae618141a88f))
+
+## [0.19.15](https://github.com/kiwifs/kiwifs/compare/v0.19.14...v0.19.15) (2026-06-04)
+
+
+### Features
+
+* **rules:** add Cursor team-wiki skill export format ([#222](https://github.com/kiwifs/kiwifs/issues/222)) ([80c8e50](https://github.com/kiwifs/kiwifs/commit/80c8e50f3640bf2d6869aa436dce5fd07dd54ada))
+
 ## [0.19.14](https://github.com/kiwifs/kiwifs/compare/v0.19.13...v0.19.14) (2026-06-03)
 
 

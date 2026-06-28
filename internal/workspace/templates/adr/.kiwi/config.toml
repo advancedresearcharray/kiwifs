@@ -1,0 +1,32 @@
+[server]
+port = 3333
+# Bind localhost until auth is configured; change to 0.0.0.0 only with auth enabled.
+host = "127.0.0.1"
+
+[storage]
+root = "."
+
+[search]
+engine = "sqlite"
+
+[versioning]
+strategy = "git"
+
+[lint]
+require_frontmatter = true
+
+[links]
+typed_fields = ["supersedes", "superseded_by", "contradicts"]
+
+[format_hooks.auto_sequence]
+directory = "decisions/"
+field = "adr_number"
+
+# ADR workspaces may record sensitive architecture decisions.
+# Enable authentication before exposing this workspace over REST, NFS, S3, or WebDAV.
+[auth]
+type = "none"
+# type = "apikey"
+# api_key = "${KIWI_API_KEY}"
+# type = "perspace"  # per-space API keys (recommended for multi-tenant)
+# type = "oidc"      # SSO for team access

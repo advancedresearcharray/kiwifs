@@ -1,62 +1,55 @@
-# Schema — Runbook
+# Schema — Runbooks
 
-_Template version: 2.0_
+_Template version: 3.0 (UC-6)_
 
-Operational knowledge for on-call and platform teams.
+Operational runbooks in the DevHelm 7-section format. Frontmatter is validated
+by `.kiwi/schemas/runbook.json`. Blank runbooks start from
+`.kiwi/templates/runbook.md`.
 
 ## Directory Structure
 
-    incidents/           One file per incident, from template
-    procedures/          Reusable operational procedures
-    postmortems/         Post-incident reviews (blameless)
-    index.md             Table of contents and severity guide
-    SCHEMA.md            This file — structure and conventions
+    example-high-cpu.md   Reference runbook with all seven sections
+    index.md              Table of contents and severity guide
+    SCHEMA.md             This file — structure and conventions
+    .kiwi/
+      schemas/runbook.json    Runbook frontmatter validation
+      templates/runbook.md    Blank 7-section runbook template
+      config.toml             Workspace defaults (execution staleness, links)
+
+## Runbook Body Sections
+
+Every runbook file with `type: runbook` should include these sections (see
+`example-high-cpu.md` and `.kiwi/templates/runbook.md`):
+
+1. **Trigger / When to Use** — alerts, thresholds, or symptoms
+2. **Diagnosis** — commands in fenced code blocks with expected output
+3. **Mitigation** — ordered, idempotent steps (safe to re-run)
+4. **Verification** — concrete success criteria and check commands
+5. **Rollback** — how to undo mitigation if it worsens the incident
+6. **RTO and Data Loss Expectations** — recovery targets in a table
+7. **Escalation Path** — who to page and when
 
 ## Frontmatter Fields
 
-Every `.md` file should have YAML frontmatter. Required fields marked *.
+Every runbook should have YAML frontmatter. Required fields marked *.
+Validated by `.kiwi/schemas/runbook.json`.
 
-### Incidents (`incidents/*.md`)
-
-| Field              | Type       | Required | Values / Notes                              |
-|--------------------|------------|----------|---------------------------------------------|
-| title              | string     | *        | Short incident description                  |
-| date               | date       | *        | ISO 8601 date of the incident               |
-| severity           | string     | *        | `P1` · `P2` · `P3` · `P4`                  |
-| status             | string     | *        | `active` · `mitigated` · `resolved`         |
-| on-call            | string     |          | On-call person who responded                |
-| related-alert      | string     |          | Alert name or ID that triggered this        |
-| detection-minutes  | integer    |          | Minutes from incident start to detection    |
-| mitigation-minutes | integer    |          | Minutes from detection to mitigation        |
-| resolution-minutes | integer    |          | Minutes from detection to full resolution   |
-| users-affected     | string     |          | Count or percentage of users impacted       |
-| error-budget-impact| string     |          | SLO/error budget consumed (e.g., "15% of monthly") |
-| tags               | string[]   |          | Service and area tags                       |
-| postmortem         | string     |          | Path to linked postmortem                   |
-
-### Procedures (`procedures/*.md`)
-
-| Field           | Type       | Required | Values / Notes                              |
-|-----------------|------------|----------|---------------------------------------------|
-| title           | string     | *        | Procedure name                              |
-| tags            | string[]   |          | Service and area tags                       |
-| status          | string     |          | `active` · `draft` · `deprecated`           |
-| last-reviewed   | date       |          | ISO 8601 date of last review                |
-| last-tested     | date       |          | ISO 8601 date of last game day / drill      |
-| test-cadence    | string     |          | How often to test: `monthly` · `quarterly` · `per-incident` |
-| estimated-time  | string     |          | How long this procedure typically takes     |
-
-### Postmortems (`postmortems/*.md`)
-
-| Field           | Type       | Required | Values / Notes                              |
-|-----------------|------------|----------|---------------------------------------------|
-| title           | string     | *        | Postmortem title                            |
-| date            | date       | *        | Date of the postmortem                      |
-| incident        | string     |          | Path to linked incident                     |
-| severity        | string     |          | Incident severity for cross-referencing     |
-| authors         | string[]   |          | Who wrote this postmortem                   |
-| duration-minutes| integer    |          | Total incident duration                     |
-| tags            | string[]   |          | Service and area tags                       |
+| Field                 | Type       | Required | Values / Notes                              |
+|-----------------------|------------|----------|---------------------------------------------|
+| type                  | string     | *        | Always `runbook`                            |
+| title                 | string     | *        | Human-readable runbook title                |
+| trigger               | string     | *        | Alert or condition that invokes this runbook |
+| severity              | string     | *        | `P1` · `P2` · `P3` · `P4`                  |
+| owner                 | string     | *        | Team or on-call rotation responsible        |
+| services              | string[]   | *        | Affected services (wiki-link strings)       |
+| status                | string     |          | `draft` · `active` · `deprecated`           |
+| tags                  | string[]   |          | Topic tags for search and DQL               |
+| last_executed         | date       |          | ISO 8601 date of last drill or live run      |
+| last_outcome          | string     |          | `success` · `failure` · `partial`           |
+| execution_count       | integer    |          | Number of times executed                    |
+| avg_resolution_time   | string     |          | Typical mitigation duration (e.g. `20m`)    |
+| reviewed              | date       |          | Last accuracy review                        |
+| next-review           | date       |          | Scheduled next review                       |
 
 ## Severity Levels
 
@@ -67,39 +60,28 @@ Every `.md` file should have YAML frontmatter. Required fields marked *.
 | **P3** | Minor feature broken, workaround exists | < 4 hours | During business hours |
 | **P4** | Cosmetic or low-impact | Next business day | No escalation |
 
-## Escalation Matrix
+## Execution Staleness
 
-Define your team's escalation paths in `escalation-matrix.md`:
+When `[janitor.execution_staleness]` is configured in `.kiwi/config.toml`,
+runbooks with `last_executed` older than `max_age_days` or `last_outcome:
+failure` are flagged by `kiwifs check` and `kiwifs janitor`.
 
-| Severity | Primary | Secondary | Executive |
-|----------|---------|-----------|-----------|
-| P1 | On-call engineer | Team lead → Engineering Manager | VP Engineering |
-| P2 | On-call engineer | Team lead | Engineering Manager (if > 1hr) |
-| P3 | Assigned engineer | Team lead (if > 4hr) | — |
-| P4 | Backlog | — | — |
+After every live run or game day:
 
-## Game Days
-
-Procedures should be tested regularly via game days (chaos engineering drills):
-
-- Every procedure should have a `last-tested` date
-- P1/P2 procedures: test quarterly at minimum
-- P3/P4 procedures: test semi-annually
-- After any incident where a procedure failed, test the fixed version within 2 weeks
-
-## Operations
-
-See `.kiwi/playbook.md` for MCP tool sequences.
+1. Append execution notes to the runbook body (or use `POST /api/kiwi/file/append`)
+2. Update `last_executed`, `last_outcome`, and increment `execution_count`
 
 ## Conventions
 
-- Every incident gets a file `incidents/YYYY-MM-DD-<slug>.md` copied from
-  `incidents/template.md`.
-- Every procedure lives in `procedures/` and is linkable from
-  on-call playbooks via `[[procedure-name]]`.
-- Postmortems are **blameless** — focus on systems, not individuals.
-- Postmortems live in `postmortems/` and link back to the incident.
-- Procedures include exact commands with expected output — no vague descriptions.
-- Every incident should have a linked postmortem, even if brief.
-- Runbooks should be tested during game days and reviewed after incidents.
-- Action items in postmortems have a named person (not team), a deadline, and a ticket.
+- One runbook per file; name files by symptom or alert (e.g. `high-cpu.md`).
+- Commands must be copy-pasteable in fenced code blocks with expected output.
+- Mitigation steps are **ordered and idempotent** — agents can re-run safely.
+- Link affected services in `services` using wiki-link syntax: `"[[api-service]]"`.
+- Query runbooks by service:
+  ```
+  TABLE title, severity, last_outcome FROM "." WHERE type = "runbook" AND services CONTAINS "[[api-service]]"
+  ```
+
+## Operations
+
+See `.kiwi/playbook.md` for MCP tool sequences during incidents.

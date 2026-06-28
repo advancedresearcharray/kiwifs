@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kiwifs/kiwifs/internal/links"
 )
 
 type Config struct {
@@ -28,9 +29,11 @@ type Config struct {
 	Schema     SchemaConfig     `toml:"schema"`
 	Lint       LintConfig       `toml:"lint"`
 	Workflow   WorkflowConfig   `toml:"workflow"`
+	Sequences  SequencesConfig  `toml:"sequences"`
 	Drafts     DraftsConfig     `toml:"drafts"`
 	Audit      AuditConfig      `toml:"audit"`
 	Import     ImportConfig     `toml:"import"`
+	Links      LinksConfig      `toml:"links"`
 	// Space holds per-space settings (visibility, etc.) loaded from
 	// the space's own .kiwi/config.toml [space] section.
 	Space SpaceSettingsConfig `toml:"space"`
@@ -41,11 +44,42 @@ type Config struct {
 	// WebhookEntries from [[webhooks_entries]] — config-driven
 	// webhooks that are auto-registered on startup (B.5).
 	WebhookEntries []WebhookEntryConfig `toml:"webhook_entries"`
+	// ValidateWriteRules from [[validate_write]] — config-driven write
+	// guards keyed on existing file frontmatter (append-only, immutable ADRs).
+	ValidateWriteRules []ValidateWriteRuleConfig `toml:"validate_write"`
+	// FormatHooks from [format_hooks.*] — pipeline FormatWrite extensions.
+	FormatHooks FormatHooksConfig `toml:"format_hooks"`
+}
+
+// FormatHooksConfig groups optional FormatWrite hooks declared in config.toml.
+type FormatHooksConfig struct {
+	AutoSequence AutoSequenceConfig `toml:"auto_sequence"`
+}
+
+// AutoSequenceConfig auto-assigns the next numeric frontmatter field value
+// for files written under directory when the field is absent.
+type AutoSequenceConfig struct {
+	Directory string `toml:"directory"`
+	Field     string `toml:"field"`
 }
 
 // B.3 — Audit log config.
 type AuditConfig struct {
 	Enabled bool `toml:"enabled"` // default false
+}
+
+// LinksConfig controls typed frontmatter fields indexed as wiki links.
+type LinksConfig struct {
+	TypedFields []string `toml:"typed_fields"`
+}
+
+// TypedLinkFields returns configured typed-link frontmatter fields.
+// When unset, defaults to contradicts plus ADR supersession fields.
+func (l LinksConfig) TypedLinkFields() []string {
+	if len(l.TypedFields) > 0 {
+		return links.SanitizeTypedLinkFields(l.TypedFields)
+	}
+	return links.DefaultTypedLinkFields()
 }
 
 // ImportConfig controls the data import subsystem — Airbyte integration,
@@ -78,6 +112,22 @@ type ImportConfig struct {
 // IsPreferAirbyte returns true unless explicitly set to false.
 func (c ImportConfig) IsPreferAirbyte() bool {
 	return c.PreferAirbyte == nil || *c.PreferAirbyte
+}
+
+// ValidateWriteMatchConfig selects files by a frontmatter field value.
+type ValidateWriteMatchConfig struct {
+	Frontmatter string   `toml:"frontmatter"`
+	Value       string   `toml:"value"`
+	Values      []string `toml:"values"`
+}
+
+// ValidateWriteRuleConfig is one [[validate_write]] stanza. Rules apply only
+// when the existing file's frontmatter matches; new files are unaffected.
+type ValidateWriteRuleConfig struct {
+	Name    string                   `toml:"name"`
+	Match   ValidateWriteMatchConfig `toml:"match"`
+	Reject  string                   `toml:"reject"` // overwrite | body_change
+	Message string                   `toml:"message"`
 }
 
 // B.5 — Config-driven webhook entry (statically declared in config.toml).
@@ -123,6 +173,10 @@ type WorkflowConfig struct {
 	EnforceTransitions bool                `toml:"enforce_transitions"`
 }
 
+type SequencesConfig struct {
+	Directories []string `toml:"directories"`
+}
+
 type DraftsConfig struct {
 	Enabled     bool   `toml:"enabled"`
 	MaxActive   int    `toml:"max_active"`
@@ -130,9 +184,38 @@ type DraftsConfig struct {
 }
 
 type JanitorConfig struct {
-	Interval    string `toml:"interval"`
-	StaleDays   int    `toml:"stale_days"`
-	StartupScan bool   `toml:"startup_scan"`
+	Interval           string                     `toml:"interval"`
+	StaleDays          int                        `toml:"stale_days"`
+	StartupScan        bool                       `toml:"startup_scan"`
+	ExecutionStaleness ExecutionStalenessConfig   `toml:"execution_staleness"`
+}
+
+// ExecutionStalenessConfig flags runbooks (or other directory-scoped pages) when
+// execution metadata goes stale. Opt-in: leave directory empty to disable.
+//
+// Example (.kiwi/config.toml):
+//
+//	[janitor.execution_staleness]
+//	directory = "runbooks/"
+//	date_field = "last_executed"   # default when omitted
+//	max_age_days = 90              # defaults to [janitor].stale_days when 0
+//
+//	[janitor.execution_staleness.flag_values]
+//	last_outcome = "failure"       # flag regardless of age when field matches
+//
+// Surfaces as execution-stale warnings in kiwifs check, kiwifs janitor, the
+// scheduled background janitor, and GET /api/kiwi/janitor. Works alongside
+// generic review staleness (reviewed / next-review) without replacing it.
+type ExecutionStalenessConfig struct {
+	Directory  string            `toml:"directory"`
+	DateField  string            `toml:"date_field"`
+	MaxAgeDays int               `toml:"max_age_days"`
+	FlagValues map[string]string `toml:"flag_values"`
+}
+
+// Enabled reports whether the execution staleness rule is configured.
+func (c ExecutionStalenessConfig) Enabled() bool {
+	return strings.TrimSpace(c.Directory) != ""
 }
 
 type DataviewConfig struct {
@@ -181,9 +264,145 @@ func (b BackupConfig) IsRebaseBeforePush() bool {
 	return b.RebaseBeforePush == nil || *b.RebaseBeforePush
 }
 
+// ToolbarConfig controls which built-in header view buttons appear and in what order.
+// Example:
+//
+//	[ui.toolbar]
+//	views = ["graph", "kanban", "bases"]
+type ToolbarConfig struct {
+	Views []string `toml:"views"`
+}
+
 // UIConfig controls frontend behaviour. Toggled via [ui] in config.toml.
 type UIConfig struct {
-	ThemeLocked bool `toml:"theme_locked"`
+	ThemeLocked     bool              `toml:"theme_locked"`
+	CustomCSS       string            `toml:"custom_css"`       // relative path, default .kiwi/custom.css
+	KeybindingsFile string            `toml:"keybindings_file"` // relative path, default .kiwi/keybindings.json
+	Keybindings     map[string]string `toml:"keybindings"`      // inline [ui.keybindings] overrides
+	// StartPage controls the first-load landing view when no deep link is present.
+	// "welcome" (default) | "recent" | "dashboard" | a file path such as "index.md".
+	StartPage string           `toml:"start_page"`
+	Sidebar   UISidebarConfig `toml:"sidebar"`
+	Branding  BrandingConfig  `toml:"branding"`
+	Features  UIFeaturesConfig `toml:"features"`
+	Toolbar   ToolbarConfig   `toml:"toolbar"`
+	Editor    UIEditorConfig  `toml:"editor"`
+}
+
+// UIEditorConfig holds editor customization (slash commands, etc.).
+type UIEditorConfig struct {
+	SlashCommands []SlashCommandConfig `toml:"slash_commands"`
+}
+
+// SlashCommandConfig is one [[ui.editor.slash_commands]] entry.
+type SlashCommandConfig struct {
+	ID          string `toml:"id"`
+	Label       string `toml:"label"`
+	Icon        string `toml:"icon"`
+	Description string `toml:"description"`
+	Template    string `toml:"template"` // workspace-relative markdown path
+}
+
+// BrandingConfig controls white-label app name, logo, favicon, and welcome copy.
+type BrandingConfig struct {
+	Name           string `toml:"name"`
+	LogoURL        string `toml:"logo_url"`
+	FaviconURL     string `toml:"favicon_url"`
+	WelcomeTitle   string `toml:"welcome_title"`
+	WelcomeMessage string `toml:"welcome_message"`
+}
+
+const (
+	DefaultBrandingName           = "KiwiFS"
+	DefaultBrandingLogoURL        = "/kiwifs.png"
+	DefaultBrandingFaviconURL     = "/favicon.svg"
+	DefaultBrandingWelcomeTitle   = "Welcome to KiwiFS"
+	DefaultBrandingWelcomeMessage = "Your knowledge base is ready. Get started by creating a page or exploring existing content."
+)
+
+func (b BrandingConfig) ResolvedName() string {
+	if b.Name != "" {
+		return b.Name
+	}
+	return DefaultBrandingName
+}
+
+func (b BrandingConfig) ResolvedLogoURL() string {
+	if b.LogoURL != "" {
+		return ResolveBrandingAssetURL(b.LogoURL)
+	}
+	return DefaultBrandingLogoURL
+}
+
+func (b BrandingConfig) ResolvedFaviconURL() string {
+	if b.FaviconURL != "" {
+		return ResolveBrandingAssetURL(b.FaviconURL)
+	}
+	return DefaultBrandingFaviconURL
+}
+
+func (b BrandingConfig) ResolvedWelcomeTitle() string {
+	if b.WelcomeTitle != "" {
+		return b.WelcomeTitle
+	}
+	return DefaultBrandingWelcomeTitle
+}
+
+func (b BrandingConfig) ResolvedWelcomeMessage() string {
+	if b.WelcomeMessage != "" {
+		return b.WelcomeMessage
+	}
+	return DefaultBrandingWelcomeMessage
+}
+
+func (b BrandingConfig) HasCustomLogo() bool {
+	return b.LogoURL != ""
+}
+
+// ResolveBrandingAssetURL maps workspace-relative paths to /raw/ URLs.
+func ResolveBrandingAssetURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+		return u
+	}
+	return "/raw/" + strings.TrimPrefix(u, "./")
+}
+
+// UISidebarConfig controls workspace sidebar layout: pinned pages, hidden
+// paths, and custom section groupings declared in [ui.sidebar].
+type UISidebarConfig struct {
+	Pinned   []string                 `toml:"pinned"`
+	Hidden   []string                 `toml:"hidden"`
+	Sections []UISidebarSectionConfig `toml:"sections"`
+}
+
+// UISidebarSectionConfig is one [[ui.sidebar.sections]] entry grouping tree
+// paths under a labeled sidebar section.
+type UISidebarSectionConfig struct {
+	Label string   `toml:"label"`
+	Paths []string `toml:"paths"`
+}
+
+// ResolvedSections returns sidebar sections with non-empty labels.
+func (s UISidebarConfig) ResolvedSections() []UISidebarSectionConfig {
+	out := make([]UISidebarSectionConfig, 0, len(s.Sections))
+	for _, sec := range s.Sections {
+		if strings.TrimSpace(sec.Label) == "" {
+			continue
+		}
+		out = append(out, sec)
+	}
+	return out
+}
+
+// ResolvedStartPage returns the normalized start page mode. Empty config defaults to "welcome".
+func (u UIConfig) ResolvedStartPage() string {
+	if s := strings.TrimSpace(u.StartPage); s != "" {
+		return s
+	}
+	return "welcome"
 }
 
 // AssetsConfig controls binary upload limits and MIME allowlist. Zero values
@@ -255,6 +474,7 @@ type VectorConfig struct {
 
 type EmbedderConfig struct {
 	Provider   string            `toml:"provider"` // openai | ollama | http | cohere | voyage | bedrock | vertex | onnx
+	Type       string            `toml:"type"`     // alias for provider (issue #102 used type = "onnx")
 	Model      string            `toml:"model"`
 	APIKey     string            `toml:"api_key"` // ${ENV} expansion supported
 	BaseURL    string            `toml:"base_url"`
@@ -284,6 +504,15 @@ type EmbedderConfig struct {
 	Project         string `toml:"project"`          // GCP project id
 	Location        string `toml:"location"`         // e.g. "us-central1"
 	CredentialsFile string `toml:"credentials_file"` // path to service account JSON (optional; falls back to ADC)
+}
+
+// ResolvedProvider returns the embedder backend name, using Type as an alias
+// when Provider is unset (issue #102: type = "onnx").
+func (c EmbedderConfig) ResolvedProvider() string {
+	if c.Provider != "" {
+		return c.Provider
+	}
+	return c.Type
 }
 
 type VectorStoreConfig struct {
@@ -351,7 +580,14 @@ func Load(root string) (*Config, error) {
 	}
 	expandAllEnv(&cfg)
 	applyBackupEnv(&cfg)
+	normalizeConfig(&cfg)
 	return &cfg, nil
+}
+
+func normalizeConfig(cfg *Config) {
+	if resolved := cfg.Search.Vector.Embedder.ResolvedProvider(); resolved != "" {
+		cfg.Search.Vector.Embedder.Provider = resolved
+	}
 }
 
 // ResolvedPublicURL returns the public URL for building permalinks.

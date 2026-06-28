@@ -92,8 +92,9 @@ type Pipeline struct {
 
 	// ValidateWrite, when set, is called before writing content. If it
 	// returns a non-nil error, the write is rejected. Used for schema
-	// validation of frontmatter against JSON Schema definitions.
-	ValidateWrite func(path string, content []byte) error
+	// validation of frontmatter against JSON Schema definitions and
+	// config-driven validate_write rules.
+	ValidateWrite func(ctx context.Context, path string, content []byte, kind WriteKind) error
 
 	// writeMu serialises the whole Store.Write → Versioner.Commit sequence
 	// across concurrent Write / BulkWrite / Delete / Observe* callers.
@@ -126,6 +127,10 @@ type Pipeline struct {
 	// Versioner.Commit; the index catches up within the batch window
 	// (~200ms). Set via pipeline.New options or injected by bootstrap.
 	AsyncIdx *AsyncIndexer
+
+	// SequenceDirs lists path prefixes that receive monotonic seq markers on append.
+	SequenceDirs []string
+	seqStore     *sequenceStore
 }
 
 // Result is returned from Write so callers can set ETag headers, log, etc.
@@ -145,6 +150,19 @@ var ErrTransitionDenied = fmt.Errorf("transition denied")
 // ErrValidationFailed is returned when content fails schema validation.
 // Mapped to HTTP 422 by the REST handler.
 var ErrValidationFailed = fmt.Errorf("validation failed")
+
+// ErrWriteRejected is returned when a config-driven validate_write rule
+// blocks the operation. Mapped to HTTP 409 by the REST handler.
+var ErrWriteRejected = fmt.Errorf("write rejected")
+
+// WriteKind distinguishes full replace writes from appends for validate_write
+// rules (e.g. append-only files allow append but reject overwrite).
+type WriteKind int
+
+const (
+	WriteKindPut WriteKind = iota
+	WriteKindAppend
+)
 
 // WriteOpts carries the optional knobs that don't fit Write's hot signature.
 // Today only IfMatch is set; new fields go here so callers don't churn.
@@ -209,6 +227,7 @@ func New(
 		Vectors:        vectors,
 		Root:           root,
 		uncommittedLog: ulog,
+		seqStore:       newSequenceStore(root),
 	}
 }
 
@@ -518,6 +537,9 @@ func (p *Pipeline) WriteStream(ctx context.Context, path string, body io.Reader,
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	if err := p.rejectAppendOnlyOverwrite(ctx, path); err != nil {
+		return Result{}, err
+	}
 	p.markInflight(path)
 	if content != nil {
 		if err := p.Store.Write(ctx, path, content); err != nil {
@@ -589,6 +611,9 @@ func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byt
 	// If-Match: * means "match any existing representation" per RFC 7232 §3.1.
 	// We skip the ETag comparison — the precondition succeeds as long as the
 	// resource exists. For new files (create), * is a no-op.
+	if err := p.rejectAppendOnlyOverwrite(ctx, path); err != nil {
+		return Result{}, err
+	}
 	var oldStatus string
 	if p.OnTransition != nil || p.ValidateTransition != nil {
 		if old, err := p.Store.Read(ctx, path); err == nil {
@@ -609,8 +634,8 @@ func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byt
 	}
 
 	if p.ValidateWrite != nil {
-		if err := p.ValidateWrite(path, content); err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrValidationFailed, err)
+		if err := p.ValidateWrite(ctx, path, content, WriteKindPut); err != nil {
+			return Result{}, wrapValidateWriteErr(err)
 		}
 	}
 	// Mark before the disk write so the fsnotify event fires while the
@@ -700,6 +725,16 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 	}
 	actor = coalesce(actor)
 
+	if p.seqStore != nil && len(p.SequenceDirs) > 0 {
+		if key := sequenceDirKey(path, p.SequenceDirs); key != "" {
+			seq, err := p.seqStore.next(key)
+			if err != nil {
+				return Result{}, fmt.Errorf("sequence counter: %w", err)
+			}
+			content = injectSequenceMarker(content, seq)
+		}
+	}
+
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
 
@@ -730,8 +765,8 @@ func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor s
 	}
 
 	if p.ValidateWrite != nil {
-		if err := p.ValidateWrite(path, newContent); err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrValidationFailed, err)
+		if err := p.ValidateWrite(ctx, path, newContent, WriteKindAppend); err != nil {
+			return Result{}, wrapValidateWriteErr(err)
 		}
 	}
 
@@ -777,14 +812,17 @@ func (p *Pipeline) BulkWrite(ctx context.Context, files []struct {
 	}
 	if p.ValidateWrite != nil {
 		for i, f := range files {
-			if err := p.ValidateWrite(f.Path, f.Content); err != nil {
-				return nil, fmt.Errorf("%w: files[%d] (%s): %v", ErrValidationFailed, i, f.Path, err)
+			if err := p.ValidateWrite(ctx, f.Path, f.Content, WriteKindPut); err != nil {
+				return nil, fmt.Errorf("files[%d] (%s): %w", i, f.Path, wrapValidateWriteErr(err))
 			}
 		}
 	}
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := p.rejectAppendOnlyBulkOverwrite(ctx, files); err != nil {
 		return nil, err
 	}
 	type preImage struct {

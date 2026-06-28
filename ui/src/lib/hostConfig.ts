@@ -3,7 +3,10 @@
  *
  * Set before boot:
  *   window.__KIWIFS_CONFIG__ = {
- *     toolbarActions: [{ id: "my-tool", icon: "Wand2", label: "My tool" }],
+ *     toolbar: {
+ *       builtins: ["graph", "kanban"],
+ *       actions: [{ id: "my-tool", icon: "Wand2", label: "My tool" }],
+ *     },
  *     pageActions: [{ id: "watch", icon: "Eye", activeIcon: "EyeOff", label: "Watch", activeLabel: "Unwatch" }],
  *   };
  *
@@ -58,10 +61,39 @@ export type KiwiPageActionState = {
   disabled?: boolean;
 };
 
+export type KiwiToolbarConfig = {
+  /** Built-in view button ids to show, in order (e.g. "graph", "kanban"). */
+  builtins?: string[];
+  /** Host-injected toolbar buttons rendered after built-ins. */
+  actions?: KiwiToolbarAction[];
+};
+
+export type KiwiDemoViewId =
+  | "graph"
+  | "kanban"
+  | "bases"
+  | "timeline"
+  | "canvas"
+  | "whiteboard"
+  | "data";
+
+export type KiwiDemoConfig = {
+  /** Template slug shown in the gallery, e.g. "adr". */
+  slug: string;
+  /** Page to open on load. */
+  initialPath?: string;
+  /** Full-screen view to open on load (toolbar views). */
+  initialView?: KiwiDemoViewId;
+};
+
 export type KiwiHostConfig = {
   allowedOrigins?: string[];
+  toolbar?: KiwiToolbarConfig;
+  /** @deprecated Use toolbar.actions */
   toolbarActions?: KiwiToolbarAction[];
   pageActions?: KiwiPageAction[];
+  /** Static demo gallery mode — disables /page/* URL rewriting. */
+  demo?: KiwiDemoConfig;
 };
 
 export const KIWI_TOOLBAR_ACTION_EVENT = "kiwifs-toolbar-action";
@@ -82,7 +114,12 @@ export function getHostConfig(): KiwiHostConfig {
 }
 
 export function getToolbarActions(): KiwiToolbarAction[] {
-  return getHostConfig().toolbarActions ?? [];
+  const cfg = getHostConfig();
+  return cfg.toolbar?.actions ?? cfg.toolbarActions ?? [];
+}
+
+export function getToolbarBuiltinViews(): string[] | undefined {
+  return getHostConfig().toolbar?.builtins;
 }
 
 export function getPageActions(): KiwiPageAction[] {

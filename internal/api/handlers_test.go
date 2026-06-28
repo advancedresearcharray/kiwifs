@@ -48,6 +48,41 @@ func TestMetaEndpoint(t *testing.T) {
 	}
 }
 
+func TestSearchAndMetaScopeFilter(t *testing.T) {
+	s, _ := buildSQLiteTestServer(t)
+
+	mustPutFile(t, s, "alice.md", "---\nscope: user:alice\n---\n# Alice\n\nzebrabyte shared note\n")
+	mustPutFile(t, s, "bob.md", "---\nscope: user:bob\n---\n# Bob\n\nzebrabyte shared note\n")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/search?q=zebrabyte&scope=user%3Aalice", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("search with scope: %d %s", rec.Code, rec.Body.String())
+	}
+	var searchResp searchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &searchResp); err != nil {
+		t.Fatalf("unmarshal search response: %v", err)
+	}
+	if len(searchResp.Results) != 1 || searchResp.Results[0].Path != "alice.md" {
+		t.Fatalf("scoped search results = %+v, want alice.md only", searchResp.Results)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/kiwi/meta?scope=user%3Aalice", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("meta with scope: %d %s", rec.Code, rec.Body.String())
+	}
+	var metaResp metaResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &metaResp); err != nil {
+		t.Fatalf("unmarshal meta response: %v", err)
+	}
+	if len(metaResp.Results) != 1 || metaResp.Results[0].Path != "alice.md" {
+		t.Fatalf("scoped meta results = %+v, want alice.md only", metaResp.Results)
+	}
+}
+
 // TestWriteFileWithProvenance puts a file with X-Provenance and verifies
 // (a) the returned file has `derived-from` in its frontmatter and (b) the
 // /meta endpoint can find it by run id.
@@ -762,6 +797,34 @@ func TestResolveLinksEndpoint(t *testing.T) {
 			t.Fatalf("expected unchanged content, got: %s", out.Content)
 		}
 	})
+}
+
+func TestPublishedPageAcceptsCopiedTitleSuffix(t *testing.T) {
+	s := buildTestServer(t)
+	mustPutFile(t, s, "docs/report.md", "---\npublished: true\ntitle: Quarterly Report\n---\n# Quarterly Report\n")
+	mustPutFile(t, s, "docs/runbook.markdown", "---\npublished: true\ntitle: Service Runbook\n---\n# Service Runbook\n")
+
+	for _, tc := range []struct {
+		name     string
+		target   string
+		expected string
+	}{
+		{name: "exact markdown path", target: "/p/docs/report.md", expected: "Quarterly Report"},
+		{name: "markdown path with copied title suffix", target: "/p/docs/report.md%20Quarterly%20Report", expected: "Quarterly Report"},
+		{name: "markdown extension path with copied title suffix", target: "/p/docs/runbook.markdown%20Service%20Runbook", expected: "Service Runbook"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			rec := httptest.NewRecorder()
+			s.echo.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s: %d %s", tc.target, rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.expected) {
+				t.Fatalf("GET %s missing page content %q", tc.target, tc.expected)
+			}
+		})
+	}
 }
 
 func TestReadFileResolveLinks(t *testing.T) {

@@ -71,6 +71,10 @@ func WithProtocolHealth(probes []ProtocolHealthProbe) ServerOption {
 	return func(s *Server) { s.protocolHealth = probes }
 }
 
+func WithMCPHandler(handler http.Handler) ServerOption {
+	return func(s *Server) { s.mcpHandler = handler }
+}
+
 func (s *Server) SetBackupStatus(fn func() any) {
 	s.backupStatusFn = fn
 	if s.handlers != nil {
@@ -83,6 +87,14 @@ func (s *Server) SetProtocolHealth(probes []ProtocolHealthProbe) {
 	if s.handlers != nil {
 		s.handlers.protocolHealth = probes
 	}
+}
+
+func (s *Server) SetMCPHandler(handler http.Handler) {
+	if handler == nil || s.mcpHandler != nil {
+		return
+	}
+	s.mcpHandler = handler
+	s.echo.Any("/mcp", echo.WrapHandler(handler))
 }
 
 type ProtocolHealthProbe struct {
@@ -129,6 +141,7 @@ type Server struct {
 	backupStatusFn func() any
 	protocolHealth []ProtocolHealthProbe
 	handlers       *Handlers
+	mcpHandler     http.Handler
 
 	janitorSched  *janitor.Scheduler
 	janitorCancel context.CancelFunc
@@ -492,8 +505,12 @@ func (s *Server) setupRoutes() {
 	api.GET("/changes", h.Changes)
 	api.GET("/tree", h.Tree)
 	api.GET("/file", h.ReadFile)
+	api.GET("/local-note", h.ReadLocalNote)
+	api.GET("/local-state", h.GetLocalState)
+	api.PUT("/local-state", h.PutLocalState)
 	api.GET("/readlink", h.Readlink)
 	api.PUT("/file", h.WriteFile)
+	api.PATCH("/file", h.PatchFile)
 	api.PATCH("/file/frontmatter", h.PatchFrontmatter)
 	api.PATCH("/tree/order", h.PatchTreeOrder)
 	api.DELETE("/file", h.DeleteFile)
@@ -526,7 +543,13 @@ func (s *Server) setupRoutes() {
 	api.PATCH("/comments/:id", h.ResolveComment)
 	api.GET("/theme", h.GetTheme)
 	api.PUT("/theme", h.PutTheme)
+	api.GET("/editor/slash-commands", h.GetEditorSlashCommands)
+	api.GET("/custom.css", h.GetCustomCSS)
+	api.GET("/keybindings", h.GetKeybindings)
+	api.GET("/preferences", h.GetPreferences)
+	api.PUT("/preferences", h.PutPreferences)
 	api.GET("/ui-config", h.UIConfig)
+	api.GET("/recent-pages", h.RecentPages)
 	api.GET("/janitor", h.Janitor)
 	api.GET("/memory/report", h.MemoryReport)
 	api.GET("/query", h.Query)
@@ -536,6 +559,7 @@ func (s *Server) setupRoutes() {
 	api.POST("/import/upload", h.ImportUpload)
 	api.POST("/import/browse", h.ImportBrowse)
 	api.POST("/import/preview", h.ImportPreview)
+	api.POST("/import/infer-fields", h.ImportInferFields)
 	api.GET("/import/connections", h.ListConnections)
 	api.POST("/import/connections", h.SaveConnection)
 	api.DELETE("/import/connections/:id", h.DeleteConnection)
@@ -662,6 +686,11 @@ func (s *Server) setupRoutes() {
 
 	s.echo.GET("/raw/*", h.ServeRawFile)
 
+	if s.mcpHandler != nil {
+		s.echo.Any("/mcp", echo.WrapHandler(s.mcpHandler))
+	}
+
+	webui.SetBranding(s.cfg.UI.Branding)
 	uiHandler := webui.Handler()
 	s.echo.GET("/", uiHandler)
 	s.echo.GET("/*", uiHandler)

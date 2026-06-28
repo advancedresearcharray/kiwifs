@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/pipeline"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -401,11 +403,86 @@ func TestToolHandlerWrite(t *testing.T) {
 	}
 }
 
+func TestToolHandlerWrite_RejectsAppendOnlyOverwrite(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+
+	initial := "---\nappend_only: true\n---\nentry\n"
+	if _, err := b.WriteFile(context.Background(), "events/log.md", initial, "test", ""); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := b.WriteFile(context.Background(), "events/log.md", "replaced\n", "test", "")
+	if !errors.Is(err, pipeline.ErrAppendOnly) {
+		t.Fatalf("overwrite: got %v, want ErrAppendOnly", err)
+	}
+
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "kiwi_write"
+	req.Params.Arguments = map[string]any{
+		"path":    "events/log.md",
+		"content": "replaced via tool\n",
+	}
+	result, herr := handleWrite(b)(context.Background(), req)
+	if herr != nil {
+		t.Fatalf("kiwi_write handler: %v", herr)
+	}
+	if !result.IsError {
+		t.Fatalf("expected tool error, got success: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "append-only") {
+		t.Fatalf("expected append-only error, got: %s", text)
+	}
+}
+
 func TestToolHandlerSearch(t *testing.T) {
 	b, _ := setupTestBackend(t)
 	defer b.Close()
 
 	mustCallTool(t, handleSearch(b), "kiwi_search", map[string]any{"query": "knowledge"})
+}
+
+func TestToolHandlerSearchRejectsInvalidRecencyWeight(t *testing.T) {
+	b, _ := setupTestBackend(t)
+	defer b.Close()
+
+	result, err := handleSearch(b)(context.Background(), callToolReq("kiwi_search", map[string]any{
+		"query":          "knowledge",
+		"recency_weight": 1.5,
+	}))
+	if err != nil {
+		t.Fatalf("kiwi_search: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected error result, got %+v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "recency_weight must be between 0.0 and 1.0") {
+		t.Fatalf("unexpected error text: %s", text)
+	}
+}
+
+func TestToolHandlerSearchScope(t *testing.T) {
+	b, tmp := setupTestBackend(t)
+	defer b.Close()
+
+	if err := os.WriteFile(filepath.Join(tmp, "alice.md"), []byte("---\nscope: user:alice\n---\n# Alice\n\nzebrabyte shared note\n"), 0o644); err != nil {
+		t.Fatalf("write alice fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "bob.md"), []byte("---\nscope: user:bob\n---\n# Bob\n\nzebrabyte shared note\n"), 0o644); err != nil {
+		t.Fatalf("write bob fixture: %v", err)
+	}
+
+	text := mustCallTool(t, handleSearch(b), "kiwi_search", map[string]any{
+		"query": "zebrabyte",
+		"scope": "user:alice",
+	})
+	if !strings.Contains(text, "alice.md") {
+		t.Fatalf("scoped search missing alice.md: %s", text)
+	}
+	if strings.Contains(text, "bob.md") {
+		t.Fatalf("scoped search included bob.md: %s", text)
+	}
 }
 
 func TestToolHandlerDelete(t *testing.T) {
@@ -568,6 +645,65 @@ func TestRemoteSpacePrefixing(t *testing.T) {
 	rb2.Search(context.Background(), "test", 10, 0, "")
 	if !strings.HasPrefix(gotPath, "/api/kiwi/search") {
 		t.Errorf("path = %q, want prefix /api/kiwi/search", gotPath)
+	}
+}
+
+func TestRemoteSearchWithRecencyAddsParam(t *testing.T) {
+	var gotRecency string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRecency = r.URL.Query().Get("recency_weight")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	rb := NewRemoteBackend(srv.URL, "", "default")
+	if _, err := rb.SearchWithRecency(context.Background(), "test", 10, 0, "", 0.3); err != nil {
+		t.Fatalf("SearchWithRecency: %v", err)
+	}
+	if gotRecency != "0.3" {
+		t.Fatalf("recency_weight query = %q, want 0.3", gotRecency)
+	}
+}
+
+func TestRemoteSearchScopedAddsScopeParam(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	rb := NewRemoteBackend(srv.URL, "", "default")
+	if _, err := rb.SearchScoped(context.Background(), "auth", 10, 0, "docs/", "user:alice"); err != nil {
+		t.Fatalf("SearchScoped: %v", err)
+	}
+	if !strings.Contains(gotQuery, "scope=user%3Aalice") {
+		t.Fatalf("query %q missing scope", gotQuery)
+	}
+	if !strings.Contains(gotQuery, "pathPrefix=docs%2F") {
+		t.Fatalf("query %q missing pathPrefix", gotQuery)
+	}
+}
+
+func TestRemoteSearchSemanticScopedAddsScope(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	rb := NewRemoteBackend(srv.URL, "", "default")
+	if _, err := rb.SearchSemanticScoped(context.Background(), "auth", 5, "user:alice"); err != nil {
+		t.Fatalf("SearchSemanticScoped: %v", err)
+	}
+	if got["scope"] != "user:alice" {
+		t.Fatalf("semantic request scope = %v, want user:alice", got["scope"])
 	}
 }
 
@@ -880,8 +1016,14 @@ episode_id: mcp-ep-1
 
 	h := handleMemoryReport(b)
 	out := mustCallTool(t, h, "kiwi_memory_report", map[string]any{})
-	if want := "Unmerged (no merged-from): 1"; !strings.Contains(out, want) {
-		t.Fatalf("want %q in:\n%s", want, out)
+	for _, want := range []string{
+		"Unmerged (no merged-from): 1",
+		"coverage:",
+		"avg age (active pages):",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("want %q in:\n%s", want, out)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(epDir, "run-2.md"), []byte(`---
 memory_kind: episodic

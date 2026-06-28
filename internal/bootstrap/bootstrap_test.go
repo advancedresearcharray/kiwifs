@@ -1,12 +1,16 @@
 package bootstrap
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kiwifs/kiwifs/internal/config"
+	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/versioning"
 )
 
@@ -121,6 +125,80 @@ func TestBuildWithSQLiteSearchWiresLinker(t *testing.T) {
 	if stack.Linker == nil {
 		t.Fatal("Linker is nil — SQLite searcher should satisfy links.Linker")
 	}
+}
+
+// Auto-sequence FormatWrite must wire through Build when sqlite search and
+// [format_hooks.auto_sequence] are configured.
+func TestBuildWiresAutoSequenceFormatHook(t *testing.T) {
+	dir := t.TempDir()
+	cfg := newCfg("none", "sqlite")
+	cfg.FormatHooks.AutoSequence.Directory = "decisions/"
+	cfg.FormatHooks.AutoSequence.Field = "adr_number"
+	asyncOff := false
+	cfg.Search.AsyncIndex = &asyncOff
+
+	stack, err := Build("default", dir, cfg)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer stack.Close()
+
+	if stack.Pipeline.FormatWrite == nil {
+		t.Fatal("FormatWrite is nil with auto_sequence configured")
+	}
+
+	ctx := context.Background()
+	if _, err := stack.Pipeline.Write(ctx, "decisions/seed.md", []byte("---\nadr_number: 2\n---\n# Seed\n"), "tester"); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+	if _, err := stack.Pipeline.Write(ctx, "decisions/next.md", []byte("---\ntitle: Next\n---\n# Next\n"), "tester"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	onDisk, err := stack.Store.Read(ctx, "decisions/next.md")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	fm, err := markdown.Frontmatter(onDisk)
+	if err != nil {
+		t.Fatalf("frontmatter: %v", err)
+	}
+	if fm["adr_number"] != 3 {
+		t.Fatalf("adr_number = %v, want 3", fm["adr_number"])
+	}
+}
+
+// [sequences] directories must wire through Build so Append injects markers.
+func TestBuildWiresSequenceDirsOnAppend(t *testing.T) {
+	dir := t.TempDir()
+	cfg := newCfg("none", "sqlite")
+	cfg.Sequences.Directories = []string{"events/"}
+	asyncOff := false
+	cfg.Search.AsyncIndex = &asyncOff
+
+	stack, err := Build("default", dir, cfg)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer stack.Close()
+
+	ctx := context.Background()
+	if _, err := stack.Pipeline.Append(ctx, "events/log.md", "first", "\n", "tester"); err != nil {
+		t.Fatalf("append 1: %v", err)
+	}
+	if _, err := stack.Pipeline.Append(ctx, "events/log.md", "second", "\n", "tester"); err != nil {
+		t.Fatalf("append 2: %v", err)
+	}
+	body, err := stack.Store.Read(ctx, "events/log.md")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !containsSeq(body, 1) || !containsSeq(body, 2) {
+		t.Fatalf("missing seq markers: %q", string(body))
+	}
+}
+
+func containsSeq(body []byte, n int64) bool {
+	return strings.Contains(string(body), fmt.Sprintf("<!-- seq:%d -->", n))
 }
 
 // Close must be idempotent-safe for callers that defer it and then

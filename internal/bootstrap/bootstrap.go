@@ -67,6 +67,8 @@ type Stack struct {
 	DraftMgr            *draft.Manager
 	AuditLogger         *api.AuditLogger // B.3
 	claimCancel         context.CancelFunc
+	resyncCancel        context.CancelFunc
+	resyncDone          chan struct{}
 }
 
 func Build(name, root string, cfg *config.Config) (*Stack, error) {
@@ -103,6 +105,7 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 
 	hub := events.NewHub()
 	pipe := pipeline.New(store, ver, searcher, linker, hub, vectors, root)
+	pipe.SequenceDirs = cfg.Sequences.Directories
 
 	asyncIdxEnabled := cfg.Search.AsyncIndex == nil || *cfg.Search.AsyncIndex
 	if asyncIdxEnabled && cfg.Search.Engine != "grep" {
@@ -199,20 +202,34 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 	}
 
 	// Auto-format markdown on write (enabled by default).
+	var formatHooks []func(path string, content []byte) []byte
 	if cfg.Lint.IsAutoFormat() {
-		pipe.FormatWrite = func(path string, content []byte) []byte {
+		formatHooks = append(formatHooks, func(path string, content []byte) []byte {
 			if !strings.HasSuffix(strings.ToLower(path), ".md") {
 				return content
 			}
 			return markdown.Format(content)
-		}
+		})
 		log.Printf("%smarkdown auto-format enabled", prefix)
+	}
+	if cfg.FormatHooks.AutoSequence.Directory != "" && cfg.FormatHooks.AutoSequence.Field != "" {
+		if mq, ok := searcher.(pipeline.MetaMaxQuerier); ok {
+			seq := pipeline.NewAutoSequencer(cfg.FormatHooks.AutoSequence, mq)
+			formatHooks = append(formatHooks, seq.FormatWrite)
+			log.Printf("%sauto-sequence hook enabled (%s → %s)", prefix,
+				cfg.FormatHooks.AutoSequence.Directory, cfg.FormatHooks.AutoSequence.Field)
+		} else {
+			log.Printf("%sauto-sequence hook disabled (sqlite search required)", prefix)
+		}
+	}
+	if pipe.FormatWrite = pipeline.ChainFormatWrite(formatHooks...); pipe.FormatWrite != nil {
+		// logged above per hook
 	}
 
 	var schemaReload func()
 	if cfg.Schema.Enforce {
 		sv := schema.NewValidator(root)
-		pipe.ValidateWrite = func(path string, content []byte) error {
+		pipe.ValidateWrite = func(ctx context.Context, path string, content []byte, _ pipeline.WriteKind) error {
 			fm, ferr := markdown.Frontmatter(content)
 			if ferr != nil || fm == nil {
 				return nil
@@ -226,14 +243,29 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		log.Printf("%sschema validation enabled", prefix)
 	}
 
+	if len(cfg.ValidateWriteRules) > 0 {
+		wv := pipeline.NewWriteRuleValidator(pipe.Store, cfg.ValidateWriteRules)
+		existingValidate := pipe.ValidateWrite
+		pipe.ValidateWrite = func(ctx context.Context, path string, content []byte, kind pipeline.WriteKind) error {
+			if err := wv.Validate(ctx, path, content, kind); err != nil {
+				return err
+			}
+			if existingValidate != nil {
+				return existingValidate(ctx, path, content, kind)
+			}
+			return nil
+		}
+		log.Printf("%svalidate_write rules enabled (%d)", prefix, len(cfg.ValidateWriteRules))
+	}
+
 	// Extend ValidateWrite to reject markdown with error-severity lint
 	// issues (runs after auto-format has cleaned cosmetic issues).
 	if cfg.Lint.IsRejectErrors() {
 		existingValidate := pipe.ValidateWrite
-		pipe.ValidateWrite = func(path string, content []byte) error {
+		pipe.ValidateWrite = func(ctx context.Context, path string, content []byte, kind pipeline.WriteKind) error {
 			// Run existing schema validation first.
 			if existingValidate != nil {
-				if err := existingValidate(path, content); err != nil {
+				if err := existingValidate(ctx, path, content, kind); err != nil {
 					return err
 				}
 			}
@@ -395,7 +427,7 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		if staleDays <= 0 {
 			staleDays = janitor.DefaultStaleDays
 		}
-		scanner := janitor.New(root, store, searcher, staleDays)
+		scanner := janitor.New(root, store, searcher, staleDays, janitorExecutionOpts(cfg)...)
 		opts := janitor.ScheduleOptions{
 			Interval:    iv,
 			Jitter:      60 * time.Second,
@@ -431,13 +463,19 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 	pipe.DrainUncommitted(context.Background())
 
 	if rs, ok := searcher.(search.Resyncer); ok {
+		resyncCtx, resyncCancel := context.WithCancel(context.Background())
+		stack.resyncCancel = resyncCancel
+		stack.resyncDone = make(chan struct{})
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer close(stack.resyncDone)
+			ctx, cancel := context.WithTimeout(resyncCtx, 10*time.Minute)
 			defer cancel()
 			start := time.Now()
 			added, removed, rerr := rs.Resync(ctx)
 			if rerr != nil {
-				log.Printf("%ssearch: resync failed: %v", prefix, rerr)
+				if ctx.Err() == nil {
+					log.Printf("%ssearch: resync failed: %v", prefix, rerr)
+				}
 				return
 			}
 			if added == 0 && removed == 0 {
@@ -473,6 +511,12 @@ func (s *Stack) Close() error {
 		if err := s.ClaimStore.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
+	}
+	if s.resyncCancel != nil {
+		s.resyncCancel()
+	}
+	if s.resyncDone != nil {
+		<-s.resyncDone
 	}
 	// Flush async indexer before closing the searcher it writes to.
 	if s.Pipeline != nil && s.Pipeline.AsyncIdx != nil {
@@ -539,7 +583,7 @@ func buildVersioner(prefix, root string, cfg *config.Config) versioning.Versione
 func buildSearcher(prefix, root string, store storage.Storage, cfg *config.Config) search.Searcher {
 	switch cfg.Search.Engine {
 	case "sqlite", "fts5":
-		sq, err := search.NewSQLite(root, store, cfg.Dataview.CustomFields)
+		sq, err := search.NewSQLiteWithTypedFields(root, store, cfg.Links.TypedLinkFields(), cfg.Dataview.CustomFields)
 		if err != nil {
 			log.Printf("%ssqlite search unavailable (%v) — falling back to grep", prefix, err)
 			return search.NewGrep(root)
@@ -617,4 +661,12 @@ func generateBootstrapSecret() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func janitorExecutionOpts(cfg *config.Config) []janitor.Option {
+	if cfg == nil || !cfg.Janitor.ExecutionStaleness.Enabled() {
+		return nil
+	}
+	es := cfg.Janitor.ExecutionStaleness
+	return janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
 }

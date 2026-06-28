@@ -23,7 +23,11 @@ function parseHeadings(md: string): Heading[] {
     if (!m) continue;
     const depth = m[1].length;
     if (depth < 2 || depth > 4) continue; // h1 is the page title; skip h5/h6
-    const text = m[2].replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").trim();
+    const text = m[2]
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]/g, (_m, slug, label) =>
+        label || slug.split("/").pop()!.replace(/-/g, " "))
+      .trim();
     const id = slugger.slug(text);
     if (!id) continue;
     out.push({ id, text, depth });
@@ -99,7 +103,7 @@ export function KiwiToC({ markdown, containerRef }: Props) {
           </Button>
         </div>
         {!collapsed && (
-          <nav className="border-l border-border">
+          <nav className="border-l border-border max-h-[60vh] overflow-y-auto overscroll-contain">
             {headings.map((h) => (
               <a
                 key={h.id}

@@ -9,30 +9,8 @@ type Props = {
   highlightLines?: Set<number>;
 };
 
-function CopyButton({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-
-  function handleCopy() {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="absolute top-2 right-2 p-1.5 rounded-md bg-background/80 border border-border text-muted-foreground hover:text-foreground transition-opacity opacity-0 group-hover:opacity-100"
-      aria-label="Copy code"
-    >
-      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-    </button>
-  );
-}
-
 /** Apply line highlighting by wrapping lines in spans with a highlight class. */
 function applyLineHighlights(html: string, highlightLines: Set<number>): string {
-  // Shiki outputs <pre><code>...lines...</code></pre>
-  // We wrap each line in a span for highlighting
   return html.replace(
     /(<code[^>]*>)([\s\S]*?)(<\/code>)/,
     (_match, openCode, content, closeCode) => {
@@ -56,7 +34,6 @@ function applyDiffStyles(html: string): string {
     (_match, openCode, content, closeCode) => {
       const lines = content.split("\n");
       const wrapped = lines.map((line: string) => {
-        // Strip HTML to check leading character
         const plainStart = line.replace(/<[^>]*>/g, "").trimStart();
         if (plainStart.startsWith("+")) {
           return `<span class="kiwi-diff-add">${line}</span>`;
@@ -86,6 +63,27 @@ function formatLangLabel(lang: string): string {
   return labels[lang.toLowerCase()] || lang;
 }
 
+function CopyIcon({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="inline-flex items-center text-muted-foreground/50 hover:text-foreground transition-colors"
+      aria-label="Copy code"
+      title="Copy"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
 export function ShikiCode({ code, lang, title, highlightLines }: Props) {
   const [html, setHtml] = useState<string | null>(null);
   const isDark =
@@ -102,11 +100,9 @@ export function ShikiCode({ code, lang, title, highlightLines }: Props) {
           lang,
           theme: isDark ? "github-dark" : "github-light",
         });
-        // Apply diff styling for diff blocks
         if (lang === "diff") {
           rendered = applyDiffStyles(rendered);
         }
-        // Apply line highlights if specified
         if (highlightLines && highlightLines.size > 0) {
           rendered = applyLineHighlights(rendered, highlightLines);
         }
@@ -121,33 +117,35 @@ export function ShikiCode({ code, lang, title, highlightLines }: Props) {
   }, [code, lang, isDark, highlightLines]);
 
   const langLabel = lang ? formatLangLabel(lang) : undefined;
-  const headerBar = (title || langLabel) ? (
+
+  const headerEl = (
     <div className="kiwi-code-header">
-      {title && <span className="kiwi-code-title">{title}</span>}
-      {langLabel && !title && <span className="kiwi-code-lang">{langLabel}</span>}
-      {title && langLabel && <span className="kiwi-code-lang">{langLabel}</span>}
+      <div>
+        {title && <span className="kiwi-code-title">{title}</span>}
+        {langLabel && !title && <span className="kiwi-code-lang">{langLabel}</span>}
+        {title && langLabel && <span className="kiwi-code-lang ml-2">{langLabel}</span>}
+      </div>
+      <CopyIcon code={code} />
     </div>
-  ) : null;
+  );
 
   if (html) {
     return (
-      <div className="relative group">
-        {headerBar}
+      <div className="kiwi-shiki my-4 text-sm rounded-lg overflow-hidden">
+        {headerEl}
         <div
-          className={`kiwi-shiki my-4 text-sm rounded-md overflow-hidden [&>pre]:p-4 [&>pre]:overflow-x-auto${headerBar ? " kiwi-shiki-with-header" : ""}`}
+          className="[&>pre]:p-4 [&>pre]:overflow-x-auto"
           dangerouslySetInnerHTML={{ __html: html }}
         />
-        <CopyButton code={code} />
       </div>
     );
   }
   return (
-    <div className="relative group">
-      {headerBar}
-      <pre>
+    <div className="kiwi-shiki my-4 text-sm rounded-lg overflow-hidden">
+      {headerEl}
+      <pre className="p-4 overflow-x-auto">
         <code>{code}</code>
       </pre>
-      <CopyButton code={code} />
     </div>
   );
 }

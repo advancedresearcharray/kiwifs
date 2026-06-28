@@ -45,6 +45,9 @@ episode_id: ep-api-1
 	if len(rep.Unmerged) != 1 || rep.Unmerged[0].EpisodeID != "ep-api-1" {
 		t.Fatalf("unmerged: %+v", rep.Unmerged)
 	}
+	if rep.CoveragePct != 0 {
+		t.Fatalf("coverage_pct want 0 got %v", rep.CoveragePct)
+	}
 
 	// Semantic page cites the episode
 	mustPutFile(t, s, "concepts/c.md", `---
@@ -67,6 +70,41 @@ merged-from:
 	}
 	if len(rep.Unmerged) != 0 {
 		t.Fatalf("want 0 unmerged after merge ref, got %+v", rep.Unmerged)
+	}
+	if rep.CoveragePct != 100 {
+		t.Fatalf("coverage_pct want 100 got %v", rep.CoveragePct)
+	}
+}
+
+func TestMemoryReportContradictions(t *testing.T) {
+	s, _ := buildSQLiteTestServer(t)
+
+	mustPutFile(t, s, "pages/a.md", `---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A
+`)
+	mustPutFile(t, s, "pages/b.md", `---
+memory_kind: semantic
+memory_status: contested
+---
+# B
+`)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/memory/report", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /memory/report: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var rep memory.Report
+	if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if rep.Contradictions != 2 {
+		t.Fatalf("contradictions want 2 got %d", rep.Contradictions)
 	}
 }
 

@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/kiwifs/kiwifs/internal/links"
 	"github.com/kiwifs/kiwifs/internal/storage"
 	_ "modernc.org/sqlite"
 )
@@ -58,6 +60,44 @@ func TestIndexMetaStoresFrontmatter(t *testing.T) {
 	tags, ok := parsed["tags"].([]any)
 	if !ok || len(tags) != 2 || tags[0] != "alpha" || tags[1] != "beta" {
 		t.Fatalf("tags mismatch: %+v", parsed["tags"])
+	}
+}
+
+func TestIndexMetaExtractsTemplateParameters(t *testing.T) {
+	s := newTestSQLite(t)
+	content := []byte(`---
+title: Prompt
+---
+Use {{language}} to translate {{text}}.
+
+` + "```" + `
+{{ignored}}
+` + "```" + `
+`)
+	if err := s.IndexMeta(ctxBG, "prompts/translate.md", content); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+	var fm string
+	if err := s.readDB.QueryRow(`SELECT frontmatter FROM file_meta WHERE path = ?`, "prompts/translate.md").Scan(&fm); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(fm), &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	params, ok := parsed["parameters"].([]any)
+	if !ok || len(params) != 2 {
+		t.Fatalf("parameters: %+v", parsed["parameters"])
+	}
+	if params[0] != "language" || params[1] != "text" {
+		t.Fatalf("params order: %+v", params)
+	}
+	results, err := s.QueryMeta(ctxBG, []MetaFilter{{Field: "$.parameters", Op: "LIKE", Value: "%language%"}}, "", "", 0, 0)
+	if err != nil {
+		t.Fatalf("QueryMeta: %v", err)
+	}
+	if len(results) != 1 || results[0].Path != "prompts/translate.md" {
+		t.Fatalf("QueryMeta results: %+v", results)
 	}
 }
 
@@ -190,6 +230,41 @@ func TestQueryMeta(t *testing.T) {
 	}
 	if _, err := s.QueryMeta(ctxBG, []MetaFilter{{Field: "$.status", Op: "DROP", Value: "x"}}, "", "", 0, 0); err == nil {
 		t.Fatalf("expected error for invalid op")
+	}
+}
+
+func TestMaxFrontmatterIntInDirectory(t *testing.T) {
+	s := newTestSQLite(t)
+	ctx := ctxBG
+
+	if err := s.IndexMeta(ctx, "decisions/one.md", []byte("---\nadr_number: 3\n---\n# One\n")); err != nil {
+		t.Fatalf("IndexMeta one: %v", err)
+	}
+	if err := s.IndexMeta(ctx, "decisions/two.md", []byte("---\nadr_number: 7\n---\n# Two\n")); err != nil {
+		t.Fatalf("IndexMeta two: %v", err)
+	}
+	if err := s.IndexMeta(ctx, "notes/other.md", []byte("---\nadr_number: 99\n---\n# Other\n")); err != nil {
+		t.Fatalf("IndexMeta other: %v", err)
+	}
+
+	max, err := s.MaxFrontmatterIntInDirectory(ctx, "decisions/", "adr_number")
+	if err != nil {
+		t.Fatalf("MaxFrontmatterIntInDirectory: %v", err)
+	}
+	if max != 7 {
+		t.Fatalf("max = %d, want 7", max)
+	}
+
+	empty, err := s.MaxFrontmatterIntInDirectory(ctx, "missing/", "adr_number")
+	if err != nil {
+		t.Fatalf("empty dir: %v", err)
+	}
+	if empty != 0 {
+		t.Fatalf("empty max = %d, want 0", empty)
+	}
+
+	if _, err := s.MaxFrontmatterIntInDirectory(ctx, "decisions/", "adr_number; DROP TABLE"); err == nil {
+		t.Fatalf("expected error for invalid field")
 	}
 }
 
@@ -601,5 +676,825 @@ func TestBuildFTS5Query_PrefixWildcard(t *testing.T) {
 	}
 	if q != "kube*" {
 		t.Fatalf("prefix wildcard should pass through: got %q", q)
+	}
+}
+
+func TestSearch_ExcludesSupersededMemoryStatus(t *testing.T) {
+	s := newTestSQLite(t)
+
+	active := []byte(`---
+title: Active note
+memory_status: active
+---
+# Memory
+
+zebrabyte active memory page content here.
+`)
+	superseded := []byte(`---
+title: Old note
+memory_status: superseded
+---
+# Memory
+
+zebrabyte superseded memory page content here.
+`)
+	for path, content := range map[string][]byte{"pages/active.md": active, "pages/old.md": superseded} {
+		if err := s.Index(ctxBG, path, content); err != nil {
+			t.Fatalf("index %s: %v", path, err)
+		}
+		if err := s.IndexMeta(ctxBG, path, content); err != nil {
+			t.Fatalf("index meta %s: %v", path, err)
+		}
+	}
+
+	defaultResults, err := s.Search(ctxBG, "zebrabyte", 10, 0, "")
+	if err != nil {
+		t.Fatalf("search default: %v", err)
+	}
+	if len(defaultResults) != 1 || defaultResults[0].Path != "pages/active.md" {
+		t.Fatalf("default search should exclude superseded, got %+v", defaultResults)
+	}
+
+	allResults, err := s.SearchWithOptions(ctxBG, "zebrabyte", 10, 0, "", SearchOptions{IncludeSuperseded: true})
+	if err != nil {
+		t.Fatalf("search include superseded: %v", err)
+	}
+	if len(allResults) != 2 {
+		t.Fatalf("include_superseded search want 2 results, got %+v", allResults)
+	}
+}
+
+func TestSearchWithOptions_FiltersScope(t *testing.T) {
+	s := newTestSQLite(t)
+
+	files := map[string][]byte{
+		"alice/one.md": []byte("---\nscope: user:alice\n---\n# Alpha\n\nzebrabyte shared note\n"),
+		"bob/one.md":   []byte("---\nscope: user:bob\n---\n# Beta\n\nzebrabyte shared note\n"),
+		"plain.md":     []byte("# Plain\n\nzebrabyte shared note\n"),
+	}
+	for path, content := range files {
+		if err := s.Index(ctxBG, path, content); err != nil {
+			t.Fatalf("index %s: %v", path, err)
+		}
+		if err := s.IndexMeta(ctxBG, path, content); err != nil {
+			t.Fatalf("index meta %s: %v", path, err)
+		}
+	}
+
+	results, err := s.SearchWithOptions(ctxBG, "zebrabyte", 10, 0, "", SearchOptions{Scope: "user:alice"})
+	if err != nil {
+		t.Fatalf("scoped search: %v", err)
+	}
+	if len(results) != 1 || results[0].Path != "alice/one.md" {
+		t.Fatalf("scoped search got %+v, want alice/one.md only", results)
+	}
+
+	allResults, err := s.Search(ctxBG, "zebrabyte", 10, 0, "")
+	if err != nil {
+		t.Fatalf("unscoped search: %v", err)
+	}
+	if len(allResults) != 3 {
+		t.Fatalf("unscoped search should keep all matches, got %+v", allResults)
+	}
+}
+
+func TestFilterByScopePreservesInputOrder(t *testing.T) {
+	s := newTestSQLite(t)
+
+	files := map[string][]byte{
+		"a.md": []byte("---\nscope: user:alice\n---\n# A\n"),
+		"b.md": []byte("---\nscope: user:bob\n---\n# B\n"),
+		"c.md": []byte("---\nscope: user:alice\n---\n# C\n"),
+	}
+	for path, content := range files {
+		if err := s.IndexMeta(ctxBG, path, content); err != nil {
+			t.Fatalf("index meta %s: %v", path, err)
+		}
+	}
+
+	got, err := s.FilterByScope(ctxBG, []string{"c.md", "b.md", "a.md"}, "user:alice")
+	if err != nil {
+		t.Fatalf("FilterByScope: %v", err)
+	}
+	want := []string{"c.md", "a.md"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("FilterByScope got %v, want %v", got, want)
+	}
+}
+
+func TestSearchWithOptionsRecencyWeightRanksNewest(t *testing.T) {
+	s := newTestSQLite(t)
+
+	for path, content := range map[string][]byte{
+		"old.md": []byte("# Old\n\nkiwi memory alpha shared content.\n"),
+		"new.md": []byte("# New\n\nkiwi memory alpha shared content.\n"),
+	} {
+		if err := s.Index(ctxBG, path, content); err != nil {
+			t.Fatalf("index %s: %v", path, err)
+		}
+		if err := s.IndexMeta(ctxBG, path, content); err != nil {
+			t.Fatalf("index meta %s: %v", path, err)
+		}
+	}
+
+	oldTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	newTime := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	if _, err := s.writeDB.ExecContext(ctxBG, `UPDATE file_meta SET updated_at = ? WHERE path = ?`, oldTime, "old.md"); err != nil {
+		t.Fatalf("set old updated_at: %v", err)
+	}
+	if _, err := s.writeDB.ExecContext(ctxBG, `UPDATE file_meta SET updated_at = ? WHERE path = ?`, newTime, "new.md"); err != nil {
+		t.Fatalf("set new updated_at: %v", err)
+	}
+
+	got, err := s.SearchWithOptions(ctxBG, "kiwi memory alpha", 10, 0, "", SearchOptions{RecencyWeight: 1})
+	if err != nil {
+		t.Fatalf("search with recency: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 results, got %+v", got)
+	}
+	if got[0].Path != "new.md" {
+		t.Fatalf("newest result should rank first, got %+v", got)
+	}
+	if got[0].Score <= got[1].Score {
+		t.Fatalf("newest result should have higher score, got %+v", got)
+	}
+}
+
+func TestIndexMetaContradictsBacklinks(t *testing.T) {
+	s := newTestSQLite(t)
+
+	pageA := []byte(`---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A contradicts B
+`)
+	pageB := []byte(`---
+memory_kind: semantic
+---
+# B
+`)
+
+	if err := s.IndexLinks(ctxBG, "pages/a.md", nil); err != nil {
+		t.Fatalf("IndexLinks a: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/a.md", pageA); err != nil {
+		t.Fatalf("IndexMeta a: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/b.md", pageB); err != nil {
+		t.Fatalf("IndexMeta b: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+	if backlinks[0].Path != "pages/a.md" {
+		t.Fatalf("source path: got %q", backlinks[0].Path)
+	}
+	if backlinks[0].Relation != links.RelationContradicts {
+		t.Fatalf("relation: got %q want contradicts", backlinks[0].Relation)
+	}
+
+	var relCount int
+	if err := s.readDB.QueryRow(`SELECT COUNT(*) FROM links WHERE relation = 'contradicts'`).Scan(&relCount); err != nil {
+		t.Fatalf("count contradicts links: %v", err)
+	}
+	if relCount != 1 {
+		t.Fatalf("contradicts link rows: got %d", relCount)
+	}
+}
+
+func TestIndexMetaClearsContradicts(t *testing.T) {
+	s := newTestSQLite(t)
+
+	withContradicts := []byte(`---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A contradicts B
+`)
+	withoutContradicts := []byte(`---
+memory_kind: semantic
+---
+# A no longer contradicts B
+`)
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withContradicts); err != nil {
+		t.Fatalf("IndexMeta with contradicts: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/b.md", []byte("---\nmemory_kind: semantic\n---\n# B\n")); err != nil {
+		t.Fatalf("IndexMeta b: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != links.RelationContradicts {
+		t.Fatalf("expected contradicts backlink, got %+v", backlinks)
+	}
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withoutContradicts); err != nil {
+		t.Fatalf("IndexMeta without contradicts: %v", err)
+	}
+	backlinks, err = s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks after clear: %v", err)
+	}
+	if len(backlinks) != 0 {
+		t.Fatalf("contradicts should be cleared, got %+v", backlinks)
+	}
+}
+
+func TestReindexContradictsBacklinks(t *testing.T) {
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+
+	pageA := []byte(`---
+memory_kind: semantic
+contradicts: pages/b.md
+---
+# A contradicts B
+`)
+	pageB := []byte(`---
+memory_kind: semantic
+---
+# B
+`)
+	if err := store.Write(ctxBG, "pages/a.md", pageA); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := store.Write(ctxBG, "pages/b.md", pageB); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+
+	s, err := NewSQLite(dir, store)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer s.Close()
+
+	count, err := s.Reindex(ctxBG)
+	if err != nil {
+		t.Fatalf("Reindex: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("reindexed %d files, want 2", count)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+	if backlinks[0].Path != "pages/a.md" {
+		t.Fatalf("source path: got %q", backlinks[0].Path)
+	}
+	if backlinks[0].Relation != links.RelationContradicts {
+		t.Fatalf("relation: got %q want contradicts", backlinks[0].Relation)
+	}
+}
+
+func TestIndexMetaSupersedesBacklinks(t *testing.T) {
+	s := newTestSQLite(t)
+
+	pageNew := []byte(`---
+status: accepted
+supersedes: "[[pages/adr-012.md]]"
+---
+# ADR-047
+`)
+	pageOld := []byte(`---
+status: superseded
+---
+# ADR-012
+`)
+
+	if err := s.IndexMeta(ctxBG, "pages/adr-047.md", pageNew); err != nil {
+		t.Fatalf("IndexMeta new: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/adr-012.md", pageOld); err != nil {
+		t.Fatalf("IndexMeta old: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/adr-012.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+	if backlinks[0].Path != "pages/adr-047.md" {
+		t.Fatalf("source path: got %q", backlinks[0].Path)
+	}
+	if backlinks[0].Relation != links.RelationSupersedes {
+		t.Fatalf("relation: got %q want supersedes", backlinks[0].Relation)
+	}
+
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	found := false
+	for _, e := range edges {
+		if e.Source == "pages/adr-047.md" && e.Target == "pages/adr-012.md" && e.Relation == links.RelationSupersedes {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("graph missing supersedes edge: %+v", edges)
+	}
+}
+
+func TestIndexMetaSupersededByBacklinks(t *testing.T) {
+	s := newTestSQLite(t)
+
+	pageOld := []byte(`---
+status: superseded
+superseded_by: pages/adr-047.md
+---
+# ADR-012
+`)
+	pageNew := []byte(`---
+status: accepted
+---
+# ADR-047
+`)
+
+	if err := s.IndexMeta(ctxBG, "pages/adr-012.md", pageOld); err != nil {
+		t.Fatalf("IndexMeta old: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/adr-047.md", pageNew); err != nil {
+		t.Fatalf("IndexMeta new: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/adr-047.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+	if backlinks[0].Path != "pages/adr-012.md" {
+		t.Fatalf("source path: got %q", backlinks[0].Path)
+	}
+	if backlinks[0].Relation != links.RelationSupersededBy {
+		t.Fatalf("relation: got %q want superseded_by", backlinks[0].Relation)
+	}
+}
+
+func TestIndexMetaSupersedesStringAndArrayValues(t *testing.T) {
+	s := newTestSQLite(t)
+
+	pageA := []byte(`---
+supersedes: pages/b.md
+---
+# A
+`)
+	pageB := []byte(`---
+supersedes: ["pages/c.md", "[[pages/d.md]]"]
+---
+# B
+`)
+	for path, content := range map[string][]byte{
+		"pages/a.md": pageA,
+		"pages/b.md": pageB,
+		"pages/c.md": []byte("---\n---\n# C\n"),
+		"pages/d.md": []byte("---\n---\n# D\n"),
+	} {
+		if err := s.IndexMeta(ctxBG, path, content); err != nil {
+			t.Fatalf("IndexMeta %s: %v", path, err)
+		}
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks b: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != links.RelationSupersedes {
+		t.Fatalf("supersedes string backlink: %+v", backlinks)
+	}
+
+	for _, target := range []string{"pages/c.md", "pages/d.md"} {
+		backlinks, err = s.Backlinks(ctxBG, target)
+		if err != nil {
+			t.Fatalf("Backlinks %s: %v", target, err)
+		}
+		if len(backlinks) != 1 || backlinks[0].Relation != links.RelationSupersedes {
+			t.Fatalf("supersedes array backlink for %s: %+v", target, backlinks)
+		}
+	}
+}
+
+func TestIndexMetaClearsSupersedes(t *testing.T) {
+	s := newTestSQLite(t)
+
+	withSupersedes := []byte(`---
+supersedes: pages/b.md
+---
+# A supersedes B
+`)
+	withoutSupersedes := []byte(`---
+---
+# A no longer supersedes B
+`)
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withSupersedes); err != nil {
+		t.Fatalf("IndexMeta with supersedes: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/b.md", []byte("---\n---\n# B\n")); err != nil {
+		t.Fatalf("IndexMeta b: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != links.RelationSupersedes {
+		t.Fatalf("expected supersedes backlink, got %+v", backlinks)
+	}
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withoutSupersedes); err != nil {
+		t.Fatalf("IndexMeta without supersedes: %v", err)
+	}
+	backlinks, err = s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks after clear: %v", err)
+	}
+	if len(backlinks) != 0 {
+		t.Fatalf("supersedes should be cleared, got %+v", backlinks)
+	}
+}
+
+func TestReindexSupersedesBacklinks(t *testing.T) {
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+
+	pageNew := []byte(`---
+supersedes: pages/adr-012.md
+---
+# ADR-047
+`)
+	pageOld := []byte(`---
+status: superseded
+---
+# ADR-012
+`)
+	if err := store.Write(ctxBG, "pages/adr-047.md", pageNew); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+	if err := store.Write(ctxBG, "pages/adr-012.md", pageOld); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+
+	s, err := NewSQLite(dir, store)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer s.Close()
+
+	count, err := s.Reindex(ctxBG)
+	if err != nil {
+		t.Fatalf("Reindex: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("reindexed %d files, want 2", count)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/adr-012.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+	if backlinks[0].Path != "pages/adr-047.md" {
+		t.Fatalf("source path: got %q", backlinks[0].Path)
+	}
+	if backlinks[0].Relation != links.RelationSupersedes {
+		t.Fatalf("relation: got %q want supersedes", backlinks[0].Relation)
+	}
+}
+
+func TestIndexMetaTypedFieldsBacklinks(t *testing.T) {
+	s := newTestSQLite(t)
+	s.typedLinkFields = []string{"contradicts", "cites", "supersedes"}
+
+	pageA := []byte("---\ncites: pages/b.md\nsupersedes: \"[[pages/c.md]]\"\n---\n# A\n")
+	pageB := []byte("---\n---\n# B\n")
+	pageC := []byte("---\n---\n# C\n")
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", pageA); err != nil {
+		t.Fatalf("IndexMeta a: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/b.md", pageB); err != nil {
+		t.Fatalf("IndexMeta b: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/c.md", pageC); err != nil {
+		t.Fatalf("IndexMeta c: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks b: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != "cites" {
+		t.Fatalf("cites backlink: %+v", backlinks)
+	}
+
+	backlinks, err = s.Backlinks(ctxBG, "pages/c.md")
+	if err != nil {
+		t.Fatalf("Backlinks c: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != "supersedes" {
+		t.Fatalf("supersedes backlink: %+v", backlinks)
+	}
+}
+
+func TestIndexMetaClearsTypedField(t *testing.T) {
+	s := newTestSQLite(t)
+	s.typedLinkFields = []string{"cites"}
+
+	withCites := []byte("---\ncites: pages/b.md\n---\n# A\n")
+	withoutCites := []byte("---\n---\n# A\n")
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withCites); err != nil {
+		t.Fatalf("IndexMeta with cites: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/b.md", []byte("---\n---\n# B\n")); err != nil {
+		t.Fatalf("IndexMeta b: %v", err)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != "cites" {
+		t.Fatalf("expected cites backlink, got %+v", backlinks)
+	}
+
+	if err := s.IndexMeta(ctxBG, "pages/a.md", withoutCites); err != nil {
+		t.Fatalf("IndexMeta without cites: %v", err)
+	}
+	backlinks, err = s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks after clear: %v", err)
+	}
+	if len(backlinks) != 0 {
+		t.Fatalf("cites should be cleared, got %+v", backlinks)
+	}
+}
+
+func TestAllEdgesIncludesTypedRelations(t *testing.T) {
+	s := newTestSQLite(t)
+	s.typedLinkFields = []string{"cites"}
+
+	content := []byte("---\ncites: pages/b.md\n---\nSee [[pages/c.md]].\n")
+	if err := s.IndexLinks(ctxBG, "pages/a.md", links.Extract(content)); err != nil {
+		t.Fatalf("IndexLinks: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/a.md", content); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	relations := map[string]string{}
+	for _, e := range edges {
+		if e.Source == "pages/a.md" {
+			relations[e.Target] = e.Relation
+		}
+	}
+	if relations["pages/c.md"] != "" {
+		t.Fatalf("wiki edge relation: %+v", relations)
+	}
+	if relations["pages/b.md"] != "cites" {
+		t.Fatalf("typed edge relation: %+v", relations)
+	}
+}
+
+func TestReindexTypedFieldsBacklinks(t *testing.T) {
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+
+	pageA := []byte("---\ncites: pages/b.md\n---\n# A cites B\n")
+	pageB := []byte("---\n---\n# B\n")
+	if err := store.Write(ctxBG, "pages/a.md", pageA); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := store.Write(ctxBG, "pages/b.md", pageB); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+
+	s, err := NewSQLiteWithTypedFields(dir, store, []string{"cites"})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer s.Close()
+
+	count, err := s.Reindex(ctxBG)
+	if err != nil {
+		t.Fatalf("Reindex: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("reindexed %d files, want 2", count)
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/b.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != "cites" {
+		t.Fatalf("backlinks: %+v", backlinks)
+	}
+}
+
+func TestIndexMetaClearsRemovedTypedFieldConfig(t *testing.T) {
+	s := newTestSQLite(t)
+	s.typedLinkFields = []string{"cites", "extends"}
+
+	content := []byte("---\ncites: pages/b.md\nextends: pages/c.md\n---\n# A\n")
+	if err := s.IndexMeta(ctxBG, "pages/a.md", content); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	relations := map[string]string{}
+	for _, e := range edges {
+		if e.Source == "pages/a.md" {
+			relations[e.Target] = e.Relation
+		}
+	}
+	if relations["pages/b.md"] != "cites" || relations["pages/c.md"] != "extends" {
+		t.Fatalf("initial typed edges: %+v", relations)
+	}
+
+	// Simulate shrinking [links] typed_fields — extends links must not linger.
+	s.typedLinkFields = []string{"cites"}
+	if err := s.IndexMeta(ctxBG, "pages/a.md", content); err != nil {
+		t.Fatalf("IndexMeta after config shrink: %v", err)
+	}
+
+	edges, err = s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges after shrink: %v", err)
+	}
+	relations = map[string]string{}
+	for _, e := range edges {
+		if e.Source == "pages/a.md" {
+			relations[e.Target] = e.Relation
+		}
+	}
+	if relations["pages/c.md"] != "" {
+		t.Fatalf("extends edge should be cleared after field removed from config, got %+v", relations)
+	}
+	if relations["pages/b.md"] != "cites" {
+		t.Fatalf("cites edge should remain, got %+v", relations)
+	}
+}
+
+func TestIndexMetaClearsRemovedTypedFieldFromFrontmatter(t *testing.T) {
+	s := newTestSQLite(t)
+	s.typedLinkFields = []string{"cites", "extends"}
+
+	initial := []byte("---\ncites: pages/b.md\nextends: pages/c.md\n---\n# A\n")
+	if err := s.IndexMeta(ctxBG, "pages/a.md", initial); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+
+	updated := []byte("---\ncites: pages/b.md\n---\n# A\n")
+	if err := s.IndexMeta(ctxBG, "pages/a.md", updated); err != nil {
+		t.Fatalf("IndexMeta after field removed: %v", err)
+	}
+
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	relations := map[string]string{}
+	for _, e := range edges {
+		if e.Source == "pages/a.md" {
+			relations[e.Target] = e.Relation
+		}
+	}
+	if relations["pages/c.md"] != "" {
+		t.Fatalf("extends edge should be cleared when frontmatter drops field, got %+v", relations)
+	}
+	if relations["pages/b.md"] != "cites" {
+		t.Fatalf("cites edge should remain, got %+v", relations)
+	}
+}
+
+func TestIssue323TypedFieldsAcceptance(t *testing.T) {
+	// Covers issue #323 acceptance: all configured UC fields, string + array
+	// values, missing fields ignored, contradicts default preserved.
+	fields := []string{"supersedes", "superseded_by", "variant_of", "cites", "extends", "services"}
+	dir := t.TempDir()
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	s, err := NewSQLiteWithTypedFields(dir, store, fields)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer s.Close()
+
+	content := []byte(`---
+supersedes: "[[pages/old-adr.md]]"
+superseded_by: pages/new-adr.md
+variant_of: ["[[pages/base-prompt.md]]", "pages/alt-prompt.md"]
+cites: pages/paper.md
+extends: []
+services: "[[runbooks/oncall.md|on-call]]"
+title: acceptance fixture
+---
+See [[pages/peer.md]] in the body.
+`)
+	if err := s.IndexLinks(ctxBG, "pages/fixture.md", links.Extract(content)); err != nil {
+		t.Fatalf("IndexLinks: %v", err)
+	}
+	if err := s.IndexMeta(ctxBG, "pages/fixture.md", content); err != nil {
+		t.Fatalf("IndexMeta: %v", err)
+	}
+
+	wantTyped := map[string]string{
+		"pages/old-adr.md":    "supersedes",
+		"pages/new-adr.md":    "superseded_by",
+		"pages/base-prompt.md": "variant_of",
+		"pages/alt-prompt.md": "variant_of",
+		"pages/paper.md":      "cites",
+		"runbooks/oncall.md":  "services",
+	}
+	edges, err := s.AllEdges(ctxBG)
+	if err != nil {
+		t.Fatalf("AllEdges: %v", err)
+	}
+	gotTyped := map[string]string{}
+	var wikiTarget string
+	for _, e := range edges {
+		if e.Source != "pages/fixture.md" {
+			continue
+		}
+		if e.Relation == "" {
+			wikiTarget = e.Target
+			continue
+		}
+		gotTyped[e.Target] = e.Relation
+	}
+	if wikiTarget != "pages/peer.md" {
+		t.Fatalf("wiki link target: got %q want pages/peer.md", wikiTarget)
+	}
+	if len(gotTyped) != len(wantTyped) {
+		t.Fatalf("typed edges: got %+v want %+v", gotTyped, wantTyped)
+	}
+	for target, rel := range wantTyped {
+		if gotTyped[target] != rel {
+			t.Fatalf("target %q: got relation %q want %q", target, gotTyped[target], rel)
+		}
+	}
+
+	backlinks, err := s.Backlinks(ctxBG, "pages/paper.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].Relation != "cites" || backlinks[0].Path != "pages/fixture.md" {
+		t.Fatalf("cites backlink: %+v", backlinks)
+	}
+
+	// Default config keeps contradicts when typed_fields is unset.
+	defaultCfg := newTestSQLite(t)
+	contradictsPage := []byte("---\ncontradicts: pages/target.md\n---\n# note\n")
+	if err := defaultCfg.IndexMeta(ctxBG, "pages/note.md", contradictsPage); err != nil {
+		t.Fatalf("IndexMeta contradicts: %v", err)
+	}
+	bl, err := defaultCfg.Backlinks(ctxBG, "pages/target.md")
+	if err != nil {
+		t.Fatalf("Backlinks contradicts: %v", err)
+	}
+	if len(bl) != 1 || bl[0].Relation != links.RelationContradicts {
+		t.Fatalf("contradicts backlink: %+v", bl)
 	}
 }

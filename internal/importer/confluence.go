@@ -33,6 +33,36 @@ type confluenceExportAttachment struct {
 	fileName string
 }
 
+func confluenceExportPageDirForAttachment(attachmentDir string) string {
+	// attachmentDir is a relative directory in the export, e.g. "Space/Page/attachments/1234"
+	parts := strings.Split(attachmentDir, string(filepath.Separator))
+	for i := range parts {
+		if parts[i] == "attachment" || parts[i] == "attachments" {
+			if i == 0 {
+				return ""
+			}
+			return filepath.Join(parts[:i]...)
+		}
+	}
+	return filepath.Dir(attachmentDir)
+}
+
+var confluenceExportAssetLinkRe = regexp.MustCompile(`(?i)(src|href)\s*=\s*("([^"]*(?:attachments?|download/attachments)[^"]*/([^/"?#]+))"|'([^']*(?:attachments?|download/attachments)[^']*/([^/'?#]+))')`)
+
+func rewriteConfluenceExportAssetLinks(html string) string {
+	return confluenceExportAssetLinkRe.ReplaceAllStringFunc(html, func(m string) string {
+		sub := confluenceExportAssetLinkRe.FindStringSubmatch(m)
+		filename := sub[4]
+		if filename == "" {
+			filename = sub[6]
+		}
+		if filename == "" {
+			return m
+		}
+		return fmt.Sprintf(`%s="_assets/%s"`, sub[1], filename)
+	})
+}
+
 // confluenceExportEntity represents a page in the Confluence XML export manifest.
 type confluenceExportEntity struct {
 	ID       string `xml:"id,attr"`
@@ -63,6 +93,7 @@ func (s *ConfluenceSource) Name() string {
 func (s *ConfluenceSource) walk() error {
 	// Try to parse hierarchy from entities.xml (Confluence HTML export manifest)
 	hierarchy := s.parseHierarchy()
+	linkIndex := buildConfluencePageLinkIndex(s.exportPath, hierarchy)
 
 	return filepath.Walk(s.exportPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -80,7 +111,7 @@ func (s *ConfluenceSource) walk() error {
 			dir := filepath.Dir(rel)
 			if strings.Contains(dir, "attachment") || strings.Contains(dir, "attachments") {
 				s.attachments = append(s.attachments, confluenceExportAttachment{
-					pagePath: dir,
+					pagePath: confluenceExportPageDirForAttachment(dir),
 					filePath: path,
 					fileName: filepath.Base(path),
 				})
@@ -97,6 +128,8 @@ func (s *ConfluenceSource) walk() error {
 		// CDATA sections that html.Parse would strip
 		rawHTML := string(data)
 		rawHTML = convertConfluenceMacros(rawHTML)
+		rawHTML = rewriteConfluenceExportAssetLinks(rawHTML)
+		rawHTML = rewriteConfluenceExportPageLinks(rawHTML, linkIndex)
 
 		doc, parseErr := html.Parse(bytes.NewReader([]byte(rawHTML)))
 		if parseErr != nil {
@@ -118,17 +151,15 @@ func (s *ConfluenceSource) walk() error {
 		bodyHTML := renderHTMLNode(body)
 		md := convertMixedContent(bodyHTML)
 
-		rel, _ := filepath.Rel(s.exportPath, path)
-		relPath := strings.TrimSuffix(rel, ext)
-
-		// Use hierarchy path if available, otherwise preserve directory structure
 		titleStr := fmt.Sprintf("%v", meta["title"])
-		if hierPath, ok := hierarchy[titleStr]; ok {
-			relPath = hierPath
-		} else {
-			// Preserve the directory-based hierarchy from the export
-			relPath = buildExportHierarchyPath(relPath)
+		pageID := fmt.Sprintf("%v", meta["ajs-page-id"])
+		if pageID == "<nil>" || pageID == "" {
+			pageID = fmt.Sprintf("%v", meta["page-id"])
 		}
+		if pageID != "" && pageID != "<nil>" {
+			meta["confluence_page_id"] = pageID
+		}
+		relPath := confluencePageRelPath(s.exportPath, path, hierarchy, meta, ext)
 
 		s.pages = append(s.pages, confluencePage{
 			relPath:  relPath,
@@ -164,12 +195,29 @@ func (s *ConfluenceSource) parseHierarchy() map[string]string {
 		idToPage[pages[i].ID] = &pages[i]
 	}
 
-	// Build hierarchy paths
+	// Detect duplicate slugs per parent (titles are not unique).
+	parentSlugCounts := make(map[string]map[string]int)
+	for _, p := range pages {
+		parent := p.ParentID
+		base := slugifyTitle(p.Title)
+		if _, ok := parentSlugCounts[parent]; !ok {
+			parentSlugCounts[parent] = make(map[string]int)
+		}
+		parentSlugCounts[parent][base]++
+	}
+
+	// Build hierarchy paths.
+	// Store both ID -> path and (best-effort) Title -> path for older exports.
 	for _, page := range pages {
 		var parts []string
 		current := &page
 		for current != nil {
-			parts = append([]string{slugifyTitle(current.Title)}, parts...)
+			base := slugifyTitle(current.Title)
+			seg := base
+			if counts, ok := parentSlugCounts[current.ParentID]; ok && counts[base] > 1 && current.ID != "" {
+				seg = fmt.Sprintf("%s-%s", base, current.ID)
+			}
+			parts = append([]string{seg}, parts...)
 			if current.ParentID == "" {
 				break
 			}
@@ -179,7 +227,16 @@ func (s *ConfluenceSource) parseHierarchy() map[string]string {
 			}
 			current = parent
 		}
-		hierarchy[page.Title] = strings.Join(parts, "/")
+		path := strings.Join(parts, "/")
+		if page.ID != "" {
+			hierarchy[page.ID] = path
+		}
+		if page.Title != "" {
+			// Only set if absent; titles can collide.
+			if _, exists := hierarchy[page.Title]; !exists {
+				hierarchy[page.Title] = path
+			}
+		}
 	}
 
 	return hierarchy
@@ -345,7 +402,7 @@ func (s *ConfluenceSource) Stream(ctx context.Context) (<-chan Record, <-chan er
 				continue
 			}
 
-			attPath := filepath.Join(filepath.Dir(att.pagePath), "_assets", att.fileName)
+			attPath := filepath.Join(att.pagePath, "_assets", att.fileName)
 
 			fields := map[string]any{
 				"_raw_content":  string(data),
@@ -602,6 +659,15 @@ func convertNodeWithPlaceholders(buf *strings.Builder, n *html.Node, listDepth i
 		}
 		buf.WriteString("](")
 		buf.WriteString(href)
+		buf.WriteByte(')')
+
+	case "img":
+		alt := getAttr(n, "alt")
+		src := getAttr(n, "src")
+		buf.WriteString("![")
+		buf.WriteString(alt)
+		buf.WriteString("](")
+		buf.WriteString(src)
 		buf.WriteByte(')')
 
 	case "ul":

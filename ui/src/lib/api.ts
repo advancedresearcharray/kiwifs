@@ -72,7 +72,7 @@ export type BacklinkEntry = {
 };
 
 export type GraphNode = { path: string; tags?: string[] };
-export type GraphEdge = { source: string; target: string };
+export type GraphEdge = { source: string; target: string; relation?: string };
 export type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] };
 
 export type CommentAnchor = {
@@ -361,6 +361,34 @@ export const api = {
     return { content, etag, lastModified };
   },
 
+  async readLocalNote(path: string): Promise<string | null> {
+    const qs = new URLSearchParams({ path });
+    const res = await fetch(`${kiwiBase()}/local-note?${qs}`, {
+      headers: { "X-Actor": actor(), ..._extraHeaders },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    return res.text();
+  },
+
+  async getLocalState<T = Record<string, unknown>>(name: string): Promise<T> {
+    const qs = new URLSearchParams({ name });
+    const res = await fetch(`${kiwiBase()}/local-state?${qs}`, {
+      headers: { "X-Actor": actor(), ..._extraHeaders },
+    });
+    if (!res.ok) return {} as T;
+    return res.json();
+  },
+
+  async putLocalState(name: string, state: unknown): Promise<void> {
+    const qs = new URLSearchParams({ name });
+    await fetch(`${kiwiBase()}/local-state?${qs}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Actor": actor(), ..._extraHeaders },
+      body: JSON.stringify(state),
+    });
+  },
+
   async writeFile(
     path: string,
     content: string,
@@ -379,12 +407,22 @@ export const api = {
     });
   },
 
-  async patchFrontmatter(path: string, fields: Record<string, unknown>): Promise<{ path: string; etag: string }> {
-    const qs = new URLSearchParams({ path });
-    return request(`${kiwiBase()}/file/frontmatter?${qs}`, {
+  async patchFrontmatter(
+    path: string,
+    fields: Record<string, unknown>,
+    etag?: string | null
+  ): Promise<{ path: string; etag: string }> {
+    const qs = new URLSearchParams({ path, merge: "frontmatter" });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Actor": actor(),
+      ..._extraHeaders,
+    };
+    if (etag) headers["If-Match"] = etag;
+    return request(`${kiwiBase()}/file?${qs}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "X-Actor": actor(), ..._extraHeaders },
-      body: JSON.stringify({ fields }),
+      headers,
+      body: JSON.stringify(fields),
     });
   },
 
@@ -575,12 +613,100 @@ export const api = {
     });
   },
 
-  async getUIConfig(): Promise<{ themeLocked: boolean }> {
+  async getRecentPages(limit = 10): Promise<{ pages: RecentPageEntry[] }> {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    return request(`${kiwiBase()}/recent-pages?${qs}`);
+  },
+
+  async getUIConfig(): Promise<{
+    themeLocked: boolean;
+    startPage: string;
+    sidebar?: {
+      pinned: string[];
+      hidden: string[];
+      sections: { label: string; paths: string[] }[];
+    };
+    branding?: {
+      name?: string;
+      logoUrl?: string;
+      faviconUrl?: string;
+      welcomeTitle?: string;
+      welcomeMessage?: string;
+    };
+    features?: Partial<Record<
+      "graph" | "kanban" | "canvas" | "whiteboard" | "timeline" | "bases" | "data_sources",
+      boolean
+    >>;
+    toolbarViews?: string[] | null;
+  }> {
     return request(`${kiwiBase()}/ui-config`);
   },
 
   async getTheme(): Promise<Record<string, unknown>> {
     return request(`${kiwiBase()}/theme`);
+  },
+
+  async getEditorSlashCommands(): Promise<{
+    commands: {
+      id: string;
+      label: string;
+      icon: string;
+      description: string;
+      template: string;
+    }[];
+  }> {
+    return request(`${kiwiBase()}/editor/slash-commands`);
+  },
+
+  async getCustomCSS(): Promise<string> {
+    const res = await fetch(`${kiwiBase()}/custom.css`);
+    if (!res.ok) {
+      if (res.status === 404) return "";
+      const text = await res.text().catch(() => "");
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    return res.text();
+  },
+
+  async getKeybindings(): Promise<{
+    bindings: Record<string, string>;
+    defaults: Record<string, string>;
+    conflicts: { chord: string; actions: string[] }[];
+  }> {
+    return request(`${kiwiBase()}/keybindings`);
+  },
+
+  async getPreferences(): Promise<{
+    theme?: string;
+    sidebar_collapsed?: boolean;
+    default_view?: "editor" | "source";
+    font_size?: "base" | "sm" | "lg";
+    editor_line_numbers?: boolean;
+    vim_mode?: boolean;
+  }> {
+    return request(`${kiwiBase()}/preferences`);
+  },
+
+  async putPreferences(prefs: {
+    theme?: string;
+    sidebar_collapsed?: boolean;
+    default_view?: "editor" | "source";
+    font_size?: "base" | "sm" | "lg";
+    editor_line_numbers?: boolean;
+    vim_mode?: boolean;
+  }): Promise<{
+    theme?: string;
+    sidebar_collapsed?: boolean;
+    default_view?: "editor" | "source";
+    font_size?: "base" | "sm" | "lg";
+    editor_line_numbers?: boolean;
+    vim_mode?: boolean;
+  }> {
+    return request(`${kiwiBase()}/preferences`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(prefs),
+    });
   },
 
   async putTheme(theme: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -847,11 +973,12 @@ export const api = {
   async importUpload(opts: {
     file: File;
     from: string;
-    mode: "preview" | "import";
+    mode: "preview" | "import" | "infer-fields";
     prefix?: string;
     id_column?: string;
     table?: string;
     query?: string;
+    field_mappings?: ImportFieldMapping[];
   }): Promise<ImportPreviewResponse | ImportRunResponse> {
     const form = new FormData();
     form.append("file", opts.file);
@@ -861,6 +988,7 @@ export const api = {
     if (opts.id_column) form.append("id_column", opts.id_column);
     if (opts.table) form.append("table", opts.table);
     if (opts.query) form.append("query", opts.query);
+    if (opts.field_mappings?.length) form.append("field_mappings", JSON.stringify(opts.field_mappings));
     const res = await fetch(`${kiwiBase()}/import/upload`, {
       method: "POST",
       headers: { "X-Actor": actor(), ..._extraHeaders },
@@ -885,6 +1013,14 @@ export const api = {
 
   async importPreview(params: ImportPreviewRequest): Promise<ImportPreviewResponse> {
     return request(`${kiwiBase()}/import/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  },
+
+  async importInferFields(params: Omit<ImportPreviewRequest, "limit" | "field_mappings">): Promise<ImportInferFieldsResponse> {
+    return request(`${kiwiBase()}/import/infer-fields`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
@@ -988,6 +1124,15 @@ export const api = {
   },
 };
 
+// --- Recent pages (startup view) ---
+
+export type RecentPageEntry = {
+  path: string;
+  title: string;
+  actor: string;
+  timestamp: string;
+};
+
 // --- Timeline types ---
 
 export type TimelineEvent = {
@@ -1045,6 +1190,13 @@ export type ImportBrowseResponse = {
   tables: { name: string; estimated_count?: number }[];
 };
 
+export type ImportFieldMapping = {
+  source: string;
+  target: string;
+  type?: "string" | "number" | "date" | "boolean";
+  skip?: boolean;
+};
+
 export type ImportPreviewRequest = {
   from: string;
   dsn?: string;
@@ -1058,11 +1210,18 @@ export type ImportPreviewRequest = {
   table_id?: string;
   credentials?: unknown;
   api_key?: string;
+  prefix?: string;
+  id_column?: string;
+  field_mappings?: ImportFieldMapping[];
   limit?: number;
 };
 
 export type ImportPreviewResponse = {
   records: { path: string; frontmatter: Record<string, unknown>; body_preview: string }[];
+};
+
+export type ImportInferFieldsResponse = {
+  fields: ImportFieldMapping[];
 };
 
 export type ImportRunRequest = {
@@ -1080,6 +1239,7 @@ export type ImportRunRequest = {
   prefix?: string;
   id_column?: string;
   columns?: string[];
+  field_mappings?: ImportFieldMapping[];
   credentials?: unknown;
   api_key?: string;
   limit?: number;

@@ -39,13 +39,17 @@ type Options struct {
 	HTTP    bool
 	Port    int
 	Emitter tracing.Emitter
+	Backend Backend
 }
 
 func New(opts Options) (*server.MCPServer, Backend, error) {
 	var backend Backend
-	if opts.Remote != "" {
+	switch {
+	case opts.Backend != nil:
+		backend = opts.Backend
+	case opts.Remote != "":
 		backend = NewRemoteBackend(opts.Remote, opts.APIKey, opts.Space)
-	} else {
+	default:
 		backend = NewLocalBackend(opts.Root)
 	}
 
@@ -62,6 +66,7 @@ func New(opts Options) (*server.MCPServer, Backend, error) {
 	)
 
 	registerTools(s, backend, opts)
+	registerMemoryTools(s, backend)
 	registerResources(s, backend, opts)
 
 	return s, backend, nil
@@ -133,7 +138,9 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 				mcp.WithNumber("limit", mcp.Description("Max results (default 20, max 50)")),
 				mcp.WithString("path_prefix", mcp.Description("Filter to a subtree like failures/")),
+				mcp.WithString("scope", mcp.Description("Filter to pages whose frontmatter scope exactly matches, e.g. user:alice")),
 				mcp.WithNumber("offset", mcp.Description("Offset for pagination (default 0)")),
+				mcp.WithNumber("recency_weight", mcp.Description("Blend recency into ranking, from 0.0 relevance-only to 1.0 recency-only")),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
@@ -341,6 +348,7 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 				mcp.WithNumber("limit", mcp.Description("Max results (default 5)")),
 				mcp.WithNumber("threshold", mcp.Description("Minimum similarity score 0.0–1.0")),
+				mcp.WithString("scope", mcp.Description("Filter to pages whose frontmatter scope exactly matches, e.g. user:alice")),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 			),
@@ -540,6 +548,45 @@ func registerTools(s *server.MCPServer, b Backend, opts Options) {
 				mcp.WithIdempotentHintAnnotation(true),
 			),
 			Handler: handleClaim(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_task_create",
+				mcp.WithDescription("Create a task page with standard frontmatter (workflow: tasks, state: backlog). Optionally claim it for the calling agent."),
+				mcp.WithString("title", mcp.Required(), mcp.Description("Task title")),
+				mcp.WithString("description", mcp.Description("Task body markdown")),
+				mcp.WithString("assignee", mcp.Description("Owner identifier")),
+				mcp.WithNumber("priority", mcp.Description("Priority 1-5 (default 3)")),
+				mcp.WithArray("blocked_by", mcp.Description("Paths of blocking tasks"), mcp.WithStringItems()),
+				mcp.WithArray("labels", mcp.Description("Label strings"), mcp.WithStringItems()),
+				mcp.WithString("parent", mcp.Description("Parent task path")),
+				mcp.WithArray("artifacts", mcp.Description("Related artifact paths"), mcp.WithStringItems()),
+				mcp.WithBoolean("claim", mcp.Description("Claim the task after creation (default false)")),
+				mcp.WithString("actor", mcp.Description("Writer/claim identity (default mcp-agent)")),
+				mcp.WithDestructiveHintAnnotation(true),
+			),
+			Handler: handleTaskCreate(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_task_progress",
+				mcp.WithDescription("Append a timestamped progress note under ## Progress on a task page. See docs/TASKS.md for the convention."),
+				mcp.WithString("path", mcp.Required(), mcp.Description("Task page path")),
+				mcp.WithString("message", mcp.Required(), mcp.Description("Progress update text")),
+				mcp.WithString("agent", mcp.Description("Agent name in the progress heading")),
+				mcp.WithString("actor", mcp.Description("Git commit actor (default mcp-agent)")),
+				mcp.WithDestructiveHintAnnotation(true),
+			),
+			Handler: handleTaskProgress(b),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("kiwi_cite",
+				mcp.WithDescription("Fetch bibliographic metadata for a DOI or arXiv ID and create a literature note at papers/{bibtex_key}.md with structured frontmatter."),
+				mcp.WithString("identifier", mcp.Description("DOI or arXiv ID (e.g. 10.1234/example or 2301.12345)")),
+				mcp.WithString("doi", mcp.Description("Explicit DOI when not using identifier")),
+				mcp.WithString("arxiv_id", mcp.Description("Explicit arXiv ID when not using identifier")),
+				mcp.WithString("actor", mcp.Description("Git commit actor (default mcp-agent)")),
+				mcp.WithDestructiveHintAnnotation(true),
+			),
+			Handler: handleCite(b, nil),
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("kiwi_release",
@@ -1004,6 +1051,14 @@ func handleWrite(b Backend) server.ToolHandlerFunc {
 	}
 }
 
+type scopedSearchBackend interface {
+	SearchScoped(ctx context.Context, query string, limit, offset int, pathPrefix, scope string) ([]SearchResult, error)
+}
+
+type scopedSemanticBackend interface {
+	SearchSemanticScoped(ctx context.Context, query string, limit int, scope string) ([]SearchResult, error)
+}
+
 func handleSearch(b Backend) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -1020,8 +1075,28 @@ func handleSearch(b Backend) server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
+		scope, _ := args["scope"].(string)
+		recencyWeight, err := floatArg(args, "recency_weight", 0)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
-		results, err := b.Search(ctx, query, limit+1, offset, prefix)
+		var results []SearchResult
+		if scope != "" {
+			sb, ok := b.(scopedSearchBackend)
+			if !ok {
+				return mcp.NewToolResultError("scope search is not supported by this backend"), nil
+			}
+			results, err = sb.SearchScoped(ctx, query, limit+1, offset, prefix, scope)
+		} else if recencyWeight > 0 {
+			recencyBackend, ok := b.(recencySearchBackend)
+			if !ok {
+				return mcp.NewToolResultError("recency_weight is not supported by this backend"), nil
+			}
+			results, err = recencyBackend.SearchWithRecency(ctx, query, limit+1, offset, prefix, recencyWeight)
+		} else {
+			results, err = b.Search(ctx, query, limit+1, offset, prefix)
+		}
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 		}
@@ -1336,6 +1411,7 @@ func handleMemoryReport(b Backend) server.ToolHandlerFunc {
 		fmt.Fprintf(&sb, "Episodic files:           %d\n", rep.EpisodicCount)
 		fmt.Fprintf(&sb, "merged-from references:   %d\n", rep.MergedFromRefs)
 		fmt.Fprintf(&sb, "Unmerged (no merged-from): %d\n", rep.TotalUnmerged)
+		rep.WriteHealthMetrics(&sb)
 		if limit > 0 || offset > 0 {
 			fmt.Fprintf(&sb, "Showing unmerged:          %d (offset %d)\n", len(rep.Unmerged), offset)
 		}
@@ -1411,8 +1487,8 @@ func handleAnalytics(b Backend) server.ToolHandlerFunc {
 				UpdatedAt string `json:"updated_at"`
 			} `json:"top_updated"`
 			Engagement struct {
-				TotalViews     int `json:"total_views"`
-				TopViewed      []struct {
+				TotalViews int `json:"total_views"`
+				TopViewed  []struct {
 					Path  string `json:"path"`
 					Count int    `json:"count"`
 				} `json:"top_viewed"`
@@ -1633,8 +1709,21 @@ func handleSearchSemantic(b Backend) server.ToolHandlerFunc {
 		if v, ok := args["threshold"].(float64); ok {
 			threshold = v
 		}
+		scope, _ := args["scope"].(string)
 
-		results, err := b.SearchSemantic(ctx, query, limit)
+		var (
+			results []SearchResult
+			err     error
+		)
+		if scope != "" {
+			sb, ok := b.(scopedSemanticBackend)
+			if !ok {
+				return mcp.NewToolResultError("scope search is not supported by this backend"), nil
+			}
+			results, err = sb.SearchSemanticScoped(ctx, query, limit, scope)
+		} else {
+			results, err = b.SearchSemantic(ctx, query, limit)
+		}
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Semantic search failed: %v", err)), nil
 		}
@@ -2219,6 +2308,36 @@ func intArg(args map[string]any, key string, def int) int {
 	return n
 }
 
+func floatArg(args map[string]any, key string, def float64) (float64, error) {
+	v, ok := args[key]
+	if !ok {
+		return def, nil
+	}
+	var n float64
+	switch raw := v.(type) {
+	case float64:
+		n = raw
+	case float32:
+		n = float64(raw)
+	case int:
+		n = float64(raw)
+	case int64:
+		n = float64(raw)
+	case json.Number:
+		var err error
+		n, err = raw.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a number", key)
+		}
+	default:
+		return 0, fmt.Errorf("%s must be a number", key)
+	}
+	if n < 0 || n > 1 {
+		return 0, fmt.Errorf("%s must be between 0.0 and 1.0", key)
+	}
+	return n, nil
+}
+
 func extractFrontmatterFromContent(content string) map[string]any {
 	fm, err := markdown.Frontmatter([]byte(content))
 	if err != nil || fm == nil {
@@ -2737,21 +2856,35 @@ func httpAuthToken(opts Options) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("load MCP HTTP auth config: %w", err)
 	}
-	if cfg.Auth.Type == "apikey" && cfg.Auth.APIKey != "" {
-		return cfg.Auth.APIKey, nil
-	}
-	return "", nil
+	return AuthTokenFromConfig(cfg), nil
 }
 
-func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) http.Handler {
+// AuthTokenFromConfig returns the bearer token for MCP HTTP when apikey auth is enabled.
+func AuthTokenFromConfig(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.Auth.Type == "apikey" && cfg.Auth.APIKey != "" {
+		return cfg.Auth.APIKey
+	}
+	return ""
+}
+
+// StreamableHTTPHandler returns an http.Handler for MCP Streamable HTTP transport.
+func StreamableHTTPHandler(s *server.MCPServer, authToken string) http.Handler {
 	mcpHandler := server.NewStreamableHTTPServer(
 		s,
 		server.WithEndpointPath("/mcp"),
 		server.WithStateLess(true),
 	)
+	return bearerAuth(authToken, wrapMCP2026(mcpHandler, s))
+}
+
+func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) http.Handler {
+	mcpHandler := StreamableHTTPHandler(s, authToken)
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", bearerAuth(authToken, mcpHandler))
+	mux.Handle("/mcp", mcpHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

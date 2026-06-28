@@ -204,10 +204,12 @@ func convertPanelMacro(input string) string {
 
 		bodyRe := regexp.MustCompile(`(?s)<ac:rich-text-body>(.*?)</ac:rich-text-body>`)
 		bodyMatch := bodyRe.FindStringSubmatch(match)
-		content := ""
+		rawContent := ""
 		if len(bodyMatch) >= 2 {
-			content = strings.TrimSpace(bodyMatch[1])
+			rawContent = strings.TrimSpace(bodyMatch[1])
 		}
+
+		content := innerHTMLToMarkdown(rawContent)
 
 		var buf strings.Builder
 		if title != "" {
@@ -271,6 +273,9 @@ func convertConfluenceInlineElements(input string) string {
 	// Emoticons: <ac:emoticon ac:emoji-fallback="✅"/> → emoji text
 	result = convertEmoticons(result)
 
+	// Attachments: <ri:attachment ri:filename="..."> links/images → local _assets paths
+	result = convertAttachmentRefs(result)
+
 	// Page links: <ac:link><ri:page ri:content-title="Page Title"/></ac:link> → [[Page Title]]
 	result = convertPageLinks(result)
 
@@ -289,6 +294,24 @@ func convertConfluenceInlineElements(input string) string {
 	// Unknown/corrupted macros: extract any remaining ac:plain-text-body content
 	result = convertCorruptedMacros(result)
 
+	return result
+}
+
+var attachmentImageRegex = regexp.MustCompile(`(?s)<ac:image[^>]*>.*?<ri:attachment[^>]*ri:filename="([^"]+)"[^>]*/>.*?</ac:image>`)
+var attachmentLinkWithBodyRegex = regexp.MustCompile(`(?s)<ac:link[^>]*>.*?<ri:attachment[^>]*ri:filename="([^"]+)"[^>]*/>.*?<ac:plain-text-link-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-link-body>.*?</ac:link>`)
+var attachmentLinkSimpleRegex = regexp.MustCompile(`(?s)<ac:link[^>]*>\s*<ri:attachment[^>]*ri:filename="([^"]+)"[^>]*/>\s*</ac:link>`)
+
+func convertAttachmentRefs(input string) string {
+	result := attachmentImageRegex.ReplaceAllStringFunc(input, func(match string) string {
+		m := attachmentImageRegex.FindStringSubmatch(match)
+		if len(m) < 2 {
+			return match
+		}
+		filename := m[1]
+		return fmt.Sprintf(`<img src="_assets/%s" alt="%s" />`, filename, filename)
+	})
+	result = attachmentLinkWithBodyRegex.ReplaceAllString(result, `[$2](_assets/$1)`)
+	result = attachmentLinkSimpleRegex.ReplaceAllString(result, `[_assets/$1](_assets/$1)`)
 	return result
 }
 

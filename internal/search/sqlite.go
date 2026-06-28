@@ -118,6 +118,7 @@ type SQLite struct {
 	readDB               *sql.DB           // MaxOpenConns=N — read-only snapshot reads
 	computedFields       bool              // when true, _word_count etc. are injected into frontmatter
 	customComputedFields map[string]string // user-defined computed fields: key → expression
+	typedLinkFields      []string          // frontmatter fields indexed as typed links
 }
 
 // NewSQLite opens (or creates) the FTS5 index at <root>/.kiwi/state/search.db.
@@ -127,6 +128,10 @@ type SQLite struct {
 // customComputed maps user-defined field names to expressions evaluated at
 // index time (e.g. "quality_score" → "(word_count > 100) * 0.3").
 func NewSQLite(root string, store storage.Storage, customComputed ...map[string]string) (*SQLite, error) {
+	return NewSQLiteWithTypedFields(root, store, nil, customComputed...)
+}
+
+func NewSQLiteWithTypedFields(root string, store storage.Storage, typedLinkFields []string, customComputed ...map[string]string) (*SQLite, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve root: %w", err)
@@ -172,7 +177,11 @@ func NewSQLite(root string, store storage.Storage, customComputed ...map[string]
 	if len(customComputed) > 0 && customComputed[0] != nil {
 		ccf = customComputed[0]
 	}
-	s := &SQLite{root: abs, store: store, writeDB: writeDB, readDB: readDB, computedFields: true, customComputedFields: ccf}
+	if len(typedLinkFields) == 0 {
+		typedLinkFields = links.DefaultTypedLinkFields()
+	}
+	typedLinkFields = links.SanitizeTypedLinkFields(typedLinkFields)
+	s := &SQLite{root: abs, store: store, writeDB: writeDB, readDB: readDB, computedFields: true, customComputedFields: ccf, typedLinkFields: typedLinkFields}
 
 	// Construction has no caller ctx — the schema bootstrap and initial
 	// reindex run with Background. Production calls pass a real ctx.
@@ -222,7 +231,8 @@ CREATE TABLE IF NOT EXISTS links (
 	source TEXT NOT NULL,
 	target TEXT NOT NULL,
 	target_lc TEXT NOT NULL,
-	PRIMARY KEY (source, target_lc)
+	relation TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (source, target_lc, relation)
 );
 CREATE INDEX IF NOT EXISTS idx_links_target_lc ON links(target_lc);
 CREATE TABLE IF NOT EXISTS file_meta (
@@ -242,6 +252,7 @@ CREATE INDEX IF NOT EXISTS idx_meta_type ON file_meta(json_extract(frontmatter, 
 CREATE INDEX IF NOT EXISTS idx_meta_priority ON file_meta(json_extract(frontmatter, '$.priority'));
 CREATE INDEX IF NOT EXISTS idx_meta_assignee ON file_meta(json_extract(frontmatter, '$.assignee'));
 CREATE INDEX IF NOT EXISTS idx_meta_claimed_by ON file_meta(json_extract(frontmatter, '$.claimed-by'));
+CREATE INDEX IF NOT EXISTS idx_meta_memory_status ON file_meta(json_extract(frontmatter, '$.memory_status'));
 CREATE TABLE IF NOT EXISTS failed_searches (
 	query TEXT NOT NULL,
 	search_type TEXT NOT NULL DEFAULT 'search',
@@ -302,6 +313,8 @@ CREATE TABLE IF NOT EXISTS content_gap_dismissals (
 
 	s.writeDB.ExecContext(ctx, `ALTER TABLE file_meta ADD COLUMN tasks TEXT NOT NULL DEFAULT '[]'`)
 
+	s.migrateLinksRelation(ctx)
+
 	// Migrate legacy page_views rows into page_view_hours. Uses last_seen
 	// truncated to the hour as the bucket. Idempotent: ON CONFLICT merges.
 	s.migratePageViewsToHours(ctx)
@@ -309,6 +322,28 @@ CREATE TABLE IF NOT EXISTS content_gap_dismissals (
 	s.migrateFailedSearchesToHours(ctx)
 
 	return nil
+}
+
+func (s *SQLite) migrateLinksRelation(ctx context.Context) {
+	var colCount int
+	if err := s.writeDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('links') WHERE name='relation'`).Scan(&colCount); err != nil || colCount > 0 {
+		return
+	}
+	_, _ = s.writeDB.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS links_new (
+	source TEXT NOT NULL,
+	target TEXT NOT NULL,
+	target_lc TEXT NOT NULL,
+	relation TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (source, target_lc, relation)
+);
+INSERT INTO links_new(source, target, target_lc, relation)
+SELECT source, target, target_lc, '' FROM links;
+DROP TABLE links;
+ALTER TABLE links_new RENAME TO links;
+CREATE INDEX IF NOT EXISTS idx_links_target_lc ON links(target_lc);
+`)
 }
 
 func (s *SQLite) migratePageViewsToHours(ctx context.Context) {
@@ -375,24 +410,44 @@ func (s *SQLite) isEmpty(ctx context.Context) (bool, error) {
 }
 
 func (s *SQLite) Search(ctx context.Context, query string, limit, offset int, pathPrefix string) ([]Result, error) {
+	return s.SearchWithOptions(ctx, query, limit, offset, pathPrefix, SearchOptions{})
+}
+
+func (s *SQLite) SearchWithOptions(ctx context.Context, query string, limit, offset int, pathPrefix string, opts SearchOptions) ([]Result, error) {
 	q := buildFTS5Query(query)
 	if q == "" {
 		return nil, nil
 	}
 	limit = NormalizeLimit(limit)
 	offset = NormalizeOffset(offset)
+	recencyWeight := normalizeRecencyWeight(opts.RecencyWeight)
 
-	sqlQ := `SELECT dp.path, bm25(docs) AS score
+	sqlQ := `SELECT dp.path, bm25(docs) AS score, COALESCE(fm.updated_at, '') AS updated_at
 FROM docs
 INNER JOIN doc_paths dp ON dp.rowid = docs.rowid
+LEFT JOIN file_meta fm ON fm.path = dp.path
 WHERE docs MATCH ?`
 	args := []any{q}
 	if pathPrefix != "" {
 		sqlQ += ` AND dp.path LIKE ?`
 		args = append(args, pathPrefix+"%")
 	}
-	sqlQ += ` ORDER BY bm25(docs) LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
+	if opts.Scope != "" {
+		sqlQ += ` AND EXISTS (
+			SELECT 1 FROM file_meta fm_scope
+			WHERE fm_scope.path = dp.path
+			  AND json_extract(fm_scope.frontmatter, '$.scope') = ?
+		)`
+		args = append(args, opts.Scope)
+	}
+	if !opts.IncludeSuperseded {
+		sqlQ += ` AND COALESCE(LOWER(json_extract(fm.frontmatter, '$.memory_status')), '') != 'superseded'`
+	}
+	sqlQ += ` ORDER BY bm25(docs)`
+	if recencyWeight == 0 {
+		sqlQ += ` LIMIT ? OFFSET ?`
+		args = append(args, limit, offset)
+	}
 
 	queryTerms := strings.Fields(strings.ToLower(query))
 
@@ -410,25 +465,112 @@ WHERE docs MATCH ?`
 	}
 	defer rows.Close()
 
-	var results []Result
+	var ranked []sqliteSearchRow
 	for rows.Next() {
 		var path string
 		var score float64
-		if err := rows.Scan(&path, &score); err != nil {
+		var updatedRaw string
+		if err := rows.Scan(&path, &score, &updatedRaw); err != nil {
 			return nil, err
 		}
+		row := sqliteSearchRow{path: path, score: -score}
+		if updatedRaw != "" {
+			if updatedAt, perr := time.Parse(time.RFC3339, updatedRaw); perr == nil {
+				row.updatedAt = updatedAt
+				row.hasUpdatedAt = true
+			}
+		}
+		ranked = append(ranked, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if recencyWeight > 0 {
+		applyRecencyWeight(ranked, recencyWeight)
+		ranked = paginateSearchRows(ranked, offset, limit)
+	}
+	return s.searchRowsToResults(ctx, ranked, queryTerms), nil
+}
+
+type sqliteSearchRow struct {
+	path         string
+	score        float64
+	updatedAt    time.Time
+	hasUpdatedAt bool
+}
+
+func normalizeRecencyWeight(weight float64) float64 {
+	if weight < 0 {
+		return 0
+	}
+	if weight > 1 {
+		return 1
+	}
+	return weight
+}
+
+func applyRecencyWeight(rows []sqliteSearchRow, weight float64) {
+	if len(rows) == 0 || weight <= 0 {
+		return
+	}
+
+	var minUpdated, maxUpdated time.Time
+	haveUpdated := false
+	for _, row := range rows {
+		if !row.hasUpdatedAt {
+			continue
+		}
+		if !haveUpdated || row.updatedAt.Before(minUpdated) {
+			minUpdated = row.updatedAt
+		}
+		if !haveUpdated || row.updatedAt.After(maxUpdated) {
+			maxUpdated = row.updatedAt
+		}
+		haveUpdated = true
+	}
+
+	for i := range rows {
+		recencyScore := 0.0
+		if rows[i].hasUpdatedAt {
+			if maxUpdated.Equal(minUpdated) {
+				recencyScore = 1
+			} else {
+				recencyScore = rows[i].updatedAt.Sub(minUpdated).Seconds() / maxUpdated.Sub(minUpdated).Seconds()
+			}
+		}
+		rows[i].score = (1-weight)*rows[i].score + weight*recencyScore
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rows[i].score > rows[j].score
+	})
+}
+
+func paginateSearchRows(rows []sqliteSearchRow, offset, limit int) []sqliteSearchRow {
+	if offset >= len(rows) {
+		return nil
+	}
+	end := offset + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[offset:end]
+}
+
+func (s *SQLite) searchRowsToResults(ctx context.Context, rows []sqliteSearchRow, queryTerms []string) []Result {
+	results := make([]Result, 0, len(rows))
+	for _, row := range rows {
 		snip := ""
-		if content, rerr := s.store.Read(ctx, path); rerr == nil {
+		if content, rerr := s.store.Read(ctx, row.path); rerr == nil {
 			snip = generateSnippet(content, queryTerms, 160)
 		}
 		results = append(results, Result{
-			Path:    path,
-			Score:   -score,
+			Path:    row.path,
+			Score:   row.score,
 			Snippet: snip,
 			Matches: []Match{{Line: 0, Text: snip}},
 		})
 	}
-	return results, rows.Err()
+	return results
 }
 
 func (s *SQLite) RecordFailedSearch(ctx context.Context, query, searchType string) error {
@@ -873,6 +1015,8 @@ func (s *SQLite) Close() error {
 
 // IndexLinks replaces every link row emitted by `source`. Atomic: either all
 // old rows for this source are gone and all new rows are in, or neither.
+// Wiki links use an empty relation; typed frontmatter fields are indexed
+// separately via indexTypedFields during IndexMeta.
 func (s *SQLite) IndexLinks(ctx context.Context, source string, targets []string) error {
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
@@ -880,17 +1024,50 @@ func (s *SQLite) IndexLinks(ctx context.Context, source string, targets []string
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ?`, source); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation = ''`, source); err != nil {
 		return err
 	}
 	if len(targets) > 0 {
-		stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc) VALUES (?, ?, ?)`)
+		stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, '')`)
 		if err != nil {
 			return err
 		}
 		defer stmt.Close()
 		for _, t := range links.Unique(targets) {
 			if _, err := stmt.ExecContext(ctx, source, t, strings.ToLower(t)); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *SQLite) indexTypedFields(ctx context.Context, source string, fm map[string]any) error {
+	tx, err := s.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Clear every typed (non-wiki) link for this source before re-inserting.
+	// Per-field deletes alone leave stale edges when a field drops out of
+	// [links] typed_fields or when frontmatter no longer sets the field.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM links WHERE source = ? AND relation != ''`, source); err != nil {
+		return err
+	}
+	if len(s.typedLinkFields) == 0 {
+		return tx.Commit()
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, field := range s.typedLinkFields {
+		for _, t := range links.Unique(links.ExtractTypedField(fm, field)) {
+			if _, err := stmt.ExecContext(ctx, source, t, strings.ToLower(t), field); err != nil {
 				return err
 			}
 		}
@@ -918,6 +1095,9 @@ func (s *SQLite) IndexMeta(ctx context.Context, path string, content []byte) err
 	fm := parsed.Frontmatter
 	if fm == nil {
 		fm = map[string]any{}
+	}
+	if params := markdown.ExtractTemplateParameters(string(markdown.BodyAfterFrontmatter(content))); len(params) > 0 {
+		fm["parameters"] = params
 	}
 	if s.computedFields {
 		body := []byte(markdown.BodyAfterFrontmatter(content))
@@ -992,6 +1172,10 @@ func (s *SQLite) IndexMeta(ctx context.Context, path string, content []byte) err
 		}
 	}
 
+	if err := s.indexTypedFields(ctx, path, fm); err != nil {
+		return err
+	}
+
 	_, err = s.writeDB.ExecContext(ctx,
 		`INSERT OR REPLACE INTO file_meta(path, frontmatter, tasks, updated_at) VALUES (?, ?, ?, ?)`,
 		path, string(payload), tasksPayload, time.Now().UTC().Format(time.RFC3339),
@@ -1004,6 +1188,49 @@ func (s *SQLite) IndexMeta(ctx context.Context, path string, content []byte) err
 func (s *SQLite) RemoveMeta(ctx context.Context, path string) error {
 	_, err := s.writeDB.ExecContext(ctx, `DELETE FROM file_meta WHERE path = ?`, path)
 	return err
+}
+
+// MaxFrontmatterIntInDirectory returns the highest integer stored in field
+// across file_meta rows whose path starts with pathPrefix (e.g. "decisions/").
+func (s *SQLite) MaxFrontmatterIntInDirectory(ctx context.Context, pathPrefix, field string) (int, error) {
+	pathPrefix = normalizeMetaPathPrefix(pathPrefix)
+	if pathPrefix == "" {
+		return 0, fmt.Errorf("path prefix is required")
+	}
+	jsonPath := "$." + strings.TrimPrefix(strings.TrimSpace(field), "$.")
+	if !validMetaField(jsonPath) {
+		return 0, fmt.Errorf("invalid frontmatter field %q", field)
+	}
+	var max sql.NullInt64
+	err := s.readDB.QueryRowContext(ctx, `
+SELECT MAX(CAST(json_extract(frontmatter, ?) AS INTEGER))
+FROM file_meta
+WHERE path LIKE ? ESCAPE '\'`,
+		jsonPath, escapeLikePrefix(pathPrefix)+"%",
+	).Scan(&max)
+	if err != nil {
+		return 0, fmt.Errorf("max frontmatter %q in %q: %w", field, pathPrefix, err)
+	}
+	if !max.Valid {
+		return 0, nil
+	}
+	return int(max.Int64), nil
+}
+
+func normalizeMetaPathPrefix(prefix string) string {
+	prefix = filepath.ToSlash(strings.TrimSpace(prefix))
+	prefix = strings.TrimPrefix(prefix, "/")
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	return prefix
+}
+
+func escapeLikePrefix(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 // MetaFilter is one predicate against a frontmatter JSON path. Field must be
@@ -1225,18 +1452,18 @@ func toJSONSafe(v any) any {
 // by the graph view, which resolves target strings to paths client-side via
 // the same fuzzy rules used for in-page wiki-link rendering.
 func (s *SQLite) AllEdges(ctx context.Context) ([]links.Edge, error) {
-	rows, err := s.readDB.QueryContext(ctx, `SELECT source, target FROM links ORDER BY source, target`)
+	rows, err := s.readDB.QueryContext(ctx, `SELECT source, target, relation FROM links ORDER BY source, target, relation`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []links.Edge
 	for rows.Next() {
-		var src, tgt string
-		if err := rows.Scan(&src, &tgt); err != nil {
+		var src, tgt, rel string
+		if err := rows.Scan(&src, &tgt, &rel); err != nil {
 			return nil, err
 		}
-		out = append(out, links.Edge{Source: src, Target: tgt})
+		out = append(out, links.Edge{Source: src, Target: tgt, Relation: rel})
 	}
 	return out, rows.Err()
 }
@@ -1253,7 +1480,7 @@ func (s *SQLite) Backlinks(ctx context.Context, target string) ([]links.Entry, e
 		args[i] = strings.ToLower(f)
 	}
 	q := fmt.Sprintf(
-		`SELECT source, COUNT(*) FROM links WHERE target_lc IN (%s) GROUP BY source ORDER BY source`,
+		`SELECT source, relation, COUNT(*) FROM links WHERE target_lc IN (%s) GROUP BY source, relation ORDER BY source`,
 		placeholders(len(forms)),
 	)
 	rows, err := s.readDB.QueryContext(ctx, q, args...)
@@ -1263,12 +1490,12 @@ func (s *SQLite) Backlinks(ctx context.Context, target string) ([]links.Entry, e
 	defer rows.Close()
 	var out []links.Entry
 	for rows.Next() {
-		var src string
+		var src, rel string
 		var count int
-		if err := rows.Scan(&src, &count); err != nil {
+		if err := rows.Scan(&src, &rel, &count); err != nil {
 			return nil, err
 		}
-		out = append(out, links.Entry{Path: src, Count: count})
+		out = append(out, links.Entry{Path: src, Count: count, Relation: rel})
 	}
 	return out, rows.Err()
 }
@@ -1303,6 +1530,50 @@ func (s *SQLite) FilterByDate(ctx context.Context, paths []string, after time.Ti
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// FilterByScope returns the subset of paths whose frontmatter scope exactly
+// matches scope, preserving the input order.
+func (s *SQLite) FilterByScope(ctx context.Context, paths []string, scope string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if scope == "" {
+		return paths, nil
+	}
+	args := make([]any, 0, len(paths)+1)
+	for _, path := range paths {
+		args = append(args, path)
+	}
+	args = append(args, scope)
+	rows, err := s.readDB.QueryContext(ctx, fmt.Sprintf(
+		`SELECT path FROM file_meta WHERE path IN (%s) AND json_extract(frontmatter, '$.scope') = ?`,
+		placeholders(len(paths)),
+	), args...)
+	if err != nil {
+		return nil, fmt.Errorf("filter by scope: %w", err)
+	}
+	defer rows.Close()
+
+	kept := make(map[string]bool, len(paths))
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		kept[path] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(kept))
+	for _, path := range paths {
+		if kept[path] {
+			out = append(out, path)
+		}
+	}
+	return out, nil
 }
 
 // SearchBoosted runs a normal FTS5 search and then applies a *soft*
@@ -1653,7 +1924,7 @@ func (s *SQLite) reindexLocked(ctx context.Context) (int, error) {
 		if pathStmt, perr = tx.PrepareContext(ctx, `INSERT OR REPLACE INTO doc_paths(rowid, path) VALUES (?, ?)`); perr != nil {
 			return perr
 		}
-		if linkStmt, perr = tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc) VALUES (?, ?, ?)`); perr != nil {
+		if linkStmt, perr = tx.PrepareContext(ctx, `INSERT OR IGNORE INTO links(source, target, target_lc, relation) VALUES (?, ?, ?, ?)`); perr != nil {
 			return perr
 		}
 		if metaStmt, perr = tx.PrepareContext(ctx, `INSERT OR REPLACE INTO file_meta(path, frontmatter, tasks, updated_at) VALUES (?, ?, ?, ?)`); perr != nil {
@@ -1712,7 +1983,7 @@ func (s *SQLite) reindexLocked(ctx context.Context) (int, error) {
 			return fmt.Errorf("insert doc_path %s: %w", e.Path, err)
 		}
 		for _, t := range links.Unique(links.Extract(content)) {
-			if _, err := linkStmt.ExecContext(ctx, e.Path, t, strings.ToLower(t)); err != nil {
+			if _, err := linkStmt.ExecContext(ctx, e.Path, t, strings.ToLower(t), ""); err != nil {
 				return fmt.Errorf("insert link %s→%s: %w", e.Path, t, err)
 			}
 		}
@@ -1720,6 +1991,13 @@ func (s *SQLite) reindexLocked(ctx context.Context) (int, error) {
 			fm := parsed.Frontmatter
 			if fm == nil {
 				fm = map[string]any{}
+			}
+			for _, field := range s.typedLinkFields {
+				for _, t := range links.Unique(links.ExtractTypedField(fm, field)) {
+					if _, err := linkStmt.ExecContext(ctx, e.Path, t, strings.ToLower(t), field); err != nil {
+						return fmt.Errorf("insert typed link %s→%s (%s): %w", e.Path, t, field, err)
+					}
+				}
 			}
 			if s.computedFields {
 				body := []byte(markdown.BodyAfterFrontmatter(content))

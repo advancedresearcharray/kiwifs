@@ -90,6 +90,9 @@ func TestCompileSQL_Flatten(t *testing.T) {
 	if !strings.Contains(sql, "json_each(file_meta.frontmatter, '$.tags')") {
 		t.Errorf("sql = %q, missing json_each", sql)
 	}
+	if !strings.Contains(sql, "json_type(file_meta.frontmatter, '$.tags') = 'array'") {
+		t.Errorf("sql = %q, missing array type guard", sql)
+	}
 }
 
 func TestCompileSQL_ImplicitFields(t *testing.T) {

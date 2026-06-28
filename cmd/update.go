@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -97,16 +102,70 @@ func normalizeVersion(v string) string {
 	return strings.TrimPrefix(v, "v")
 }
 
+// assetNameForPlatform returns the base name used in goreleaser release
+// archives. Despite the goreleaser name_template using underscores,
+// goreleaser v2 normalises the output to hyphens and lowercase OS names,
+// e.g. "kiwifs-linux-amd64".
 func assetNameForPlatform() string {
-	os_ := runtime.GOOS
-	arch := runtime.GOARCH
-	switch arch {
-	case "amd64":
-		arch = "amd64"
-	case "arm64":
-		arch = "arm64"
+	return fmt.Sprintf("kiwifs-%s-%s", runtime.GOOS, runtime.GOARCH)
+}
+
+// isKiwifsBinary returns true if name looks like the kiwifs executable.
+// Goreleaser may name it "kiwifs", "kiwifs.exe", or include the platform
+// suffix like "kiwifs-darwin-arm64".
+func isKiwifsBinary(name string) bool {
+	base := filepath.Base(name)
+	if base == "kiwifs" || base == "kiwifs.exe" {
+		return true
 	}
-	return fmt.Sprintf("kiwifs_%s_%s", os_, arch)
+	return strings.HasPrefix(base, "kiwifs-") || strings.HasPrefix(base, "kiwifs_")
+}
+
+// extractBinary pulls the kiwifs executable out of a downloaded release archive.
+// Goreleaser produces .tar.gz on Linux/macOS and .zip on Windows.
+func extractBinary(data []byte, assetName string) ([]byte, error) {
+	switch {
+	case strings.HasSuffix(assetName, ".tar.gz"):
+		gr, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("open gzip: %w", err)
+		}
+		defer gr.Close()
+		tr := tar.NewReader(gr)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("read tar: %w", err)
+			}
+			if hdr.Typeflag == tar.TypeReg && isKiwifsBinary(hdr.Name) {
+				return io.ReadAll(tr)
+			}
+		}
+		return nil, fmt.Errorf("kiwifs binary not found in tar.gz archive")
+
+	case strings.HasSuffix(assetName, ".zip"):
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return nil, fmt.Errorf("open zip: %w", err)
+		}
+		for _, f := range zr.File {
+			if !f.FileInfo().IsDir() && isKiwifsBinary(f.Name) {
+				rc, err := f.Open()
+				if err != nil {
+					return nil, err
+				}
+				defer rc.Close()
+				return io.ReadAll(rc)
+			}
+		}
+		return nil, fmt.Errorf("kiwifs binary not found in zip archive")
+
+	default:
+		return nil, fmt.Errorf("unrecognised archive format for asset %q", assetName)
+	}
 }
 
 // CheckVersionAsync prints a warning to stderr if a newer version is available.
@@ -173,10 +232,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "New version available: %s → %s\n\n", current, latest)
 
 	wantAsset := assetNameForPlatform()
-	var downloadURL string
+	var downloadURL, assetName string
 	for _, a := range rel.Assets {
 		if strings.Contains(a.Name, wantAsset) {
 			downloadURL = a.BrowserDownloadURL
+			assetName = a.Name
 			break
 		}
 	}
@@ -202,9 +262,14 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	binaryData, err := io.ReadAll(resp.Body)
+	archiveData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read download: %w", err)
+	}
+
+	binaryData, err := extractBinary(archiveData, assetName)
+	if err != nil {
+		return fmt.Errorf("extract binary: %w", err)
 	}
 
 	execPath, err := os.Executable()
