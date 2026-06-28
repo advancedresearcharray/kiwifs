@@ -13,6 +13,7 @@ import {
   Presentation,
   Search as SearchIcon,
   Sun,
+  HelpCircle,
 } from "lucide-react";
 import { undoFileOp } from "@kw/stores/fileOpsStore";
 import type { KiwiTreeHandle } from "./components/KiwiTree";
@@ -47,7 +48,14 @@ import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
 import { useUIConfig } from "./hooks/useUIConfig";
 import { usePreferences } from "./hooks/usePreferences";
-import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
+import {
+  formatChordDisplay,
+  isShortcutBlockedTarget,
+  isStandaloneHelpKey,
+  matchBoundAction,
+  shouldDispatchKeybinding,
+  type KeybindingAction,
+} from "./lib/kiwiKeybindings";
 import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
 import { formatDocumentTitle } from "./lib/pageTitle";
@@ -312,10 +320,30 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      const state = stateRef.current;
+
+      if (
+        isStandaloneHelpKey(e) &&
+        !isShortcutBlockedTarget(e.target) &&
+        !state.editing
+      ) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
+
       const action = matchBoundAction(e, bindings);
       if (!action) return;
 
-      const state = stateRef.current;
+      if (
+        !shouldDispatchKeybinding(action, e.target, {
+          editing: state.editing,
+          splitEditing: false,
+        })
+      ) {
+        return;
+      }
+
       switch (action) {
         case "search":
           e.preventDefault();
@@ -966,6 +994,25 @@ const handleSpaceSwitch = useCallback(() => {
         bindings={bindings}
         conflicts={conflicts}
       />
+      {!shortcutsOpen && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="fixed bottom-4 right-4 z-30 h-9 w-9 rounded-full shadow-md bg-background/95 backdrop-blur-sm"
+              aria-label="Keyboard shortcuts"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <HelpCircle className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            Keyboard shortcuts ({formatChordDisplay(bindings.shortcuts_help)})
+          </TooltipContent>
+        </Tooltip>
+      )}
     </TooltipProvider>
   );
 }

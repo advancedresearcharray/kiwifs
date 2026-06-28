@@ -4,9 +4,14 @@ import {
   buildChordIndex,
   eventMatchesChord,
   formatChordDisplay,
+  isMacPlatform,
+  isShortcutBlockedTarget,
+  isStandaloneHelpKey,
+  isTypingTarget,
   matchBoundAction,
   mergeKeybindings,
   normalizeChord,
+  shouldDispatchKeybinding,
 } from "./kiwiKeybindings";
 
 describe("normalizeChord", () => {
@@ -99,5 +104,71 @@ describe("buildChordIndex", () => {
 describe("formatChordDisplay", () => {
   it("formats mod shortcuts for display", () => {
     expect(formatChordDisplay("mod+k")).toMatch(/K/i);
+  });
+});
+
+describe("isTypingTarget", () => {
+  it("detects input elements", () => {
+    const input = { tagName: "INPUT", isContentEditable: false } as HTMLElement;
+    const button = { tagName: "BUTTON", isContentEditable: false } as HTMLElement;
+    expect(isTypingTarget(input)).toBe(true);
+    expect(isTypingTarget(button)).toBe(false);
+  });
+});
+
+describe("isShortcutBlockedTarget", () => {
+  it("blocks CodeMirror and ProseMirror editor surfaces", () => {
+    const cmChild = {
+      tagName: "DIV",
+      isContentEditable: false,
+      closest: (sel: string) => (sel.includes("cm-editor") ? {} : null),
+    } as unknown as HTMLElement;
+    const proseChild = {
+      tagName: "P",
+      isContentEditable: false,
+      closest: (sel: string) => (sel.includes("ProseMirror") ? {} : null),
+    } as unknown as HTMLElement;
+    expect(isShortcutBlockedTarget(cmChild)).toBe(true);
+    expect(isShortcutBlockedTarget(proseChild)).toBe(true);
+  });
+});
+
+describe("isStandaloneHelpKey", () => {
+  it("matches bare question mark without modifiers", () => {
+    const help = {
+      key: "?",
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: true,
+    } as KeyboardEvent;
+    const modHelp = { ...help, metaKey: true } as KeyboardEvent;
+    expect(isStandaloneHelpKey(help)).toBe(true);
+    expect(isStandaloneHelpKey(modHelp)).toBe(false);
+  });
+});
+
+describe("shouldDispatchKeybinding", () => {
+  it("allows help and close overlay while typing", () => {
+    const input = { tagName: "INPUT", isContentEditable: false } as HTMLElement;
+    expect(shouldDispatchKeybinding("shortcuts_help", input, { editing: true, splitEditing: false })).toBe(true);
+    expect(shouldDispatchKeybinding("close_overlay", input, { editing: true, splitEditing: false })).toBe(true);
+  });
+
+  it("blocks navigation shortcuts in inputs and while editing", () => {
+    const input = { tagName: "INPUT", isContentEditable: false } as HTMLElement;
+    const body = { tagName: "BODY", isContentEditable: false, closest: () => null } as unknown as HTMLElement;
+    expect(shouldDispatchKeybinding("search", input, { editing: false, splitEditing: false })).toBe(false);
+    expect(shouldDispatchKeybinding("search", body, { editing: true, splitEditing: false })).toBe(false);
+    expect(shouldDispatchKeybinding("search", body, { editing: false, splitEditing: false })).toBe(true);
+  });
+});
+
+describe("isMacPlatform", () => {
+  it("detects macOS from platform string", () => {
+    const original = navigator.platform;
+    Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true });
+    expect(isMacPlatform()).toBe(true);
+    Object.defineProperty(navigator, "platform", { value: original, configurable: true });
   });
 });

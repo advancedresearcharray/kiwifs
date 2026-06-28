@@ -129,8 +129,15 @@ export function eventMatchesChord(e: KeyboardEvent, chord: string): boolean {
   return eventKey === parsed.key;
 }
 
+export function isMacPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = ua.userAgentData?.platform ?? navigator.platform;
+  return /mac/i.test(platform);
+}
+
 export function formatChordDisplay(chord: string): string {
-  const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
+  const isMac = isMacPlatform();
   const parsed = parseChord(chord);
   const parts: string[] = [];
   if (parsed.mod) parts.push(isMac ? "⌘" : "Ctrl");
@@ -167,6 +174,46 @@ export type ShortcutSection = {
   section: string;
   items: { action: KeybindingAction; label: string }[];
 };
+
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") return false;
+  const el = target as HTMLElement;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName ?? "";
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+const SHORTCUT_BLOCKED_SELECTOR = ".cm-editor, .ProseMirror, [cmdk-input-wrapper]";
+
+export function isShortcutBlockedTarget(target: EventTarget | null): boolean {
+  if (isTypingTarget(target)) return true;
+  const el = target as HTMLElement | null;
+  if (el && typeof el.closest === "function" && el.closest(SHORTCUT_BLOCKED_SELECTOR)) return true;
+  return false;
+}
+
+/** Bare `?` (no modifiers) opens the cheat sheet when not typing in an editor/input. */
+export function isStandaloneHelpKey(e: KeyboardEvent): boolean {
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  return key === "?";
+}
+
+export function shouldDispatchKeybinding(
+  action: KeybindingAction,
+  target: EventTarget | null,
+  ctx: { editing: boolean; splitEditing: boolean },
+): boolean {
+  if (action === "close_overlay" || action === "shortcuts_help") return true;
+  if (action === "save" || action === "toggle_mode") return true;
+  if (isShortcutBlockedTarget(target)) return false;
+  if (ctx.editing || ctx.splitEditing) return false;
+  return true;
+}
+
+export function shortcutSearchValue(section: string, label: string, chord: string): string {
+  return `${label} ${section} ${formatChordDisplay(chord)} ${chord}`;
+}
 
 export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
