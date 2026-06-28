@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_KEYBINDINGS,
   buildChordIndex,
+  buildShortcutDisplaySections,
   eventMatchesChord,
   formatChordDisplay,
+  formatChordParts,
+  isBareQuestionMark,
+  isTypingTarget,
   matchBoundAction,
   mergeKeybindings,
   normalizeChord,
@@ -99,5 +103,43 @@ describe("buildChordIndex", () => {
 describe("formatChordDisplay", () => {
   it("formats mod shortcuts for display", () => {
     expect(formatChordDisplay("mod+k")).toMatch(/K/i);
+  });
+});
+
+describe("formatChordParts", () => {
+  it("returns separate kbd parts for mac and non-mac", () => {
+    expect(formatChordParts("mod+shift+b", true)).toEqual(["⌘", "⇧", "B"]);
+    expect(formatChordParts("mod+k", false)).toEqual(["Ctrl", "K"]);
+  });
+});
+
+describe("isBareQuestionMark", () => {
+  it("detects unmodified question mark", () => {
+    const bare = { key: "?", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false } as KeyboardEvent;
+    const shifted = { key: "?", metaKey: false, ctrlKey: false, shiftKey: true, altKey: false } as KeyboardEvent;
+    expect(isBareQuestionMark(bare)).toBe(true);
+    expect(isBareQuestionMark(shifted)).toBe(false);
+  });
+});
+
+describe("isTypingTarget", () => {
+  it("detects inputs and editor surfaces", () => {
+    const input = { tagName: "INPUT", isContentEditable: false, closest: () => null } as unknown as EventTarget;
+    expect(isTypingTarget(input)).toBe(true);
+  });
+});
+
+describe("buildShortcutDisplaySections", () => {
+  it("includes a custom section for overridden bindings", () => {
+    const bindings = mergeKeybindings({
+      bindings: { search: "mod+j" },
+      defaults: DEFAULT_KEYBINDINGS,
+      conflicts: [],
+    });
+    const sections = buildShortcutDisplaySections(bindings, DEFAULT_KEYBINDINGS, false);
+    expect(sections.some((s) => s.name === "Navigation")).toBe(true);
+    expect(sections.find((s) => s.name === "Custom")?.items).toEqual([
+      expect.objectContaining({ action: "search", custom: true }),
+    ]);
   });
 });

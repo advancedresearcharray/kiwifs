@@ -129,8 +129,39 @@ export function eventMatchesChord(e: KeyboardEvent, chord: string): boolean {
   return eventKey === parsed.key;
 }
 
+export function isMacPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const platform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform;
+  if (platform) return /mac/i.test(platform);
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+}
+
+export function formatChordParts(chord: string, mac = isMacPlatform()): string[] {
+  const parsed = parseChord(chord);
+  const parts: string[] = [];
+  if (parsed.mod) parts.push(mac ? "⌘" : "Ctrl");
+  if (parsed.alt) parts.push(mac ? "⌥" : "Alt");
+  if (parsed.shift) parts.push(mac ? "⇧" : "Shift");
+
+  switch (parsed.key) {
+    case "escape":
+      parts.push("Esc");
+      break;
+    case "/":
+      parts.push("/");
+      break;
+    case "?":
+      parts.push("?");
+      break;
+    default:
+      parts.push(parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key);
+  }
+
+  return parts;
+}
+
 export function formatChordDisplay(chord: string): string {
-  const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
+  const isMac = isMacPlatform();
   const parsed = parseChord(chord);
   const parts: string[] = [];
   if (parsed.mod) parts.push(isMac ? "⌘" : "Ctrl");
@@ -147,6 +178,26 @@ export function formatChordDisplay(chord: string): string {
   }
   if (parts.length === 0) return keyLabel;
   return `${parts.join("+")}+${keyLabel}`;
+}
+
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object" || !("tagName" in target)) return false;
+  const el = target as HTMLElement;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  if (el.closest(".cm-editor, [contenteditable='true'], [role='textbox']")) return true;
+  return false;
+}
+
+export function isBareQuestionMark(event: KeyboardEvent): boolean {
+  return (
+    event.key === "?" &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey
+  );
 }
 
 export function mergeKeybindings(config: KeybindingsConfig | null | undefined): Record<KeybindingAction, string> {
@@ -218,4 +269,61 @@ export function matchBoundAction(
     if (eventMatchesChord(e, chord)) return action;
   }
   return null;
+}
+
+export type ShortcutDisplayItem = {
+  action: KeybindingAction;
+  label: string;
+  chord: string;
+  keys: string[];
+  custom: boolean;
+};
+
+export type ShortcutDisplaySection = {
+  name: string;
+  items: ShortcutDisplayItem[];
+};
+
+const ACTION_LABELS: Record<KeybindingAction, string> = Object.fromEntries(
+  SHORTCUT_SECTIONS.flatMap((section) => section.items.map((item) => [item.action, item.label])),
+) as Record<KeybindingAction, string>;
+
+export function buildShortcutDisplaySections(
+  bindings: Record<KeybindingAction, string>,
+  defaults: Partial<Record<KeybindingAction, string>> = DEFAULT_KEYBINDINGS,
+  mac = isMacPlatform(),
+): ShortcutDisplaySection[] {
+  const sections: ShortcutDisplaySection[] = SHORTCUT_SECTIONS.map(({ section, items }) => ({
+    name: section,
+    items: items.map(({ action, label }) => ({
+      action,
+      label,
+      chord: bindings[action],
+      keys: formatChordParts(bindings[action], mac),
+      custom: false,
+    })),
+  }));
+
+  const customItems = (Object.keys(DEFAULT_KEYBINDINGS) as KeybindingAction[])
+    .filter((action) => {
+      const def = defaults[action] ?? DEFAULT_KEYBINDINGS[action];
+      try {
+        return normalizeChord(bindings[action]) !== normalizeChord(def);
+      } catch {
+        return false;
+      }
+    })
+    .map((action) => ({
+      action,
+      label: ACTION_LABELS[action] ?? action,
+      chord: bindings[action],
+      keys: formatChordParts(bindings[action], mac),
+      custom: true,
+    }));
+
+  if (customItems.length > 0) {
+    sections.push({ name: "Custom", items: customItems });
+  }
+
+  return sections;
 }

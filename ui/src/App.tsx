@@ -34,7 +34,7 @@ import { KiwiKanban } from "./components/KiwiKanban";
 import { KiwiRecentStart } from "./components/KiwiRecentStart";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
-import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { KeyboardShortcuts, KeyboardShortcutsHelpButton } from "./components/KeyboardShortcuts";
 import { dispatchPageChanged, getHostConfig, getToolbarBuiltinViews } from "./lib/hostConfig";
 import {
   filterToolbarViewsByFeatures,
@@ -47,7 +47,7 @@ import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
 import { useUIConfig } from "./hooks/useUIConfig";
 import { usePreferences } from "./hooks/usePreferences";
-import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
+import { formatChordDisplay, isBareQuestionMark, isTypingTarget, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
 import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
 import { formatDocumentTitle } from "./lib/pageTitle";
@@ -179,7 +179,7 @@ export default function App() {
   const { recent, recordVisit } = useRecentPages(currentSpace);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
-  const { bindings, conflicts } = useKeybindings();
+  const { bindings, conflicts, sections: shortcutSections } = useKeybindings();
   const { config: uiConfig, loaded: uiConfigLoaded } = useUIConfig();
   const resolvedStartPage = resolveStartPage(uiConfig.startPage);
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
@@ -312,6 +312,13 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+
+      if (!isTypingTarget(e.target) && isBareQuestionMark(e)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+
       const action = matchBoundAction(e, bindings);
       if (!action) return;
 
@@ -733,6 +740,14 @@ const handleSpaceSwitch = useCallback(() => {
               }}
             />
             <HostToolbarActions />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <KeyboardShortcutsHelpButton onClick={() => setShortcutsOpen(true)} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Keyboard shortcuts (?)</TooltipContent>
+            </Tooltip>
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -963,7 +978,7 @@ const handleSpaceSwitch = useCallback(() => {
       <KeyboardShortcuts
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
-        bindings={bindings}
+        sections={shortcutSections}
         conflicts={conflicts}
       />
     </TooltipProvider>
