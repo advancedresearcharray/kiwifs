@@ -35,10 +35,12 @@ var supportedProtocolVersions = []string{
 }
 
 const (
-	defaultListTTLMs    = 300000  // 5 minutes — tools/resources list
-	defaultDiscoverTTL  = 3600000 // 1 hour — server/discover
-	defaultCacheScope   = "public"
-	discoverResultType  = "complete"
+	jsonSchema202012 = "https://json-schema.org/draft/2020-12/schema"
+
+	defaultListTTLMs   = 300000  // 5 minutes — tools/resources list
+	defaultDiscoverTTL = 3600000 // 1 hour — server/discover
+	defaultCacheScope  = "public"
+	discoverResultType = "complete"
 )
 
 // DiscoverResult is the server/discover response shape (MCP 2026-07-28).
@@ -306,13 +308,52 @@ func emitRoutingHeaders(w http.ResponseWriter, method, name string) {
 
 func enhanceListCaching(body []byte, method string) []byte {
 	switch method {
-	case string(mcp.MethodToolsList), string(mcp.MethodResourcesList), string(mcp.MethodResourcesTemplatesList), string(mcp.MethodPromptsList):
+	case string(mcp.MethodToolsList):
+		body = addCachingFields(body, defaultListTTLMs)
+		return upgradeToolsListSchemas(body)
+	case string(mcp.MethodResourcesList), string(mcp.MethodResourcesTemplatesList), string(mcp.MethodPromptsList):
 		return addCachingFields(body, defaultListTTLMs)
 	case string(mcp.MethodResourcesRead):
 		return addCachingFields(body, defaultListTTLMs)
 	default:
 		return body
 	}
+}
+
+func upgradeToolsListSchemas(body []byte) []byte {
+	var msg map[string]any
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return body
+	}
+	result, ok := msg["result"].(map[string]any)
+	if !ok || result == nil {
+		return body
+	}
+	tools, ok := result["tools"].([]any)
+	if !ok {
+		return body
+	}
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		schema, ok := tool["inputSchema"].(map[string]any)
+		if !ok || schema == nil {
+			continue
+		}
+		if _, has := schema["$schema"]; !has {
+			schema["$schema"] = jsonSchema202012
+		}
+	}
+	out, err := json.Marshal(msg)
+	if err != nil {
+		return body
+	}
+	if strings.HasSuffix(string(body), "\n") {
+		return append(out, '\n')
+	}
+	return out
 }
 
 func addCachingFields(body []byte, ttlMs int64) []byte {
