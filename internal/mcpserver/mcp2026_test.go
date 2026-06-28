@@ -101,6 +101,43 @@ func TestMCP2026_ServerDiscover(t *testing.T) {
 	}
 }
 
+func TestMCP2026_ToolsListJSONSchema202012(t *testing.T) {
+	_, handler := setupMCPHTTPTest(t)
+
+	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+	if rec := mcpPOST(t, handler, initBody, nil); rec.Code != http.StatusOK {
+		t.Fatalf("initialize status = %d", rec.Code)
+	}
+
+	listBody := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+	listRec := mcpPOST(t, handler, listBody, nil)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("tools/list status = %d", listRec.Code)
+	}
+
+	var listResp struct {
+		Result struct {
+			Tools []struct {
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(listResp.Result.Tools) == 0 {
+		t.Fatal("expected at least one tool")
+	}
+	for i, tool := range listResp.Result.Tools {
+		if tool.InputSchema == nil {
+			continue
+		}
+		if got := tool.InputSchema["$schema"]; got != jsonSchema202012 {
+			t.Errorf("tool[%d].inputSchema.$schema = %v, want %s", i, got, jsonSchema202012)
+		}
+	}
+}
+
 func TestMCP2026_ToolsListCachingMetadata(t *testing.T) {
 	_, handler := setupMCPHTTPTest(t)
 
