@@ -1,0 +1,599 @@
+@import "tailwindcss";
+@import "./styles/kiwi-theme.css";
+@import "katex/dist/katex.min.css";
+
+@custom-variant dark (&:is(.dark *));
+@plugin "tailwindcss-animate";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ghost-hover-foreground: var(--ghost-hover-foreground);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-size: var(--font-size-base);
+    font-feature-settings: "cv11", "ss01";
+  }
+}
+
+/* ─── Prose (markdown body) ─── */
+.kiwi-prose {
+  @apply text-foreground;
+  line-height: var(--line-height-base);
+  max-width: var(--content-max-width);
+}
+.kiwi-prose h1 {
+  font-size: calc(var(--heading-1-size) * var(--heading-scale));
+  line-height: var(--line-height-tight);
+  @apply font-bold tracking-tight mt-8 mb-4 scroll-mt-20;
+}
+.kiwi-prose h2 {
+  font-size: calc(var(--heading-2-size) * var(--heading-scale));
+  line-height: var(--line-height-tight);
+  @apply font-semibold tracking-tight mt-8 mb-3 pb-1 border-b border-border scroll-mt-20;
+}
+.kiwi-prose h3 {
+  font-size: calc(var(--heading-3-size) * var(--heading-scale));
+  line-height: var(--line-height-tight);
+  @apply font-semibold tracking-tight mt-6 mb-2 scroll-mt-20;
+}
+.kiwi-prose h4 {
+  font-size: calc(var(--heading-4-size) * var(--heading-scale));
+  line-height: var(--line-height-tight);
+  @apply font-semibold mt-5 mb-2 scroll-mt-20;
+}
+.kiwi-prose p {
+  @apply my-3 text-foreground/90;
+}
+.kiwi-prose a {
+  color: var(--link-color);
+  text-decoration: var(--link-decoration);
+  @apply font-medium underline-offset-4 decoration-primary/60;
+  transition: opacity 0.15s ease;
+}
+.kiwi-prose a:hover {
+  @apply decoration-primary;
+  opacity: var(--link-hover-opacity);
+}
+.kiwi-prose ul {
+  @apply list-disc pl-6 my-3 space-y-1;
+}
+.kiwi-prose ol {
+  @apply list-decimal pl-6 my-3 space-y-1;
+}
+.kiwi-prose blockquote {
+  @apply border-l-4 border-primary/40 pl-4 my-4 text-muted-foreground italic;
+}
+.kiwi-prose code {
+  background: var(--code-bg);
+  font-size: var(--code-font-size);
+  font-family: var(--font-mono);
+  @apply text-foreground rounded-md px-1.5 py-0.5;
+}
+.kiwi-prose pre {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  @apply rounded-lg p-4 my-4 overflow-x-auto;
+}
+.kiwi-prose pre code {
+  font-size: var(--font-size-sm);
+  @apply bg-transparent p-0;
+}
+.kiwi-prose table {
+  @apply w-full my-4 text-sm border-collapse;
+}
+.kiwi-prose th,
+.kiwi-prose td {
+  @apply border border-border px-3 py-2 text-left align-top;
+}
+.kiwi-prose th {
+  @apply bg-muted font-semibold;
+}
+.kiwi-prose hr {
+  @apply my-8 border-border;
+}
+.kiwi-prose img {
+  @apply rounded-lg max-w-full;
+}
+.kiwi-media {
+  @apply my-4;
+}
+.kiwi-media video,
+.kiwi-media audio,
+.kiwi-media iframe {
+  max-width: 100%;
+}
+.kiwi-prose .kiwi-zoom {
+  @apply inline-block;
+}
+.kiwi-prose .kiwi-zoom img {
+  @apply cursor-zoom-in;
+}
+.kiwi-prose .wiki-link {
+  @apply text-foreground font-medium no-underline border-b-2 border-primary/50 hover:border-primary transition-colors;
+}
+.kiwi-prose .wiki-link-missing {
+  @apply text-muted-foreground border-b border-dotted border-muted-foreground/50 hover:text-foreground cursor-pointer transition-colors;
+}
+.kiwi-prose .kiwi-frontmatter {
+  @apply flex flex-wrap gap-1.5 mb-4;
+}
+.kiwi-prose .kiwi-callout {
+  @apply border-l-4 border-l-primary/40 border-y-transparent border-r-transparent rounded-r-lg bg-muted/60 px-4 py-3 my-4;
+}
+.kiwi-prose .kiwi-callout-info {
+  @apply border-l-primary/50;
+}
+.kiwi-prose .kiwi-callout-warn {
+  @apply border-l-foreground/40;
+}
+.kiwi-prose .kiwi-callout-error {
+  @apply border-l-destructive/50;
+}
+.kiwi-prose .kiwi-comment-mark {
+  @apply bg-primary/10 text-foreground rounded-sm cursor-pointer;
+}
+.kiwi-prose .kiwi-comment-mark:hover {
+  @apply bg-primary/20;
+}
+
+/* ─── Wide table horizontal scroll ─── */
+.kiwi-table-wrapper {
+  @apply overflow-x-auto my-4 rounded-lg border border-border;
+  -webkit-overflow-scrolling: touch;
+}
+.kiwi-table-wrapper table {
+  @apply w-full text-sm border-collapse my-0;
+}
+.kiwi-table-wrapper th,
+.kiwi-table-wrapper td {
+  @apply border border-border px-3 py-2 text-left align-top;
+}
+.kiwi-table-wrapper th {
+  @apply bg-muted font-semibold;
+}
+
+/* ─── Collapsible <details>/<summary> ─── */
+.kiwi-prose details {
+  @apply border border-border rounded-lg my-4;
+}
+.kiwi-prose details summary {
+  @apply px-4 py-2 cursor-pointer font-medium hover:bg-muted/50 transition-colors;
+}
+.kiwi-prose details[open] summary {
+  @apply border-b border-border;
+}
+.kiwi-prose details > :not(summary) {
+  @apply px-4;
+}
+
+/* ─── <kbd> keyboard shortcut ─── */
+.kiwi-prose kbd {
+  @apply inline-block px-1.5 py-0.5 text-xs font-mono border border-border rounded bg-muted shadow-sm;
+}
+
+/* ─── Strikethrough ─── */
+.kiwi-prose del {
+  @apply line-through text-muted-foreground;
+}
+
+/* ─── Table column alignment (GFM) ─── */
+.kiwi-prose th[align="center"],
+.kiwi-prose td[align="center"],
+.kiwi-table-wrapper th[align="center"],
+.kiwi-table-wrapper td[align="center"] {
+  text-align: center;
+}
+.kiwi-prose th[align="right"],
+.kiwi-prose td[align="right"],
+.kiwi-table-wrapper th[align="right"],
+.kiwi-table-wrapper td[align="right"] {
+  text-align: right;
+}
+.kiwi-prose th[align="left"],
+.kiwi-prose td[align="left"],
+.kiwi-table-wrapper th[align="left"],
+.kiwi-table-wrapper td[align="left"] {
+  text-align: left;
+}
+
+/* ─── Definition lists ─── */
+.kiwi-prose dl {
+  @apply my-4;
+}
+.kiwi-prose dt {
+  @apply font-semibold mt-3 first:mt-0;
+}
+.kiwi-prose dd {
+  @apply ml-6 text-foreground/80;
+}
+
+/* ─── Abbreviations ─── */
+.kiwi-prose abbr[title] {
+  @apply underline decoration-dotted decoration-muted-foreground/50 cursor-help;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* ─── Task list checkboxes ─── */
+.kiwi-prose ul:has(> li > input[type="checkbox"]) {
+  @apply list-none pl-2;
+}
+.kiwi-prose li > input[type="checkbox"] {
+  @apply mr-2 rounded;
+}
+
+/* ─── GitHub-style admonitions ─── */
+.kiwi-admonition {
+  @apply rounded-lg border px-4 py-3 my-4;
+}
+.kiwi-admonition-title {
+  @apply flex items-center gap-2 font-semibold text-sm mb-1;
+}
+.kiwi-admonition-body {
+  @apply text-sm;
+}
+.kiwi-admonition-body p:first-child {
+  @apply mt-0;
+}
+.kiwi-admonition-body p:last-child {
+  @apply mb-0;
+}
+.kiwi-admonition-note {
+  @apply border-blue-500/40 bg-blue-500/5;
+}
+.kiwi-admonition-note .kiwi-admonition-title {
+  @apply text-blue-600 dark:text-blue-400;
+}
+.kiwi-admonition-tip {
+  @apply border-green-500/40 bg-green-500/5;
+}
+.kiwi-admonition-tip .kiwi-admonition-title {
+  @apply text-green-600 dark:text-green-400;
+}
+.kiwi-admonition-important {
+  @apply border-purple-500/40 bg-purple-500/5;
+}
+.kiwi-admonition-important .kiwi-admonition-title {
+  @apply text-purple-600 dark:text-purple-400;
+}
+.kiwi-admonition-warning {
+  @apply border-yellow-500/40 bg-yellow-500/5;
+}
+.kiwi-admonition-warning .kiwi-admonition-title {
+  @apply text-yellow-600 dark:text-yellow-400;
+}
+.kiwi-admonition-caution {
+  @apply border-red-500/40 bg-red-500/5;
+}
+.kiwi-admonition-caution .kiwi-admonition-title {
+  @apply text-red-600 dark:text-red-400;
+}
+
+/* Quote / Cite (gray) */
+.kiwi-admonition-quote {
+  @apply border-gray-400/40 bg-gray-400/5;
+}
+.kiwi-admonition-quote .kiwi-admonition-title {
+  @apply text-gray-600 dark:text-gray-400;
+}
+
+/* ─── Foldable admonitions ─── */
+.kiwi-admonition-foldable {
+  cursor: default;
+}
+.kiwi-admonition-foldable > summary {
+  @apply cursor-pointer list-none select-none;
+}
+.kiwi-admonition-foldable > summary::-webkit-details-marker {
+  display: none;
+}
+.kiwi-admonition-foldable > summary::marker {
+  display: none;
+  content: "";
+}
+.kiwi-admonition-foldable > summary::after {
+  content: "";
+  @apply ml-auto inline-block w-4 h-4 shrink-0;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") no-repeat center / contain;
+  transition: transform 0.15s ease;
+}
+.kiwi-admonition-foldable[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+/* ─── Footnotes ─── */
+.kiwi-footnotes {
+  @apply mt-12 text-sm text-muted-foreground;
+}
+.kiwi-footnotes ol {
+  @apply list-decimal pl-6 space-y-2;
+}
+.kiwi-footnotes li:target {
+  @apply bg-primary/10 rounded-sm;
+}
+.kiwi-prose a[data-footnote-ref] {
+  @apply text-xs text-primary font-semibold no-underline ml-0.5;
+}
+.kiwi-prose a[data-footnote-backref] {
+  @apply text-primary no-underline ml-1;
+}
+
+/* ─── Inline highlight <mark> ─── */
+.kiwi-prose mark {
+  @apply bg-yellow-200/70 dark:bg-yellow-500/30 text-foreground rounded-sm px-0.5;
+}
+
+/* ─── Image captions ─── */
+.kiwi-figure {
+  @apply my-4;
+}
+.kiwi-figcaption {
+  @apply text-sm text-center text-muted-foreground mt-2 italic;
+}
+
+/* ─── Inline tags ─── */
+.kiwi-inline-tag {
+  @apply inline-flex items-center gap-0.5 text-xs font-medium rounded-full px-2 py-0.5
+         bg-muted text-muted-foreground border border-border
+         cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors;
+}
+
+/* ─── Search snippet highlights ─── */
+.kiwi-search-snippet mark {
+  @apply bg-primary/15 text-foreground rounded-sm px-0.5;
+}
+
+/* ─── Code block header (title + language label) ─── */
+.kiwi-code-header {
+  @apply flex items-center justify-between px-4 py-1.5 text-xs text-muted-foreground
+         border-b border-border;
+}
+.kiwi-code-title {
+  @apply font-medium text-foreground/80;
+}
+.kiwi-code-lang {
+  @apply text-muted-foreground/70 font-mono;
+}
+
+/* ─── Shiki code blocks ─── */
+.kiwi-shiki {
+  @apply border border-border rounded-lg;
+  background: var(--code-bg);
+  filter: var(--kiwi-shiki-filter);
+}
+.kiwi-shiki pre {
+  @apply border-0 m-0 rounded-none;
+  background: transparent !important;
+}
+
+/* ─── Widget inputs ─── */
+.kiwi-widget input[type="text"],
+.kiwi-widget input:not([type]) {
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.kiwi-widget input[type="text"]:focus,
+.kiwi-widget input:not([type]):focus {
+  border-color: hsl(var(--primary)) !important;
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3);
+}
+
+/* ─── Code block line highlighting ─── */
+.kiwi-shiki .kiwi-line-highlight {
+  @apply block -mx-4 px-4 bg-primary/10 border-l-2 border-primary/50;
+}
+.kiwi-shiki .kiwi-line {
+  @apply block;
+}
+
+/* ─── Diff line styling ─── */
+.kiwi-shiki .kiwi-diff-add {
+  @apply block -mx-4 px-4 bg-green-500/10;
+}
+.kiwi-shiki .kiwi-diff-del {
+  @apply block -mx-4 px-4 bg-red-500/10;
+}
+
+/* ─── CodeRunner (editable code blocks with execution) ─── */
+.kiwi-code-runner pre,
+.kiwi-code-runner textarea {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.875rem;
+  line-height: 1.625;
+  letter-spacing: 0;
+  word-spacing: 0;
+  tab-size: 4;
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+.kiwi-code-runner pre code {
+  background: transparent !important;
+}
+
+/* ─── Scrollbar ─── */
+.kiwi-scroll::-webkit-scrollbar,
+.kiwi-board-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.kiwi-scroll::-webkit-scrollbar-track,
+.kiwi-board-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kiwi-scroll::-webkit-scrollbar-thumb,
+.kiwi-board-scroll::-webkit-scrollbar-thumb {
+  @apply bg-border/60 rounded-full;
+}
+.kiwi-scroll::-webkit-scrollbar-thumb:hover,
+.kiwi-board-scroll::-webkit-scrollbar-thumb:hover {
+  @apply bg-border;
+}
+
+/* ─── BlockNote editor ─── */
+.kiwi-blocknote
+  :is(
+    .bn-block-content.ProseMirror-selectednode > *,
+    .ProseMirror-selectednode > .bn-block-content > *
+  ) {
+  outline: 2px solid var(--ring) !important;
+}
+.kiwi-blocknote {
+  filter: var(--kiwi-blocknote-filter);
+}
+.kiwi-blocknote .tiptap:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.kiwi-blocknote .bn-block-content[data-content-type="quote"] blockquote {
+  color: var(--foreground);
+}
+
+/* Wiki link pills in editor */
+.kiwi-editor-wikilink {
+  @apply bg-primary/15 text-foreground rounded px-1 py-0.5 font-medium;
+  border-bottom: 2px solid color-mix(in srgb, var(--primary) 50%, transparent);
+}
+
+/* ─── Mobile / responsive ─── */
+@media (max-width: 768px) {
+  .kiwi-prose { padding-left: 1rem; padding-right: 1rem; }
+}
+@media (pointer: coarse) {
+  .group .opacity-0.group-hover\:opacity-100 { opacity: 1; }
+}
+
+/* ─── Print / PDF export ─── */
+@media print {
+  /* ── Hide UI chrome ── */
+  .kiwi-tree-sidebar,
+  .kiwi-breadcrumb-sticky,
+  .kiwi-page-actions,
+  .kiwi-toc-sidebar,
+  .kiwi-comments-section,
+  .kiwi-backlinks-section,
+  .kiwi-resize-handle,
+  nav, header, footer, aside { display: none !important; }
+
+  /* ── Break out of the SPA viewport jail ──
+     The app uses height:100% / h-full / flex-1 + overflow:hidden/auto
+     on deeply nested containers. The print engine only renders what
+     fits inside each scroll-container viewport, clipping the rest.
+     Nuke every height / overflow constraint so the document flows
+     naturally across printed pages. flex-basis:auto undoes Tailwind's
+     flex-1 (flex-basis:0%) which traps content in one viewport. */
+  html, body, #root,
+  #root * {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    flex-basis: auto !important;
+    flex-shrink: 1 !important;
+    flex-grow: 0 !important;
+  }
+
+  /* Convert the main app shell containers from flex to block flow
+     so content streams across page breaks instead of being trapped
+     inside flex rows / columns sized to one viewport. */
+  #root > div,
+  #root > div > div,
+  #root > div > div > main,
+  #root > div > div > main > div {
+    display: block !important;
+    position: static !important;
+  }
+
+  .kiwi-prose { max-width: 100% !important; }
+
+  /* Force all <details> content visible when printing */
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary ~ * { display: block !important; }
+  details[open] summary { border-bottom: none; }
+
+  h1, h2, h3 { break-after: avoid; }
+  pre, table, figure { break-inside: avoid; }
+}
+
+/* Explorer tree: VS Code-style full-width row hit targets and highlights.
+   react-arborist + react-window renders each row as position:absolute with
+   a fixed height. Every wrapper in the chain down to .kiwi-tree-row must
+   fill 100% so that the absolute-inset-0 bg highlight layer goes edge-to-edge. */
+.kiwi-tree-panel [role="treeitem"] {
+  overflow: visible;
+}
+.kiwi-tree-panel [role="treeitem"] > * {
+  width: 100%;
+  height: 100%;
+}
+.kiwi-tree-panel .kiwi-tree-row {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Sidebar tree: pulse when "Show in sidebar" locates a page */
+@keyframes kiwi-tree-reveal-flash {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
+    background-color: transparent;
+  }
+  25% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 70%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 28%, var(--accent, transparent));
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 45%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 18%, var(--accent, transparent));
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
+    background-color: transparent;
+  }
+}
+
+.kiwi-tree-reveal-flash {
+  animation: kiwi-tree-reveal-flash 1.1s ease-out;
+  position: relative;
+  z-index: 1;
+}

@@ -1,0 +1,84 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: KiwiFS version
+      description: "Run `kiwifs --version` to find this."
+      placeholder: "e.g. 0.19.9"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Docker
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: search_engine
+    attributes:
+      label: Search engine
+      options:
+        - grep
+        - sqlite
+        - vector
+        - "N/A"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the behavior.
+      placeholder: |
+        1. Run `kiwifs serve --root ./my-wiki --port 3333`
+        2. Call `GET /api/kiwi/...`
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Paste any relevant log output or error messages.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and this hasn't been reported yet.
+          required: true
+        - label: I'm running the latest version of KiwiFS.
+          required: false

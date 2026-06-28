@@ -1,0 +1,75 @@
+/* Presentation theme — Marp CSS theme for slides */
+/* @theme presentation */
+
+section {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 28px;
+  color: #333;
+  background: #fff;
+  padding: 40px 60px;
+}
+
+h1 {
+  font-size: 2em;
+  color: #1a1a2e;
+  border-bottom: 3px solid #0066cc;
+  padding-bottom: 0.3em;
+}
+
+h2 {
+  font-size: 1.5em;
+  color: #1a1a2e;
+}
+
+h3 {
+  font-size: 1.2em;
+  color: #333;
+}
+
+a { color: #0066cc; }
+
+code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.85em;
+  background: #f0f0f0;
+  padding: 0.15em 0.3em;
+  border-radius: 4px;
+}
+
+pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 0.8em 1em;
+  border-radius: 8px;
+  font-size: 0.7em;
+}
+
+pre code { background: none; color: inherit; }
+
+blockquote {
+  border-left: 5px solid #0066cc;
+  padding: 0.5em 1em;
+  background: #f0f5ff;
+  border-radius: 0 8px 8px 0;
+  font-style: italic;
+}
+
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 0.5em; }
+th { background: #f0f5ff; }
+
+img { max-width: 100%; max-height: 60vh; }
+
+/* Title slide */
+section.lead {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+section.lead h1 { border-bottom: none; }
+
+/* Footer and pagination */
+footer { color: #999; font-size: 0.6em; }

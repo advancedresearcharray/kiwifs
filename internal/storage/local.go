@@ -1,0 +1,467 @@
+package storage
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+
+	"github.com/kiwifs/kiwifs/internal/markdown"
+)
+
+// ErrPathDenied is returned when a user-supplied path targets a forbidden
+// location (path traversal, hidden/internal directories). API handlers
+// should map this to HTTP 400 rather than 500.
+var ErrPathDenied = errors.New("path denied")
+
+const treeOrderMetadataPath = ".kiwi/tree-order.json"
+
+func (l *Local) treeOrderMetadataAbsPath() string {
+	return filepath.Join(l.root, filepath.FromSlash(treeOrderMetadataPath))
+}
+
+func (l *Local) readTreeOrderMap() (map[string]int, error) {
+	content, err := os.ReadFile(l.treeOrderMetadataAbsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]int{}, nil
+		}
+		return nil, err
+	}
+	var orders map[string]int
+	if err := json.Unmarshal(content, &orders); err != nil {
+		return nil, err
+	}
+	if orders == nil {
+		orders = map[string]int{}
+	}
+	return orders, nil
+}
+
+func (l *Local) ReadTreeOrder(_ context.Context, path string) (*int, error) {
+	clean := normalizeUserPath(strings.TrimSuffix(path, "/"))
+	if clean == "" {
+		return nil, nil
+	}
+	orders, err := l.readTreeOrderMap()
+	if err != nil {
+		return nil, err
+	}
+	if order, ok := orders[clean]; ok {
+		return &order, nil
+	}
+	return nil, nil
+}
+
+func (l *Local) WriteTreeOrder(_ context.Context, updates map[string]int) error {
+	orders, err := l.readTreeOrderMap()
+	if err != nil {
+		return err
+	}
+	for rawPath, order := range updates {
+		clean := normalizeUserPath(strings.TrimSuffix(rawPath, "/"))
+		if clean == "" {
+			continue
+		}
+		if _, err := l.guardPath(clean); err != nil {
+			return err
+		}
+		orders[clean] = order
+	}
+	content, err := json.MarshalIndent(orders, "", "  ")
+	if err != nil {
+		return err
+	}
+	content = append(content, '\n')
+	abs := l.treeOrderMetadataAbsPath()
+	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(abs), ".tree-order-*.json")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		if tmpName != "" {
+			os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, abs); err != nil {
+		return err
+	}
+	tmpName = ""
+	return nil
+}
+
+// Local implements Storage over a local directory.
+//
+// Methods accept context.Context to satisfy the interface but currently
+// don't honour it — Go's stdlib file ops aren't cancellable. That's fine
+// for a local FS where every op completes in microseconds; the parameter
+// is here so a swap to a network-backed Storage doesn't churn callers.
+type Local struct {
+	root string
+}
+
+// NewLocal creates a local storage rooted at the given directory.
+// It creates the directory if it doesn't exist.
+func NewLocal(root string) (*Local, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0755); err != nil {
+		return nil, fmt.Errorf("create root: %w", err)
+	}
+	// Resolve symlinks on root itself so guardPath's post-resolution Rel
+	// check works correctly (e.g. macOS /var -> /private/var).
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root symlinks: %w", err)
+	}
+	return &Local{root: resolved}, nil
+}
+
+// hidden returns true for internal dirs that should not be exposed via the
+// API. Any leading-dot name is hidden, which already covers .git and .kiwi.
+func hidden(name string) bool {
+	return strings.HasPrefix(name, ".")
+}
+
+func (l *Local) AbsPath(path string) string {
+	clean := normalizeUserPath(path)
+	return filepath.Join(l.root, filepath.FromSlash(clean))
+}
+
+// userEditableKiwiFiles lists .kiwi/ files that are user-facing content
+// and should be accessible through the normal file API. Everything else
+// under .kiwi/ (config.toml, state/, templates/, etc.) stays blocked.
+var userEditableKiwiFiles = map[string]bool{
+	".kiwi/rules.md":    true,
+	".kiwi/playbook.md": true,
+}
+
+// GuardPath resolves userPath against root and rejects any result that
+// escapes root via ".." or other traversal. It also blocks access to
+// internal directories (.git and most of .kiwi/) that must never be
+// exposed through the API. User-editable .kiwi files (rules.md,
+// playbook.md) are explicitly allowed.
+func GuardPath(root, userPath string) (string, error) {
+	if err := validatePathChars(userPath); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrPathDenied, err)
+	}
+	clean := normalizeUserPath(userPath)
+	abs := filepath.Join(root, filepath.FromSlash(clean))
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: path traversal denied: %s", ErrPathDenied, userPath)
+	}
+	if hasHiddenComponent(rel) && !userEditableKiwiFiles[filepath.ToSlash(rel)] {
+		return "", fmt.Errorf("%w: access to internal path denied: %s", ErrPathDenied, userPath)
+	}
+	if isDangerousFile(clean) {
+		return "", fmt.Errorf("%w: write to %s is blocked (would alter git behaviour)", ErrPathDenied, filepath.Base(clean))
+	}
+	return abs, nil
+}
+
+// validatePathChars rejects filenames that are unsafe on POSIX or Windows
+// filesystems: null bytes, control characters (0x00-0x1F), and individual
+// path segments longer than 255 bytes (ext4/APFS limit).
+func validatePathChars(p string) error {
+	for i := 0; i < len(p); i++ {
+		if p[i] == 0 {
+			return fmt.Errorf("path contains null byte at position %d", i)
+		}
+		if p[i] < 0x20 && p[i] != '\t' {
+			return fmt.Errorf("path contains control character 0x%02x at position %d", p[i], i)
+		}
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if len(seg) > 255 {
+			return fmt.Errorf("path segment exceeds 255 bytes: %.40s...", seg)
+		}
+	}
+	return nil
+}
+
+// hasHiddenComponent reports whether any segment of a slash-separated
+// relative path starts with a dot (e.g. ".git/config", "a/.kiwi/state").
+// The lone "." (current directory) is not considered hidden.
+func hasHiddenComponent(rel string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
+		if seg != "." && strings.HasPrefix(seg, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+// dangerousBasename blocks files that could silently alter git behaviour
+// or server semantics if written by an untrusted agent. .gitattributes
+// in particular causes line-ending normalization that drifts ETags.
+var dangerousBasenames = map[string]bool{
+	".gitattributes": true,
+	".gitmodules":    true,
+}
+
+func isDangerousFile(userPath string) bool {
+	base := filepath.Base(filepath.FromSlash(userPath))
+	return dangerousBasenames[base]
+}
+
+// normalizeUserPath canonicalizes user-supplied paths to a safe relative form.
+func normalizeUserPath(userPath string) string {
+	slash := strings.ReplaceAll(userPath, "\\", "/")
+	clean := path.Clean("/" + slash)
+	return strings.TrimPrefix(clean, "/")
+}
+
+func (l *Local) guardPath(path string) (string, error) {
+	abs, err := GuardPath(l.root, path)
+	if err != nil {
+		return "", err
+	}
+	evaluated, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return l.guardAncestor(abs)
+		}
+		return "", fmt.Errorf("eval symlinks: %w", err)
+	}
+	rel, err := filepath.Rel(l.root, evaluated)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path outside root (symlink): %s", path)
+	}
+	return abs, nil
+}
+
+// guardAncestor walks up from abs until it finds an existing ancestor,
+// evaluates its symlinks, and checks that the ancestor is inside root.
+// Used when the target path doesn't exist yet (new file writes).
+func (l *Local) guardAncestor(abs string) (string, error) {
+	dir := abs
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+		evaluated, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", fmt.Errorf("eval symlinks: %w", err)
+		}
+		rel, err := filepath.Rel(l.root, evaluated)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return "", fmt.Errorf("path outside root (symlink ancestor): %s", abs)
+		}
+		return abs, nil
+	}
+	return abs, nil
+}
+
+func (l *Local) Read(_ context.Context, path string) ([]byte, error) {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(abs)
+}
+
+func (l *Local) ReadFrontmatter(_ context.Context, path string) (map[string]any, error) {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var buf bytes.Buffer
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024), markdown.MaxFrontmatterBytes+1024)
+	lineNo := 0
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		lineNo++
+		if lineNo == 1 && !bytes.Equal(bytes.TrimRight(line, "\r"), []byte("---")) {
+			return map[string]any{}, nil
+		}
+		if buf.Len()+len(line)+1 > markdown.MaxFrontmatterBytes+8 {
+			return map[string]any{}, nil
+		}
+		buf.Write(line)
+		buf.WriteByte('\n')
+		if lineNo > 1 && bytes.Equal(bytes.TrimRight(line, "\r"), []byte("---")) {
+			return markdown.Frontmatter(buf.Bytes())
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return map[string]any{}, nil
+}
+
+func (l *Local) ReadFrontmatterError(_ context.Context, path string) (string, error) {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(abs)
+	if err != nil {
+		return "", err
+	}
+	for _, issue := range markdown.LintMarkdown(content) {
+		if issue.Rule == "frontmatter-yaml-invalid" {
+			return fmt.Sprintf("%s (line %d): %s", issue.Rule, issue.Line, issue.Message), nil
+		}
+	}
+	return "", nil
+}
+
+func (l *Local) Write(_ context.Context, path string, content []byte) error {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(abs)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create parent dirs: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".kiwi-write-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		// Clean up the temp file on any failure path.
+		if tmpName != "" {
+			os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("fsync temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0644); err != nil {
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, abs); err != nil {
+		return fmt.Errorf("rename temp to target: %w", err)
+	}
+	tmpName = "" // rename succeeded — don't remove in defer
+
+	// fsync the parent directory so the new directory entry is durable.
+	d, err := os.Open(dir)
+	if err != nil {
+		return nil // file is already in place; dir sync failure is non-fatal
+	}
+	d.Sync()
+	d.Close()
+	return nil
+}
+
+func (l *Local) Delete(_ context.Context, path string) error {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return err
+	}
+	return os.Remove(abs)
+}
+
+func (l *Local) List(_ context.Context, path string) ([]Entry, error) {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Normalize the dir path: strip leading/trailing slashes for consistent joining.
+	cleanDir := strings.Trim(path, "/")
+
+	result := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		if hidden(e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		var relPath string
+		if cleanDir == "" {
+			relPath = e.Name()
+		} else {
+			relPath = cleanDir + "/" + e.Name()
+		}
+		if e.IsDir() {
+			relPath += "/"
+		}
+		result = append(result, Entry{
+			Path:    relPath,
+			Name:    e.Name(),
+			IsDir:   e.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+		})
+	}
+	return result, nil
+}
+
+func (l *Local) Stat(_ context.Context, path string) (*Entry, error) {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, err
+	}
+	return &Entry{
+		Path:    path,
+		Name:    info.Name(),
+		IsDir:   info.IsDir(),
+		Size:    info.Size(),
+		ModTime: info.ModTime(),
+	}, nil
+}
+
+func (l *Local) Exists(_ context.Context, path string) bool {
+	abs, err := l.guardPath(path)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(abs)
+	return err == nil
+}

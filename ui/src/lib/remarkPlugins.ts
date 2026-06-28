@@ -1,0 +1,138 @@
+// Custom remark/rehype plugins for extended Obsidian-compatible markdown syntax.
+//
+// These follow the same pattern as `remarkWikiLinks`: walk text nodes with
+// `unist-util-visit`, regex-match the target syntax, and splice replacement
+// AST nodes into the parent.
+
+import { visit } from "unist-util-visit";
+import type { Root } from "mdast";
+import type { Root as HastRoot } from "hast";
+
+// ── ==highlight== → <mark> ──────────────────────────────────────────────────
+// Converts `==text==` syntax to emphasis-mark nodes that render as <mark>.
+// The regex avoids matching inside code spans (those are never text nodes
+// inside a `code` parent—the parser already isolates them).
+
+export function remarkMark() {
+  const re = /==((?:(?!==).)+)==/g;
+
+  return (tree: Root) => {
+    visit(tree, "text", (node, index, parent) => {
+      if (!parent || index === undefined) return;
+      if (!node.value.includes("==")) return;
+      // Don't process text inside code/inlineCode nodes
+      if ((parent as any).type === "code" || (parent as any).type === "inlineCode") return;
+
+      const parts: any[] = [];
+      let last = 0;
+      let m: RegExpExecArray | null;
+      re.lastIndex = 0;
+
+      while ((m = re.exec(node.value)) !== null) {
+        if (m.index > last) {
+          parts.push({ type: "text", value: node.value.slice(last, m.index) });
+        }
+        parts.push({
+          type: "html",
+          value: `<mark>${escapeHtml(m[1])}</mark>`,
+        });
+        last = m.index + m[0].length;
+      }
+
+      if (parts.length === 0) return;
+      if (last < node.value.length) {
+        parts.push({ type: "text", value: node.value.slice(last) });
+      }
+      (parent as any).children.splice(index, 1, ...parts);
+      return index + parts.length;
+    });
+  };
+}
+
+// ── %%comments%% → stripped ─────────────────────────────────────────────────
+// Obsidian hides content between `%%` markers. We strip them before the
+// markdown enters the AST so nothing downstream ever sees them.
+//
+// Applied as a pre-processor on the raw string, not as a remark plugin,
+// because `%%` can span multiple lines / blocks.
+
+export function stripObsidianComments(md: string): string {
+  return md.replace(/%%[\s\S]*?%%/g, "");
+}
+
+// ── #tag → clickable badge ──────────────────────────────────────────────────
+// Recognises `#tag-name` in text nodes and emits an inline HTML badge.
+// Rules to avoid collisions with headings:
+//   - Must be preceded by whitespace or be at the very start of a text node
+//   - Must NOT be the start-of-line `# Heading` pattern (already parsed as heading)
+//   - Must NOT appear inside code nodes
+//   - Tag names: letters, digits, hyphens, underscores, forward slashes
+//     (Obsidian allows nested tags like #project/alpha)
+
+export function remarkInlineTags() {
+  // Match #tag that is preceded by start-of-string or whitespace
+  const re = /(?:^|(?<=\s))#([A-Za-z][A-Za-z0-9_/-]*)/g;
+
+  return (tree: Root) => {
+    visit(tree, "text", (node, index, parent) => {
+      if (!parent || index === undefined) return;
+      if (!node.value.includes("#")) return;
+      // Skip code/inlineCode parents
+      if ((parent as any).type === "code" || (parent as any).type === "inlineCode") return;
+      // Skip heading nodes — `# Heading` is already parsed by the time we see text nodes,
+      // but heading *content* nodes are children of heading elements.
+      // Tags inside headings are valid in Obsidian, so we allow them.
+
+      const parts: any[] = [];
+      let last = 0;
+      let m: RegExpExecArray | null;
+      re.lastIndex = 0;
+
+      while ((m = re.exec(node.value)) !== null) {
+        const tagStart = m.index;
+        if (tagStart > last) {
+          parts.push({ type: "text", value: node.value.slice(last, tagStart) });
+        }
+        const tag = m[1];
+        parts.push({
+          type: "html",
+          value: `<span class="kiwi-inline-tag" data-tag="${escapeAttr(tag)}">#${escapeHtml(tag)}</span>`,
+        });
+        last = m.index + m[0].length;
+      }
+
+      if (parts.length === 0) return;
+      if (last < node.value.length) {
+        parts.push({ type: "text", value: node.value.slice(last) });
+      }
+      (parent as any).children.splice(index, 1, ...parts);
+      return index + parts.length;
+    });
+  };
+}
+
+// ── rehypeCodeMeta ──────────────────────────────────────────────────────────
+// Preserves the code fence meta string (`title="..." {1,3}`) by copying
+// `node.data.meta` to `node.properties.metastring` *before* rehype-raw
+// runs and strips internal data fields.
+
+export function rehypeCodeMeta() {
+  return (tree: HastRoot) => {
+    visit(tree, "element", (node: any) => {
+      if (node.tagName === "code" && node.data?.meta) {
+        node.properties = node.properties || {};
+        node.properties.metastring = node.data.meta;
+      }
+    });
+  };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeAttr(s: string): string {
+  return escapeHtml(s).replace(/"/g, "&quot;");
+}

@@ -1,0 +1,151 @@
+/**
+ * KiwiFS UI — central theme
+ *
+ * Clean light/dark surfaces, chartreuse primary, generous radius, minimal chrome.
+ * All design tokens live here. Components reference via Tailwind utilities or
+ * getComputedStyle for --kiwi-graph-* (WebGL). Edit this file to retheme the app.
+ */
+
+/* ─── Light ─── */
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(0 0% 9%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(0 0% 9%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(0 0% 9%);
+
+  /* Primary / brand CTA */
+  --primary: hsl(65 80% 55%);
+  --primary-foreground: hsl(0 0% 9%);
+  --primary-hover: hsl(65 80% 48%);
+
+  --secondary: hsl(0 0% 96%);
+  --secondary-foreground: hsl(0 0% 9%);
+  --secondary-hover: hsl(0 0% 91%);
+
+  --muted: hsl(0 0% 96%);
+  --muted-foreground: hsl(0 0% 45%);
+
+  --accent: hsl(0 0% 96%);
+  --accent-foreground: hsl(0 0% 9%);
+  --accent-hover: hsl(0 0% 91%);
+
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --destructive-hover: hsl(0 84% 52%);
+
+  --border: hsl(0 0% 90%);
+  --input: hsl(0 0% 90%);
+  --ring: hsl(65 80% 55%);
+
+  --radius: 0.625rem;
+
+  --ghost-hover-foreground: hsl(0 0% 9%);
+  --link-hover-opacity: 0.75;
+
+  /* Typography */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --font-size-base: 1rem;
+  --font-size-sm: 0.875rem;
+  --font-size-lg: 1.125rem;
+  --line-height-base: 1.75;
+  --line-height-tight: 1.3;
+
+  /* Spacing / density */
+  --spacing-unit: 8px;
+  --content-max-width: 48rem;
+  --sidebar-width: 288px;
+
+  /* Headings */
+  --heading-1-size: 1.875rem;
+  --heading-2-size: 1.5rem;
+  --heading-3-size: 1.25rem;
+  --heading-4-size: 1.125rem;
+  --heading-scale: 1;
+
+  /* Code */
+  --code-font-size: 0.875em;
+  --code-bg: hsl(0 0% 96%);
+  --code-border: hsl(0 0% 90%);
+
+  /* Links */
+  --link-decoration: underline;
+  --link-color: var(--foreground);
+
+  --kiwi-shiki-filter: none;
+
+  /* Graph (hex — read by readKiwiGraphTheme()) */
+  --kiwi-graph-default-node: #7c8a6e;
+  --kiwi-graph-edge: #c8c8c8;
+  --kiwi-graph-node-dim: #e0e0e0;
+  --kiwi-graph-edge-ghost: #ececec;
+  --kiwi-graph-edge-strong: #555555;
+  --kiwi-graph-palette-0: #5b9e4f;
+  --kiwi-graph-palette-1: #4a89c8;
+  --kiwi-graph-palette-2: #d97b3e;
+  --kiwi-graph-palette-3: #c254a5;
+  --kiwi-graph-palette-4: #3db5a6;
+  --kiwi-graph-palette-5: #c9534e;
+  --kiwi-graph-palette-6: #8b6cc1;
+  --kiwi-graph-palette-7: #c4a832;
+  --kiwi-graph-palette-8: #4eadd4;
+  --kiwi-graph-palette-9: #7a8f3e;
+}
+
+/* ─── Dark ─── */
+.dark {
+  --background: hsl(0 0% 5%);
+  --foreground: hsl(0 0% 95%);
+  --card: hsl(0 0% 7%);
+  --card-foreground: hsl(0 0% 95%);
+  --popover: hsl(0 0% 7%);
+  --popover-foreground: hsl(0 0% 95%);
+
+  --primary: hsl(65 80% 62%);
+  --primary-foreground: hsl(0 0% 5%);
+  --primary-hover: hsl(65 80% 54%);
+
+  --secondary: hsl(0 0% 12%);
+  --secondary-foreground: hsl(0 0% 95%);
+  --secondary-hover: hsl(0 0% 18%);
+
+  --muted: hsl(0 0% 12%);
+  --muted-foreground: hsl(0 0% 55%);
+
+  --accent: hsl(0 0% 12%);
+  --accent-foreground: hsl(0 0% 95%);
+  --accent-hover: hsl(0 0% 18%);
+
+  --destructive: hsl(0 70% 45%);
+  --destructive-foreground: hsl(0 0% 95%);
+  --destructive-hover: hsl(0 70% 38%);
+
+  --border: hsl(0 0% 15%);
+  --input: hsl(0 0% 15%);
+  --ring: hsl(65 80% 62%);
+
+  --ghost-hover-foreground: hsl(0 0% 95%);
+  --link-hover-opacity: 0.85;
+
+  --code-bg: hsl(0 0% 12%);
+  --code-border: hsl(0 0% 18%);
+
+  --kiwi-graph-default-node: #a4b894;
+  --kiwi-graph-edge: #555555;
+  --kiwi-graph-node-dim: #333333;
+  --kiwi-graph-edge-ghost: #2a2a2a;
+  --kiwi-graph-edge-strong: #cccccc;
+  --kiwi-graph-palette-0: #6ec45e;
+  --kiwi-graph-palette-1: #5ea0e6;
+  --kiwi-graph-palette-2: #f09050;
+  --kiwi-graph-palette-3: #e068c0;
+  --kiwi-graph-palette-4: #4ed4c4;
+  --kiwi-graph-palette-5: #e66060;
+  --kiwi-graph-palette-6: #a884e0;
+  --kiwi-graph-palette-7: #e0c840;
+  --kiwi-graph-palette-8: #60c4f0;
+  --kiwi-graph-palette-9: #98b850;
+}

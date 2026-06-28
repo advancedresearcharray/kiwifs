@@ -1,0 +1,95 @@
+# KiwiFS — Markdown Filesystem for Agents and Teams
+
+Searchable. Structured. Versioned. One binary, zero config.
+
+Agents write markdown. Humans read in the web UI. Git versions everything.
+
+> **Note:** This npm package is not yet published. For now, build from source — see the [main README](https://github.com/kiwifs/kiwifs).
+
+## Installation (once published)
+
+### Global install
+
+```bash
+npm install -g kiwifs
+```
+
+### npx (no install needed)
+
+```bash
+npx kiwifs serve --root ~/my-knowledge --port 3333
+```
+
+## Usage
+
+### CLI
+
+```bash
+# Initialize a new knowledge base
+kiwifs init ~/my-knowledge
+
+# Start the server
+kiwifs serve --root ~/my-knowledge --port 3333
+
+# Mount a remote KiwiFS as a local folder (FUSE)
+kiwifs mount --remote http://localhost:3333 ~/mounted-knowledge
+```
+
+## Protocols
+
+KiwiFS supports multiple access protocols:
+
+- **REST API** (`:3333`) — JSON API for CRUD operations
+- **NFS** (`--nfs --nfs-port 2049`) — Native filesystem mount for Docker/K8s
+- **S3 API** (`--s3 --s3-port 3334`) — S3-compatible API for aws cli, boto3, rclone
+- **WebDAV** (`--webdav --webdav-port 3335`) — Windows/macOS network drive
+- **FUSE** (`kiwifs mount`) — Mount remote KiwiFS as local folder
+
+## Features
+
+- **Files are the source of truth** — Plain markdown files, no database
+- **Git-versioned** — Every change is a commit with full history
+- **Full-text search** — SQLite FTS5 with BM25 ranking
+- **Semantic search** — Vector embeddings (OpenAI, Ollama, Cohere, Bedrock, Vertex)
+- **Wiki links** — `[[page-name]]` syntax with backlinks
+- **Web UI** — Obsidian + Confluence fusion with graph view
+- **Real-time events** — SSE stream for live updates
+- **File watcher** — Detects external writes, auto-commits
+
+## Configuration
+
+Create `.kiwi/config.toml` in your knowledge root:
+
+```toml
+[server]
+port = 3333
+host = "0.0.0.0"
+
+[search]
+engine = "sqlite"  # or "grep"
+
+  [search.vector]
+  enabled = true
+  # Optional: lower for small CPUs/local embedders, default is 5.
+  worker_count = 1
+
+    [search.vector.embedder]
+    provider = "ollama"
+    model = "nomic-embed-text"
+    # Optional for Ollama: Go duration string, default is 30s.
+    timeout = "120s"
+
+    [search.vector.store]
+    provider = "sqlite"  # or "qdrant", "pgvector", "pinecone", "weaviate"
+
+[versioning]
+strategy = "git"  # or "cow" or "none"
+```
+
+## Documentation
+
+- [GitHub](https://github.com/kiwifs/kiwifs)
+
+## License
+
+[BSL 1.1](https://github.com/kiwifs/kiwifs/blob/main/LICENSE)

@@ -1,0 +1,3 @@
+# KiwiFS: store files exactly as written — no line-ending normalization.
+# ETags are computed from raw content; normalization would cause hash drift.
+* -text

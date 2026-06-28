@@ -1,0 +1,36 @@
+[server]
+port = 3333
+host = "0.0.0.0"
+
+[storage]
+root = "."
+
+[search]
+engine = "sqlite"
+# semantic = false  # Enable vector search (requires embedding model config)
+
+[versioning]
+strategy = "git"
+
+# [backup]
+# remote = "git@github.com:user/kb.git"
+# interval = "5m"
+# branch = "main"
+# rebase_before_push = true
+
+[memory]
+# episodes_path_prefix = "episodes/"
+# consolidation_threshold = 5  # Auto-flag when N episodes share a topic
+# stale_episode_days = 90      # Days before unconsolidated episodes are flagged
+
+[lint]
+# require_frontmatter = true
+# require_title = true
+# require_tags = true
+# max_page_lines = 300
+# check_wikilinks = true
+# freshness_default_days = 90
+
+[auth]
+type = "none"
+# type = "apikey" / "perspace" / "oidc" ...

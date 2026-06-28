@@ -1,0 +1,1352 @@
+// Package pipeline is the single write funnel for all protocols (REST, WebDAV,
+// NFS, S3) — versioning, indexing, and SSE happen exactly once per change.
+package pipeline
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha1"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/kiwifs/kiwifs/internal/events"
+	"github.com/kiwifs/kiwifs/internal/links"
+	"github.com/kiwifs/kiwifs/internal/markdown"
+	"github.com/kiwifs/kiwifs/internal/search"
+	"github.com/kiwifs/kiwifs/internal/storage"
+	"github.com/kiwifs/kiwifs/internal/vectorstore"
+	"github.com/kiwifs/kiwifs/internal/versioning"
+)
+
+// inflightWindow is how long a path stays in the inflight set after a
+// pipeline-originated write. It must exceed the watcher debounce (500ms)
+// with headroom to cover OS event latency — 2s is comfortably safe.
+const inflightWindow = 2 * time.Second
+
+// DefaultActor is stamped into git commits when no caller-supplied actor is
+// provided. Protocols that always know their actor (WebDAV → "webdav",
+// S3 → "s3", watcher → "fswatch") pass their own; the REST API falls
+// through to this when X-Actor is absent.
+const DefaultActor = "kiwifs"
+
+// Pipeline bundles the side effects that must run on every write or delete.
+// Dependencies are held by interface so protocols can construct one cheaply
+// and share it — the struct is immutable after construction.
+type Pipeline struct {
+	Store     storage.Storage
+	Versioner versioning.Versioner
+	Searcher  search.Searcher
+	Linker    links.Linker            // may be nil (grep search has no link index)
+	Hub       *events.Hub             // may be nil (tests / protocols that don't broadcast)
+	Vectors   *vectorstore.Service    // may be nil when vector search is disabled
+
+	// Root is the absolute storage root. WriteStream spools oversized
+	// uploads into `.kiwi-stream-*` tempfiles under this directory so
+	// the final atomic rename stays on the same filesystem. Empty when
+	// the pipeline is wired around an in-memory store (tests).
+	Root string
+
+	// OnInvalidate, when set, fires on every write and delete. The API
+	// layer wires it to cache-invalidation callbacks (graph endpoint, etc.)
+	// so the pipeline doesn't need to know which layers cache what — it
+	// just announces "something changed".
+	OnInvalidate func()
+
+	// OnPathChange, when set, fires on every write/delete with the
+	// affected path. Used by the view registry to mark overlapping
+	// computed views as stale.
+	OnPathChange func(path string)
+
+	// OnWebhook, when set, fires after every write/delete with the
+	// operation type, path, and actor. Used to dispatch webhook events.
+	OnWebhook func(op, path, actor string)
+
+	// OnTransition, when set, fires after a write that changes a tracked
+	// frontmatter field (currently "status"). Used to dispatch transition
+	// webhook events and re-resolve dependency graphs.
+	OnTransition func(path, field, fromState, toState, actor string)
+
+	// OnDelete, when set, fires after a file is deleted via the pipeline
+	// (REST DELETE, bulk, or observed fs deletion). Used to re-resolve
+	// dependency graphs for files whose blocked-by references the deleted
+	// path — without this, deleting a blocker leaves dependents stale.
+	OnDelete func(path, actor string)
+
+	// ValidateTransition, when set, is called before a write that would
+	// change a tracked frontmatter field. If it returns non-nil, the write
+	// is rejected (e.g. disallowed workflow transition).
+	ValidateTransition func(path, oldStatus, newStatus string) error
+
+	// FormatWrite, when set, is called before ValidateWrite. It normalizes
+	// the content (e.g. fixes table alignment, closes unclosed fences,
+	// strips trailing whitespace). Returns the cleaned content. Used for
+	// auto-formatting markdown on write. The formatter MUST NOT reject
+	// content — only fix cosmetic issues silently.
+	FormatWrite func(path string, content []byte) []byte
+
+	// ValidateWrite, when set, is called before writing content. If it
+	// returns a non-nil error, the write is rejected. Used for schema
+	// validation of frontmatter against JSON Schema definitions.
+	ValidateWrite func(path string, content []byte) error
+
+	// writeMu serialises the whole Store.Write → Versioner.Commit sequence
+	// across concurrent Write / BulkWrite / Delete / Observe* callers.
+	// Without it, a REST-origin Write could race with an fsnotify-origin
+	// Observe and the two goroutines' `git add` calls could stage each
+	// other's files into the wrong commit — the per-versioner mutex only
+	// covers add+commit, not the "my files vs. their files" boundary.
+	writeMu sync.Mutex
+
+	// inflight tracks paths recently written via Write/BulkWrite/Delete so
+	// the fsnotify watcher can tell its own echo events apart from real
+	// out-of-band edits. Without this, every REST write triggers a
+	// watcher Observe that re-embeds the same content — doubling the
+	// vector-embedding API cost per change.
+	//
+	// The value is an inflightEntry rather than a bare timestamp so the
+	// watcher can dedup by content hash as well as by a time window: if
+	// fsnotify fires late (after the window), Observe still drops the
+	// echo when the content hash matches what we just wrote.
+	inflight sync.Map // map[string]inflightEntry
+
+	// uncommittedLog is the path to .kiwi/state/uncommitted.log. When a
+	// versioner commit fails after a successful storage write, the path is
+	// appended here so it can be retried on the next successful commit or
+	// at process startup. Empty disables the feature (tests).
+	uncommittedLog string
+
+	// AsyncIdx, when non-nil, defers search/links/meta indexing to a
+	// background goroutine. Writes return immediately after Store.Write +
+	// Versioner.Commit; the index catches up within the batch window
+	// (~200ms). Set via pipeline.New options or injected by bootstrap.
+	AsyncIdx *AsyncIndexer
+}
+
+// Result is returned from Write so callers can set ETag headers, log, etc.
+type Result struct {
+	Path string
+	ETag string
+}
+
+// ErrConflict is returned by Write when an If-Match precondition no longer
+// holds at commit time. Mapped to HTTP 409 by the REST handler.
+var ErrConflict = fmt.Errorf("file modified since last read")
+
+// ErrTransitionDenied is returned when a workflow state transition is not
+// allowed by the configured transition rules. Mapped to HTTP 409.
+var ErrTransitionDenied = fmt.Errorf("transition denied")
+
+// ErrValidationFailed is returned when content fails schema validation.
+// Mapped to HTTP 422 by the REST handler.
+var ErrValidationFailed = fmt.Errorf("validation failed")
+
+// WriteOpts carries the optional knobs that don't fit Write's hot signature.
+// Today only IfMatch is set; new fields go here so callers don't churn.
+type WriteOpts struct {
+	// IfMatch, if non-empty, must match the current file's ETag. The check
+	// runs inside writeMu so two concurrent writers with the same stale tag
+	// can't both pass. Empty value disables the check (create-or-overwrite
+	// semantics for callers that don't use optimistic locking).
+	IfMatch string
+}
+
+// preDeleter is an optional hook some versioners expose so they can snapshot
+// a file before the storage layer removes it. Satisfied by the CoW
+// versioner; git doesn't need it (git rm captures the deletion).
+type preDeleter interface {
+	PreDeleteSnapshot(path string) error
+}
+
+func coalesce(actor string) string {
+	if actor == "" {
+		return DefaultActor
+	}
+	return actor
+}
+
+// extractStatus returns the page's workflow-relevant status field from
+// frontmatter. It checks "status" first (legacy field) and falls back to
+// "state" (used by the kanban/workflow system), so config-based
+// enforce_transitions applies to both naming conventions.
+func extractStatus(content []byte) string {
+	fm, err := markdown.Frontmatter(content)
+	if err != nil || fm == nil {
+		return ""
+	}
+	if s, ok := fm["status"].(string); ok && s != "" {
+		return s
+	}
+	s, _ := fm["state"].(string)
+	return s
+}
+
+// New builds a pipeline. Pass nil for optional dependencies (linker, hub, vectors).
+func New(
+	store storage.Storage,
+	versioner versioning.Versioner,
+	searcher search.Searcher,
+	linker links.Linker,
+	hub *events.Hub,
+	vectors *vectorstore.Service,
+	root string,
+) *Pipeline {
+	var ulog string
+	if root != "" {
+		ulog = filepath.Join(root, ".kiwi", "state", "uncommitted.log")
+	}
+	return &Pipeline{
+		Store:          store,
+		Versioner:      versioner,
+		Searcher:       searcher,
+		Linker:         linker,
+		Hub:            hub,
+		Vectors:        vectors,
+		Root:           root,
+		uncommittedLog: ulog,
+	}
+}
+
+// metaIndexer is the optional interface index-backed searchers implement to
+// keep a structured frontmatter table alongside the FTS index. Grep search
+// doesn't satisfy it, which is why the pipeline type-asserts at call time.
+type metaIndexer interface {
+	IndexMeta(ctx context.Context, path string, content []byte) error
+	RemoveMeta(ctx context.Context, path string) error
+}
+
+// allRemover wraps docs/links/file_meta deletes in one tx to avoid index drift.
+type allRemover interface {
+	RemoveAll(ctx context.Context, path string) error
+}
+
+// IndexFile is the exported entry point for re-indexing a single file.
+func (p *Pipeline) IndexFile(ctx context.Context, path string, content []byte) {
+	p.indexFile(ctx, path, content)
+}
+
+// DeindexFile is the exported entry point for removing a file from all indexes.
+func (p *Pipeline) DeindexFile(ctx context.Context, path string) {
+	p.deindexFile(ctx, path)
+}
+
+// indexFile pushes content into every index (search, links, vectors, meta).
+// When AsyncIdx is set, it enqueues and returns immediately. Otherwise it
+// runs synchronously. Errors are logged, not returned — side-effect
+// failures must not block the write that triggered them.
+func (p *Pipeline) indexFile(ctx context.Context, path string, content []byte) {
+	abs := p.Store.AbsPath(path)
+	if info, err := os.Lstat(abs); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return
+	}
+	if p.AsyncIdx != nil {
+		p.AsyncIdx.Enqueue(path, content)
+		return
+	}
+	p.indexFileSync(ctx, path, content)
+}
+
+// indexFileSync is the synchronous implementation of indexFile.
+func (p *Pipeline) indexFileSync(ctx context.Context, path string, content []byte) {
+	if err := p.Searcher.Index(ctx, path, content); err != nil {
+		log.Printf("pipeline: searcher.Index(%s): %v", path, err)
+	}
+	if p.Linker != nil {
+		if err := p.Linker.IndexLinks(ctx, path, links.Extract(content)); err != nil {
+			log.Printf("pipeline: linker.IndexLinks(%s): %v", path, err)
+		}
+	}
+	if meta, ok := p.Searcher.(metaIndexer); ok {
+		if err := meta.IndexMeta(ctx, path, content); err != nil {
+			log.Printf("pipeline: searcher.IndexMeta(%s): %v", path, err)
+		}
+	}
+	if p.Vectors != nil {
+		p.Vectors.Enqueue(path, content)
+	}
+}
+
+// indexFileNonSearch indexes links, meta, and vectors but skips the search
+// index (used when search was already handled by IndexBatch).
+func (p *Pipeline) indexFileNonSearch(ctx context.Context, path string, content []byte) {
+	if p.Linker != nil {
+		if err := p.Linker.IndexLinks(ctx, path, links.Extract(content)); err != nil {
+			log.Printf("pipeline: linker.IndexLinks(%s): %v", path, err)
+		}
+	}
+	if meta, ok := p.Searcher.(metaIndexer); ok {
+		if err := meta.IndexMeta(ctx, path, content); err != nil {
+			log.Printf("pipeline: searcher.IndexMeta(%s): %v", path, err)
+		}
+	}
+	if p.Vectors != nil {
+		p.Vectors.Enqueue(path, content)
+	}
+}
+
+// deindexFile removes a path from every index. When AsyncIdx is set,
+// it enqueues a delete and returns immediately.
+func (p *Pipeline) deindexFile(ctx context.Context, path string) {
+	if p.AsyncIdx != nil {
+		p.AsyncIdx.EnqueueDelete(path)
+		return
+	}
+	p.deindexFileSync(ctx, path)
+}
+
+// deindexFileSync is the synchronous implementation of deindexFile.
+func (p *Pipeline) deindexFileSync(ctx context.Context, path string) {
+	if ra, ok := p.Searcher.(allRemover); ok {
+		if err := ra.RemoveAll(ctx, path); err != nil {
+			log.Printf("pipeline: searcher.RemoveAll(%s): %v", path, err)
+		}
+	} else {
+		if err := p.Searcher.Remove(ctx, path); err != nil {
+			log.Printf("pipeline: searcher.Remove(%s): %v", path, err)
+		}
+		if p.Linker != nil {
+			if err := p.Linker.RemoveLinks(ctx, path); err != nil {
+				log.Printf("pipeline: linker.RemoveLinks(%s): %v", path, err)
+			}
+		}
+		if meta, ok := p.Searcher.(metaIndexer); ok {
+			if err := meta.RemoveMeta(ctx, path); err != nil {
+				log.Printf("pipeline: searcher.RemoveMeta(%s): %v", path, err)
+			}
+		}
+	}
+	if p.Vectors != nil {
+		p.Vectors.EnqueueDelete(path)
+	}
+}
+
+func (p *Pipeline) commitAndTrack(ctx context.Context, path, actor string) {
+	if err := p.Versioner.Commit(ctx, path, actor, fmt.Sprintf("%s: %s", actor, path)); err != nil {
+		log.Printf("pipeline: versioner.Commit(%s): %v", path, err)
+		p.trackUncommitted(path)
+	}
+}
+
+// broadcast sends an event to all SSE subscribers if the hub is wired, and
+// fires the cache-invalidation callback (if any) so layers caching derived
+// views — like the graph endpoint — can drop their entries on any write.
+func (p *Pipeline) broadcast(ev events.Event) {
+	if p.Hub != nil {
+		p.Hub.Broadcast(ev)
+	}
+	if p.OnInvalidate != nil {
+		p.OnInvalidate()
+	}
+	if p.OnPathChange != nil {
+		if ev.Path != "" {
+			p.OnPathChange(ev.Path)
+		}
+		for _, pa := range ev.Paths {
+			p.OnPathChange(pa)
+		}
+	}
+	if p.OnWebhook != nil {
+		if ev.Path != "" {
+			p.OnWebhook(ev.Op, ev.Path, ev.Actor)
+		}
+		for _, pa := range ev.Paths {
+			p.OnWebhook(ev.Op, pa, ev.Actor)
+		}
+	}
+}
+
+// inflightEntry tracks recent writes for fsnotify echo suppression.
+type inflightEntry struct {
+	at   time.Time
+	etag string
+}
+
+// markInflight records a recent write so Observe can suppress the fsnotify echo.
+func (p *Pipeline) markInflight(path string) {
+	p.markInflightEtag(path, "")
+}
+
+// markInflightEtag is like markInflight but remembers the content etag so
+// late watcher echoes for the same content are dropped even after the
+// 2-second time window expires.
+func (p *Pipeline) markInflightEtag(path, etag string) {
+	p.inflight.Store(path, inflightEntry{at: time.Now(), etag: etag})
+	time.AfterFunc(inflightWindow, func() {
+		// Don't wipe the entry if it was refreshed in the meantime — only
+		// clear stale ones.
+		if v, ok := p.inflight.Load(path); ok {
+			if ent, ok := v.(inflightEntry); ok && time.Since(ent.at) >= inflightWindow {
+				// Keep the etag around for longer to catch delayed echoes,
+				// but collapse the timestamp so future writes overwrite.
+				p.inflight.Store(path, inflightEntry{at: time.Time{}, etag: ent.etag})
+				time.AfterFunc(10*time.Second, func() { p.inflight.Delete(path) })
+			}
+		}
+	})
+}
+
+// isInflight reports whether `path` was written via the pipeline within the
+// inflight window. Returns true for echo events the watcher should skip.
+func (p *Pipeline) isInflight(path string) bool {
+	ent, ok := p.loadInflight(path)
+	if !ok {
+		return false
+	}
+	return !ent.at.IsZero() && time.Since(ent.at) <= inflightWindow
+}
+
+// isInflightEtag reports whether we already wrote this exact content to
+// this path recently. The watcher uses it to drop noisy echoes that the
+// simple time-based isInflight would miss (e.g. slow fsnotify batch).
+func (p *Pipeline) isInflightEtag(path, etag string) bool {
+	if etag == "" {
+		return false
+	}
+	ent, ok := p.loadInflight(path)
+	if !ok {
+		return false
+	}
+	return ent.etag == etag
+}
+
+func (p *Pipeline) loadInflight(path string) (inflightEntry, bool) {
+	v, ok := p.inflight.Load(path)
+	if !ok {
+		return inflightEntry{}, false
+	}
+	ent, ok := v.(inflightEntry)
+	return ent, ok
+}
+
+// tryPreDelete gives CoW-style versioners a chance to snapshot the file
+// before it's removed. No-op for versioners that don't implement it.
+func (p *Pipeline) tryPreDelete(path string) {
+	if pd, ok := p.Versioner.(preDeleter); ok {
+		if err := pd.PreDeleteSnapshot(path); err != nil {
+			log.Printf("pipeline: preDeleteSnapshot(%s): %v", path, err)
+		}
+	}
+}
+
+// Write persists a single file and fans out to versioner, searcher, linker,
+// and the SSE hub. Side-effect errors (versioner/searcher/linker) are logged
+// but non-fatal — the watcher/reindex paths recover on next iteration.
+func (p *Pipeline) Write(ctx context.Context, path string, content []byte, actor string) (Result, error) {
+	return p.WriteWithOpts(ctx, path, content, actor, WriteOpts{})
+}
+
+// StreamInMemoryThreshold: uploads above this spool to a temp file via
+// WriteStream instead of buffering in RAM.
+const StreamInMemoryThreshold = 16 * 1024 * 1024
+
+// WriteStream persists a large payload by spooling to a temp file. Small
+// payloads (< StreamInMemoryThreshold) fall back to Write.
+func (p *Pipeline) WriteStream(ctx context.Context, path string, body io.Reader, sizeHint int64, actor string) (Result, error) {
+	if path == "" {
+		return Result{}, fmt.Errorf("path is required")
+	}
+	if body == nil {
+		return Result{}, fmt.Errorf("body is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	// Small payload + caller told us the size: avoid all the tempfile
+	// dance and keep the behavior identical to Write().
+	if sizeHint >= 0 && sizeHint <= StreamInMemoryThreshold {
+		buf := make([]byte, 0, sizeHint)
+		bb := bytes.NewBuffer(buf)
+		if _, err := io.Copy(bb, io.LimitReader(body, StreamInMemoryThreshold+1)); err != nil {
+			return Result{}, fmt.Errorf("read body: %w", err)
+		}
+		return p.Write(ctx, path, bb.Bytes(), actor)
+	}
+
+	// Spool to a temp file so peak memory stays bounded. The temp lives
+	// next to the storage root so the final rename is same-filesystem
+	// (cheap) and visible to backup/FUSE clients as a transient `.kiwi-
+	// stream-*` file rather than something in /tmp that could cross a
+	// filesystem boundary.
+	spoolDir := p.Root
+	if spoolDir == "" {
+		spoolDir = os.TempDir()
+	}
+	if err := os.MkdirAll(spoolDir, 0o755); err != nil {
+		return Result{}, fmt.Errorf("spool dir: %w", err)
+	}
+	tmp, err := os.CreateTemp(spoolDir, ".kiwi-stream-*")
+	if err != nil {
+		return Result{}, fmt.Errorf("spool temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	cleanup := func() {
+		if tmpName != "" {
+			os.Remove(tmpName)
+		}
+	}
+	defer cleanup()
+	n, err := io.Copy(tmp, body)
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return Result{}, fmt.Errorf("spool write: %w", err)
+	}
+
+	// Re-open and read back only if this is a knowledge file small
+	// enough to index; large binaries get a streaming in-place write
+	// that skips the FTS + vector fan-out entirely.
+	knowledgeIndex := storage.IsKnowledgeFile(path) && n <= StreamInMemoryThreshold
+	var content []byte
+	if knowledgeIndex {
+		content, err = os.ReadFile(tmpName)
+		if err != nil {
+			return Result{}, fmt.Errorf("read spool: %w", err)
+		}
+	}
+
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	p.markInflight(path)
+	if content != nil {
+		if err := p.Store.Write(ctx, path, content); err != nil {
+			return Result{}, err
+		}
+	} else {
+		// Atomically move the spooled file into the store. This keeps
+		// peak RAM at whatever io.Copy used — effectively 32 KB.
+		abs := p.Store.AbsPath(path)
+		if abs == "" {
+			return Result{}, fmt.Errorf("storage %T does not expose AbsPath; cannot stream", p.Store)
+		}
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			return Result{}, fmt.Errorf("mkdir: %w", err)
+		}
+		if err := os.Rename(tmpName, abs); err != nil {
+			return Result{}, fmt.Errorf("stream rename into store: %w", err)
+		}
+		tmpName = "" // handed off to the store
+	}
+	actor = coalesce(actor)
+	p.commitAndTrack(ctx, path, actor)
+	if knowledgeIndex {
+		p.indexFile(ctx, path, content)
+	}
+	var etag string
+	if content != nil {
+		etag = ETag(content)
+	} else {
+		// For large streamed files we don't have the blob in RAM to
+		// compute the git blob hash; emit a size+mtime weak ETag so the
+		// response isn't empty. Full-fidelity ETag will be computed on
+		// the next read (which hashes from disk).
+		etag = fmt.Sprintf("W/\"%d\"", n)
+	}
+	p.broadcast(events.Event{Op: "write", Path: path, Actor: actor, ETag: etag})
+	return Result{Path: path, ETag: etag}, nil
+}
+
+// WriteWithOpts is Write plus optional preconditions (currently just
+// If-Match). The ETag check runs inside writeMu so it's atomic with the
+// store write — without that the check is TOCTOU and two stale-ETag
+// writers can both win.
+func (p *Pipeline) WriteWithOpts(ctx context.Context, path string, content []byte, actor string, opts WriteOpts) (Result, error) {
+	if path == "" {
+		return Result{}, fmt.Errorf("path is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	actor = coalesce(actor)
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	// Re-check after acquiring the lock so a caller cancelled while
+	// queueing behind another writer doesn't perform a now-pointless write.
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if opts.IfMatch != "" && opts.IfMatch != "*" {
+		if current, err := p.Store.Read(ctx, path); err == nil {
+			if ETag(current) != opts.IfMatch {
+				return Result{}, ErrConflict
+			}
+		}
+		// Missing file with If-Match set: treat as create-allowed (matches
+		// the previous handler-side behaviour and RFC 7232 §3.1, which
+		// applies If-Match only when the resource exists).
+	}
+	// If-Match: * means "match any existing representation" per RFC 7232 §3.1.
+	// We skip the ETag comparison — the precondition succeeds as long as the
+	// resource exists. For new files (create), * is a no-op.
+	var oldStatus string
+	if p.OnTransition != nil || p.ValidateTransition != nil {
+		if old, err := p.Store.Read(ctx, path); err == nil {
+			oldStatus = extractStatus(old)
+		}
+	}
+
+	newStatus := extractStatus(content)
+	if p.ValidateTransition != nil && oldStatus != "" && newStatus != "" && oldStatus != newStatus {
+		if err := p.ValidateTransition(path, oldStatus, newStatus); err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrTransitionDenied, err)
+		}
+	}
+
+	// Auto-format (normalize) before validation.
+	if p.FormatWrite != nil {
+		content = p.FormatWrite(path, content)
+	}
+
+	if p.ValidateWrite != nil {
+		if err := p.ValidateWrite(path, content); err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrValidationFailed, err)
+		}
+	}
+	// Mark before the disk write so the fsnotify event fires while the
+	// entry is already visible — otherwise a fast watcher could observe
+	// before we record it. We stamp the etag so a delayed fsnotify batch
+	// that arrives after inflightWindow still dedups by content.
+	p.markInflightEtag(path, ETag(content))
+	if err := p.Store.Write(ctx, path, content); err != nil {
+		return Result{}, err
+	}
+	p.commitAndTrack(ctx, path, actor)
+	p.indexFile(ctx, path, content)
+	etag := ETag(content)
+	p.broadcast(events.Event{Op: "write", Path: path, Actor: actor, ETag: etag})
+
+	if p.OnTransition != nil && oldStatus != "" && newStatus != "" && oldStatus != newStatus {
+		p.OnTransition(path, "status", oldStatus, newStatus, actor)
+	}
+
+	return Result{Path: path, ETag: etag}, nil
+}
+
+// Observe runs pipeline side effects (versioning, search, links, SSE) without
+// writing to disk — used by the fsnotify watcher when the file already exists.
+func (p *Pipeline) Observe(ctx context.Context, path string, content []byte, actor string) Result {
+	etag := ETag(content)
+	// Echo suppression, two layers:
+	//   1. Time-based: we just wrote this path within inflightWindow.
+	//   2. Content-based: we just wrote this exact content — even if the
+	//      window expired, re-running indexing would only waste CPU and
+	//      emit a duplicate commit.
+	if p.isInflight(path) || p.isInflightEtag(path, etag) {
+		return Result{Path: path, ETag: etag}
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{Path: path, ETag: etag}
+	}
+	actor = coalesce(actor)
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	p.commitAndTrack(ctx, path, actor)
+	p.indexFile(ctx, path, content)
+	// Stamp the etag so a second fsnotify batch for the same content
+	// is deduped (some editors re-touch mtime without changing bytes).
+	p.markInflightEtag(path, etag)
+	p.broadcast(events.Event{Op: "write", Path: path, Actor: actor, ETag: etag})
+	return Result{Path: path, ETag: etag}
+}
+
+// ObserveDelete is the sibling of Observe for out-of-band deletions: the
+// file is already gone, we just need every index to catch up.
+func (p *Pipeline) ObserveDelete(ctx context.Context, path, actor string) {
+	if p.isInflight(path) {
+		return
+	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
+	actor = coalesce(actor)
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	p.tryPreDelete(path)
+	if err := p.Versioner.CommitDelete(ctx, path, actor); err != nil {
+		log.Printf("pipeline: versioner.CommitDelete(%s): %v", path, err)
+	}
+	p.deindexFile(ctx, path)
+	p.broadcast(events.Event{Op: "delete", Path: path, Actor: actor})
+	if p.OnDelete != nil {
+		p.OnDelete(path, actor)
+	}
+}
+
+const maxFileSize = 64 * 1024 * 1024 // 64 MiB
+
+// Append atomically appends content to a file. If the file does not exist,
+// it is created with just the new content. The operation runs inside writeMu
+// so there is no read-modify-write race window.
+func (p *Pipeline) Append(ctx context.Context, path, content, separator, actor string) (Result, error) {
+	if path == "" {
+		return Result{}, fmt.Errorf("path is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if separator == "" {
+		separator = "\n"
+	}
+	actor = coalesce(actor)
+
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+
+	var newContent []byte
+	var oldStatus string
+	if existing, err := p.Store.Read(ctx, path); err == nil && len(existing) > 0 {
+		if p.OnTransition != nil || p.ValidateTransition != nil {
+			oldStatus = extractStatus(existing)
+		}
+		newContent = append(existing, []byte(separator+content)...)
+	} else {
+		newContent = []byte(content)
+	}
+
+	if len(newContent) > maxFileSize {
+		return Result{}, fmt.Errorf("result exceeds %d-byte limit", maxFileSize)
+	}
+
+	newStatus := extractStatus(newContent)
+	if p.ValidateTransition != nil && oldStatus != "" && newStatus != "" && oldStatus != newStatus {
+		if err := p.ValidateTransition(path, oldStatus, newStatus); err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrTransitionDenied, err)
+		}
+	}
+
+	if p.ValidateWrite != nil {
+		if err := p.ValidateWrite(path, newContent); err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrValidationFailed, err)
+		}
+	}
+
+	p.markInflightEtag(path, ETag(newContent))
+	if err := p.Store.Write(ctx, path, newContent); err != nil {
+		return Result{}, err
+	}
+	p.commitAndTrack(ctx, path, actor)
+	p.indexFile(ctx, path, newContent)
+	etag := ETag(newContent)
+	p.broadcast(events.Event{Op: "write", Path: path, Actor: actor, ETag: etag})
+
+	if p.OnTransition != nil && oldStatus != "" && newStatus != "" && oldStatus != newStatus {
+		p.OnTransition(path, "status", oldStatus, newStatus, actor)
+	}
+
+	return Result{Path: path, ETag: etag}, nil
+}
+
+// BulkWrite persists many files under a single git commit. On partial
+// failure it rolls back to the pre-write state (best-effort, not ACID).
+func (p *Pipeline) BulkWrite(ctx context.Context, files []struct {
+	Path    string
+	Content []byte
+}, actor, message string) ([]Result, error) {
+	if len(files) == 0 {
+		return nil, fmt.Errorf("files is required and must be non-empty")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	actor = coalesce(actor)
+	for i, f := range files {
+		if f.Path == "" {
+			return nil, fmt.Errorf("files[%d].path is required", i)
+		}
+	}
+	// Auto-format (normalize) before validation.
+	if p.FormatWrite != nil {
+		for i := range files {
+			files[i].Content = p.FormatWrite(files[i].Path, files[i].Content)
+		}
+	}
+	if p.ValidateWrite != nil {
+		for i, f := range files {
+			if err := p.ValidateWrite(f.Path, f.Content); err != nil {
+				return nil, fmt.Errorf("%w: files[%d] (%s): %v", ErrValidationFailed, i, f.Path, err)
+			}
+		}
+	}
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	type preImage struct {
+		path    string
+		content []byte
+		existed bool
+	}
+	preimages := make([]preImage, 0, len(files))
+	for _, f := range files {
+		pre := preImage{path: f.Path}
+		if p.Store.Exists(ctx, f.Path) {
+			if c, err := p.Store.Read(ctx, f.Path); err == nil {
+				pre.content = c
+				pre.existed = true
+			}
+		}
+		preimages = append(preimages, pre)
+	}
+
+	if p.ValidateTransition != nil {
+		for i, f := range files {
+			newStatus := extractStatus(f.Content)
+			if newStatus == "" {
+				continue
+			}
+			var oldStatus string
+			if preimages[i].existed {
+				oldStatus = extractStatus(preimages[i].content)
+			}
+			if oldStatus != "" && newStatus != oldStatus {
+				if err := p.ValidateTransition(f.Path, oldStatus, newStatus); err != nil {
+					return nil, fmt.Errorf("%w: files[%d] (%s): %v", ErrTransitionDenied, i, f.Path, err)
+				}
+			}
+		}
+	}
+
+	rollback := func(upTo int) {
+		// If the versioner has a staging area (git), clear any paths
+		// we've already `git add`-ed in this batch so a subsequent
+		// write can't accidentally include them. Without this, a
+		// failed bulk commit leaves the index dirty and the next
+		// unrelated REST write commits half of the rolled-back batch
+		// under the wrong message.
+		if un, ok := p.Versioner.(versioning.Unstager); ok && upTo > 0 {
+			staged := make([]string, 0, upTo)
+			for i := 0; i < upTo; i++ {
+				staged = append(staged, preimages[i].path)
+			}
+			if err := un.Unstage(ctx, staged); err != nil {
+				log.Printf("pipeline: versioner.Unstage(%v): %v", staged, err)
+			}
+		}
+		for i := upTo - 1; i >= 0; i-- {
+			pre := preimages[i]
+			// Dequeue any already-enqueued vector upsert for this path.
+			// The embed worker runs async, so a rollback that only
+			// restored storage + FTS would still let stale content land
+			// in the vector index seconds later; SkipPath short-circuits
+			// the worker before the embed fires.
+			if p.Vectors != nil {
+				p.Vectors.SkipPath(pre.path)
+			}
+			if pre.existed {
+				_ = p.Store.Write(ctx, pre.path, pre.content)
+				_ = p.Searcher.Index(ctx, pre.path, pre.content)
+				if p.Linker != nil {
+					_ = p.Linker.IndexLinks(ctx, pre.path, links.Extract(pre.content))
+				}
+				// Re-enqueue the good content so semantic search catches
+				// up with the rolled-back-to state — we just invalidated
+				// the queue entry above, so this is the only write that
+				// will actually embed.
+				if p.Vectors != nil {
+					p.Vectors.Enqueue(pre.path, pre.content)
+				}
+			} else {
+				_ = p.Store.Delete(ctx, pre.path)
+				_ = p.Searcher.Remove(ctx, pre.path)
+				if p.Linker != nil {
+					_ = p.Linker.RemoveLinks(ctx, pre.path)
+				}
+				if p.Vectors != nil {
+					p.Vectors.EnqueueDelete(pre.path)
+				}
+			}
+		}
+	}
+
+	paths := make([]string, 0, len(files))
+	out := make([]Result, 0, len(files))
+	for i, f := range files {
+		p.markInflightEtag(f.Path, ETag(f.Content))
+		if err := p.Store.Write(ctx, f.Path, f.Content); err != nil {
+			rollback(i)
+			return nil, fmt.Errorf("write %s: %w", f.Path, err)
+		}
+		paths = append(paths, f.Path)
+		out = append(out, Result{Path: f.Path, ETag: ETag(f.Content)})
+	}
+	if p.AsyncIdx != nil {
+		for _, f := range files {
+			p.AsyncIdx.Enqueue(f.Path, f.Content)
+		}
+	} else if bi, ok := p.Searcher.(search.BatchIndexer); ok {
+		entries := make([]search.IndexEntry, len(files))
+		for i, f := range files {
+			entries[i] = search.IndexEntry{Path: f.Path, Content: f.Content}
+		}
+		if err := bi.IndexBatch(ctx, entries); err != nil {
+			log.Printf("pipeline: searcher.IndexBatch: %v", err)
+		}
+		for _, f := range files {
+			p.indexFileNonSearch(ctx, f.Path, f.Content)
+		}
+	} else {
+		for _, f := range files {
+			p.indexFileSync(ctx, f.Path, f.Content)
+		}
+	}
+	if message == "" {
+		message = fmt.Sprintf("%s: bulk write — %d files", actor, len(paths))
+	}
+	if err := p.Versioner.BulkCommit(ctx, paths, actor, message); err != nil {
+		rollback(len(files))
+		p.broadcast(events.Event{Op: "rollback", Paths: paths, Actor: actor})
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	p.broadcast(events.Event{Op: "bulk", Paths: paths, Actor: actor})
+	return out, nil
+}
+
+// Rename atomically moves a file from oldPath to newPath. Both the write
+// of the new path and the deletion of the old path happen under a single
+// writeMu acquisition and a single git commit, so a crash between the two
+// can't leave duplicated or lost content.
+func (p *Pipeline) Rename(ctx context.Context, oldPath, newPath, actor string) (Result, error) {
+	if oldPath == "" || newPath == "" {
+		return Result{}, fmt.Errorf("both oldPath and newPath are required")
+	}
+	if oldPath == newPath {
+		content, err := p.Store.Read(ctx, oldPath)
+		if err != nil {
+			return Result{}, fmt.Errorf("read %s: %w", oldPath, err)
+		}
+		return Result{Path: oldPath, ETag: ETag(content)}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	actor = coalesce(actor)
+
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+
+	content, err := p.Store.Read(ctx, oldPath)
+	if err != nil {
+		return Result{}, fmt.Errorf("read %s: %w", oldPath, err)
+	}
+
+	p.markInflightEtag(newPath, ETag(content))
+	p.markInflight(oldPath)
+
+	if err := p.Store.Write(ctx, newPath, content); err != nil {
+		return Result{}, fmt.Errorf("write %s: %w", newPath, err)
+	}
+
+	if err := p.Store.Delete(ctx, oldPath); err != nil {
+		log.Printf("pipeline: Rename delete(%s) after write(%s) succeeded: %v", oldPath, newPath, err)
+		p.trackUncommitted(oldPath)
+	}
+
+	msg := fmt.Sprintf("%s: rename %s → %s", actor, oldPath, newPath)
+	if err := p.Versioner.BulkCommit(ctx, []string{newPath, oldPath}, actor, msg); err != nil {
+		log.Printf("pipeline: Rename BulkCommit: %v", err)
+		p.trackUncommitted(newPath)
+		p.trackUncommitted(oldPath)
+	}
+
+	p.indexFile(ctx, newPath, content)
+	p.deindexFile(ctx, oldPath)
+
+	etag := ETag(content)
+	p.broadcast(events.Event{Op: "write", Path: newPath, Actor: actor, ETag: etag})
+	p.broadcast(events.Event{Op: "delete", Path: oldPath, Actor: actor})
+
+	return Result{Path: newPath, ETag: etag}, nil
+}
+
+// RenameWithLinks atomically renames a file and optionally rewrites all
+// [[wiki-links]] that reference the old path. The rename and all link updates
+// are committed as a single git operation.
+func (p *Pipeline) RenameWithLinks(ctx context.Context, oldPath, newPath, actor string, updateLinks bool) (Result, []string, error) {
+	if !updateLinks || p.Linker == nil {
+		res, err := p.Rename(ctx, oldPath, newPath, actor)
+		return res, nil, err
+	}
+
+	if oldPath == "" || newPath == "" {
+		return Result{}, nil, fmt.Errorf("both oldPath and newPath are required")
+	}
+	if oldPath == newPath {
+		content, err := p.Store.Read(ctx, oldPath)
+		if err != nil {
+			return Result{}, nil, fmt.Errorf("read %s: %w", oldPath, err)
+		}
+		return Result{Path: oldPath, ETag: ETag(content)}, nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, nil, err
+	}
+	actor = coalesce(actor)
+
+	backlinks, err := p.Linker.Backlinks(ctx, oldPath)
+	if err != nil {
+		backlinks = nil
+	}
+
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
+	content, err := p.Store.Read(ctx, oldPath)
+	if err != nil {
+		return Result{}, nil, fmt.Errorf("read %s: %w", oldPath, err)
+	}
+
+	type fileUpdate struct {
+		Path    string
+		Content []byte
+	}
+	var updates []fileUpdate
+	var updatedPaths []string
+
+	newStem := strings.TrimSuffix(newPath, ".md")
+	if idx := strings.LastIndex(newStem, "/"); idx >= 0 {
+		newStem = newStem[idx+1:]
+	}
+
+	for _, bl := range backlinks {
+		if bl.Path == oldPath {
+			continue
+		}
+		src, err := p.Store.Read(ctx, bl.Path)
+		if err != nil {
+			continue
+		}
+		rewritten, changed := links.RewriteLinks(string(src), oldPath, newStem)
+		if changed {
+			updates = append(updates, fileUpdate{Path: bl.Path, Content: []byte(rewritten)})
+			updatedPaths = append(updatedPaths, bl.Path)
+		}
+	}
+
+	p.markInflightEtag(newPath, ETag(content))
+	p.markInflight(oldPath)
+
+	if err := p.Store.Write(ctx, newPath, content); err != nil {
+		return Result{}, nil, fmt.Errorf("write %s: %w", newPath, err)
+	}
+	if err := p.Store.Delete(ctx, oldPath); err != nil {
+		log.Printf("pipeline: Rename delete(%s) after write(%s) succeeded: %v", oldPath, newPath, err)
+		p.trackUncommitted(oldPath)
+	}
+
+	for _, u := range updates {
+		p.markInflightEtag(u.Path, ETag(u.Content))
+		if err := p.Store.Write(ctx, u.Path, u.Content); err != nil {
+			log.Printf("pipeline: RenameWithLinks write(%s): %v", u.Path, err)
+		}
+	}
+
+	allPaths := []string{newPath, oldPath}
+	allPaths = append(allPaths, updatedPaths...)
+	msg := fmt.Sprintf("%s: rename %s → %s", actor, oldPath, newPath)
+	if len(updatedPaths) > 0 {
+		msg += fmt.Sprintf(" (updated %d links)", len(updatedPaths))
+	}
+	if err := p.Versioner.BulkCommit(ctx, allPaths, actor, msg); err != nil {
+		log.Printf("pipeline: RenameWithLinks BulkCommit: %v", err)
+		for _, pa := range allPaths {
+			p.trackUncommitted(pa)
+		}
+	}
+
+	p.indexFile(ctx, newPath, content)
+	p.deindexFile(ctx, oldPath)
+	for _, u := range updates {
+		p.indexFile(ctx, u.Path, u.Content)
+	}
+
+	etag := ETag(content)
+	p.broadcast(events.Event{Op: "write", Path: newPath, Actor: actor, ETag: etag})
+	p.broadcast(events.Event{Op: "delete", Path: oldPath, Actor: actor})
+
+	return Result{Path: newPath, ETag: etag}, updatedPaths, nil
+}
+
+// RenameDir atomically renames a directory on disk and commits all affected
+// paths via git. Re-indexes all files under the new directory.
+func (p *Pipeline) RenameDir(ctx context.Context, from, to, actor string) (int, error) {
+	if from == "" || to == "" {
+		return 0, fmt.Errorf("both from and to are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	actor = coalesce(actor)
+
+	root := p.Store.AbsPath("")
+	absFrom, err := storage.GuardPath(root, from)
+	if err != nil {
+		return 0, err
+	}
+	absTo, err := storage.GuardPath(root, to)
+	if err != nil {
+		return 0, err
+	}
+
+	info, err := os.Stat(absFrom)
+	if err != nil {
+		return 0, fmt.Errorf("stat source: %w", err)
+	}
+	if !info.IsDir() {
+		return 0, fmt.Errorf("source is not a directory: %s", from)
+	}
+
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
+	if err := os.MkdirAll(filepath.Dir(absTo), 0755); err != nil {
+		return 0, fmt.Errorf("mkdir parent: %w", err)
+	}
+	if err := os.Rename(absFrom, absTo); err != nil {
+		return 0, fmt.Errorf("rename dir: %w", err)
+	}
+
+	var newPaths []string
+	_ = filepath.Walk(absTo, func(path string, fi os.FileInfo, werr error) error {
+		if werr != nil || fi.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		rel = filepath.ToSlash(rel)
+		newPaths = append(newPaths, rel)
+		return nil
+	})
+
+	fromNorm := strings.TrimSuffix(from, "/") + "/"
+	toNorm := strings.TrimSuffix(to, "/") + "/"
+	oldPaths := make([]string, 0, len(newPaths))
+	for _, np := range newPaths {
+		op := fromNorm + strings.TrimPrefix(np, toNorm)
+		oldPaths = append(oldPaths, op)
+	}
+
+	for _, np := range newPaths {
+		p.markInflight(np)
+	}
+	for _, op := range oldPaths {
+		p.markInflight(op)
+	}
+
+	allPaths := append(newPaths, oldPaths...)
+	msg := fmt.Sprintf("%s: rename dir %s → %s", actor, from, to)
+	if err := p.Versioner.BulkCommit(ctx, allPaths, actor, msg); err != nil {
+		log.Printf("pipeline: RenameDir BulkCommit: %v", err)
+		for _, p2 := range allPaths {
+			p.trackUncommitted(p2)
+		}
+	}
+
+	for _, np := range newPaths {
+		content, rerr := p.Store.Read(ctx, np)
+		if rerr == nil {
+			p.indexFile(ctx, np, content)
+		}
+	}
+	for _, op := range oldPaths {
+		p.deindexFile(ctx, op)
+	}
+
+	for _, np := range newPaths {
+		p.broadcast(events.Event{Op: "write", Path: np, Actor: actor})
+	}
+	for _, op := range oldPaths {
+		p.broadcast(events.Event{Op: "delete", Path: op, Actor: actor})
+	}
+
+	return len(newPaths), nil
+}
+
+// DeferredDelete records a deletion in git and removes from indexes, without
+// attempting to delete the file from disk (caller already handled that).
+func (p *Pipeline) DeferredDelete(ctx context.Context, path, actor string) {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := p.Versioner.CommitDelete(ctx, path, actor); err != nil {
+		log.Printf("pipeline: versioner.CommitDelete(%s): %v", path, err)
+		p.trackUncommitted(path)
+	}
+	p.deindexFile(ctx, path)
+	p.broadcast(events.Event{Op: "delete", Path: path, Actor: actor})
+	if p.OnDelete != nil {
+		p.OnDelete(path, actor)
+	}
+}
+
+// Delete removes a file and fans out to versioner, searcher, linker, and
+// the SSE hub. Missing files are reported via the storage error unchanged.
+func (p *Pipeline) Delete(ctx context.Context, path, actor string) error {
+	if path == "" {
+		return fmt.Errorf("path is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	actor = coalesce(actor)
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.markInflight(path)
+	p.tryPreDelete(path)
+	if err := p.Store.Delete(ctx, path); err != nil {
+		return err
+	}
+	if err := p.Versioner.CommitDelete(ctx, path, actor); err != nil {
+		log.Printf("pipeline: versioner.CommitDelete(%s): %v", path, err)
+	}
+	p.deindexFile(ctx, path)
+	p.broadcast(events.Event{Op: "delete", Path: path, Actor: actor})
+	if p.OnDelete != nil {
+		p.OnDelete(path, actor)
+	}
+	return nil
+}
+
+// CreateSymlink creates a real OS symlink on disk and commits it via git.
+func (p *Pipeline) CreateSymlink(ctx context.Context, path, target, actor string) error {
+	if path == "" {
+		return fmt.Errorf("path is required")
+	}
+	root := p.Store.AbsPath("")
+	abs, err := storage.GuardPath(root, path)
+	if err != nil {
+		return err
+	}
+	if filepath.IsAbs(target) {
+		return fmt.Errorf("%w: absolute symlink target not allowed", storage.ErrPathDenied)
+	}
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(abs), target))
+	if rel, err := filepath.Rel(root, resolved); err != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("%w: symlink target escapes root", storage.ErrPathDenied)
+	}
+
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	dir := filepath.Dir(abs)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("mkdir for symlink: %w", err)
+	}
+	os.Remove(abs)
+	if err := os.Symlink(target, abs); err != nil {
+		return fmt.Errorf("symlink: %w", err)
+	}
+	p.commitAndTrack(ctx, path, actor)
+	p.broadcast(events.Event{Op: "write", Path: path, Actor: actor})
+	return nil
+}
+
+// BulkCommitOnly stages and commits multiple paths under writeMu without
+// indexing. Used when the caller has already handled storage and indexing
+// (e.g., NFS directory rename) but needs a serialised git commit.
+func (p *Pipeline) BulkCommitOnly(ctx context.Context, paths []string, actor, message string) {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := p.Versioner.BulkCommit(ctx, paths, actor, message); err != nil {
+		log.Printf("pipeline: versioner.BulkCommit: %v", err)
+		for _, path := range paths {
+			p.trackUncommitted(path)
+		}
+	}
+}
+
+// CommitOnly stages and commits a path under writeMu without indexing.
+// Used for .kiwi/ metadata files (config.toml, templates) that should be
+// version-tracked but don't belong in the search or vector index.
+func (p *Pipeline) CommitOnly(ctx context.Context, path, actor, message string) {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	if err := p.Versioner.Commit(ctx, path, actor, message); err != nil {
+		log.Printf("pipeline: versioner.Commit(%s): %v", path, err)
+	}
+}
+
+// ETag returns the git blob hash — sha1("blob <size>\0<content>") — so the
+// ETag doubles as a git object ID when versioning is active.
+func ETag(content []byte) string {
+	h := sha1.New()
+	fmt.Fprintf(h, "blob %d\x00", len(content))
+	h.Write(content)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// trackUncommitted appends a path to the uncommitted log so it can be
+// retried on the next successful commit. Caller must hold writeMu.
+func (p *Pipeline) trackUncommitted(path string) {
+	if p.uncommittedLog == "" {
+		return
+	}
+	f, err := os.OpenFile(p.uncommittedLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("pipeline: trackUncommitted: open: %v", err)
+		return
+	}
+	defer f.Close()
+	fmt.Fprintln(f, path)
+}
+
+// DrainUncommitted reads the uncommitted log and attempts to recommit
+// each path. Successfully committed paths are removed from the log.
+// Call at process startup or after a successful commit.
+func (p *Pipeline) DrainUncommitted(ctx context.Context) {
+	if p.uncommittedLog == "" {
+		return
+	}
+	data, err := os.ReadFile(p.uncommittedLog)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
+		return
+	}
+
+	seen := make(map[string]bool)
+	var remaining []string
+	for _, path := range lines {
+		path = strings.TrimSpace(path)
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		if err := p.Versioner.Commit(ctx, path, DefaultActor, "recommit: "+path); err != nil {
+			log.Printf("pipeline: recommit(%s): %v", path, err)
+			remaining = append(remaining, path)
+		} else {
+			log.Printf("pipeline: recommitted %s", path)
+		}
+	}
+
+	if len(remaining) == 0 {
+		os.Remove(p.uncommittedLog)
+	} else {
+		os.WriteFile(p.uncommittedLog, []byte(strings.Join(remaining, "\n")+"\n"), 0644)
+	}
+}

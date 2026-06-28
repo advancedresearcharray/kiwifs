@@ -1,0 +1,47 @@
+# Binary
+kiwifs
+kiwifs-*
+*.test
+
+# Design docs (internal, not part of OSS repo)
+kiwifs.md
+tasks.md
+todo.md
+todolist.md
+todolist1.md
+todolist2.md
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Overlay git metadata (worktree uses gitdir: .git-writable)
+.git-writable/
+
+# Claude Code / Cursor local settings
+.claude/
+
+# AI agent local configs
+.antigravitycli/
+
+# Air hot-reload temp
+tmp/
+
+# IDE / editor
+.vscode/
+.idea/
+*.tsbuildinfo
+
+# Draft worktrees (local/ephemeral)
+.kiwi/drafts/
+
+# Runtime data (created by `kiwifs init`)
+knowledge/
+!internal/workspace/templates/knowledge/
+
+# Storybook
+ui/storybook-static/
+node_modules/

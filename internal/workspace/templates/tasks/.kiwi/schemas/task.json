@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "title", "status", "priority"],
+  "properties": {
+    "type": { "const": "task" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["backlog", "todo", "in_progress", "review", "blocked", "done", "cancelled"]
+    },
+    "priority": { "type": "integer", "minimum": 0, "maximum": 4 },
+    "category": {
+      "type": "string",
+      "enum": ["feature", "bug", "chore", "spike", "epic"]
+    },
+    "effort": {
+      "type": "string",
+      "enum": ["xs", "s", "m", "l", "xl"]
+    },
+    "assignee": { "type": "string" },
+    "parent": { "type": "string" },
+    "blocked-by": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "due": { "type": "string", "format": "date" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "started-at": { "type": "string", "format": "date-time" },
+    "completed-at": { "type": "string", "format": "date-time" },
+    "claimed-by": { "type": "string" },
+    "claimed-at": { "type": "string", "format": "date-time" },
+    "lease-expires": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}
