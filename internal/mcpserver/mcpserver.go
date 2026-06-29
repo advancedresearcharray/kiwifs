@@ -69,6 +69,10 @@ func New(opts Options) (*server.MCPServer, Backend, error) {
 	registerMemoryTools(s, backend)
 	registerResources(s, backend, opts)
 
+	if err := validateRegisteredToolSchemas(s); err != nil {
+		return nil, nil, err
+	}
+
 	return s, backend, nil
 }
 
@@ -2857,27 +2861,6 @@ func httpAuthToken(opts Options) (string, error) {
 		return "", fmt.Errorf("load MCP HTTP auth config: %w", err)
 	}
 	return AuthTokenFromConfig(cfg), nil
-}
-
-// AuthTokenFromConfig returns the bearer token for MCP HTTP when apikey auth is enabled.
-func AuthTokenFromConfig(cfg *config.Config) string {
-	if cfg == nil {
-		return ""
-	}
-	if cfg.Auth.Type == "apikey" && cfg.Auth.APIKey != "" {
-		return cfg.Auth.APIKey
-	}
-	return ""
-}
-
-// StreamableHTTPHandler returns an http.Handler for MCP Streamable HTTP transport.
-func StreamableHTTPHandler(s *server.MCPServer, authToken string) http.Handler {
-	mcpHandler := server.NewStreamableHTTPServer(
-		s,
-		server.WithEndpointPath("/mcp"),
-		server.WithStateLess(true),
-	)
-	return bearerAuth(authToken, mcpHandler)
 }
 
 func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) http.Handler {

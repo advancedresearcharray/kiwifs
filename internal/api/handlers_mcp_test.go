@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -175,6 +176,81 @@ api_key = "secret-key"
 	stack.Server.ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("authed status = %d, want 200; body: %s", rec2.Code, rec2.Body.String())
+	}
+}
+
+func TestMCP2026ServerDiscover(t *testing.T) {
+	srv := setupMCPAPIServer(t)
+
+	body := `{"jsonrpc":"2.0","id":"disc","method":"server/discover","params":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("server/discover status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get(mcpserver.HeaderMCPMethod); got != mcpserver.MethodServerDiscover {
+		t.Fatalf("Mcp-Method = %q, want %q", got, mcpserver.MethodServerDiscover)
+	}
+	if rec.Header().Get("Mcp-Session-Id") != "" {
+		t.Fatal("stateless transport must not emit Mcp-Session-Id")
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result = %T", resp["result"])
+	}
+	if _, ok := result["ttlMs"]; !ok {
+		t.Fatal("expected ttlMs on discover result")
+	}
+	if result["cacheScope"] != mcpserver.CacheScopePublic {
+		t.Fatalf("cacheScope = %v", result["cacheScope"])
+	}
+}
+
+func TestMCP2026ToolsListCacheHints(t *testing.T) {
+	srv := setupMCPAPIServer(t)
+
+	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+	initReq := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(initBody)))
+	initReq.Header.Set("Content-Type", "application/json")
+	initReq.Header.Set("Accept", "application/json, text/event-stream")
+	initRec := httptest.NewRecorder()
+	srv.ServeHTTP(initRec, initReq)
+	if initRec.Code != http.StatusOK {
+		t.Fatalf("initialize status = %d", initRec.Code)
+	}
+
+	listBody := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+	listReq := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(listBody)))
+	listReq.Header.Set("Content-Type", "application/json")
+	listReq.Header.Set("Accept", "application/json, text/event-stream")
+	listReq.Header.Set(mcpserver.HeaderMCPMethod, "tools/list")
+	listRec := httptest.NewRecorder()
+	srv.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("tools/list status = %d, body=%s", listRec.Code, listRec.Body.String())
+	}
+	if got := listRec.Header().Get(mcpserver.HeaderMCPMethod); got != "tools/list" {
+		t.Fatalf("Mcp-Method = %q", got)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(listRec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	result := resp["result"].(map[string]any)
+	if _, ok := result["ttlMs"]; !ok {
+		t.Fatal("expected ttlMs on tools/list result")
+	}
+	if result["cacheScope"] != mcpserver.CacheScopePublic {
+		t.Fatalf("cacheScope = %v", result["cacheScope"])
 	}
 }
 
