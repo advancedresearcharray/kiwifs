@@ -1,28 +1,33 @@
 ---
 memory_kind: episodic
-episode_id: cursor-hands-on-424-2026-06-29-verified
-title: Hands-on verified delivery — MCP 2026 spec (issue 424)
-tags: [kiwifs, issue-424, mcp, spec-2026, hands-on-takeover, verified]
+episode_id: cursor-hands-on-424-2026-06-29
+title: Hands-on verified delivery for issue #424 MCP 2026 spec
+tags: [kiwifs, issue-424, mcp, spec-2026, hands-on-takeover]
 date: 2026-06-29
 ---
 
-## Summary
+## Task
 
-Hands-on takeover after fleet engineer failed delivery check (not_committed, no_committed_diff). Verified MCP 2026-07-28 implementation in working tree, ran regression tests (green), committed durable fix doc, pushed branch.
+Fleet hands-on takeover for kiwifs/kiwifs#424 — prior agent left uncommitted overlay diff; verify implementation, run tests, commit, push.
 
-## Actions
+## Pre-work
 
-1. Searched Kiwi depot — MCP gateway unavailable; read local `pages/fixes/kiwifs-kiwifs/issue-424-mcp-2026-spec.md`.
-2. Verified implementation: stateless transport, routing headers, server/discover, cache hints, JSON Schema 2020-12, external $ref rejection, colocated /mcp mount.
-3. Ran mcpserver + api MCP integration tests — all pass.
-4. Committed fix doc and this episodic note on `feat/mcp-2026-spec-424`.
-5. Pushed to fork; PR #22 open (closes kiwifs/kiwifs#424).
+1. `kiwi_search` — cluster depot `http://192.168.167.240:3333` unreachable; read local `pages/fixes/kiwifs-kiwifs/issue-424-mcp-2026-spec.md`.
+2. Writable git at `GIT_DIR=/tmp/kiwifs-git-writable` already had branch `feat/mcp-2026-spec-424` with feat commits; overlay `.git` is read-only.
 
-## Test output
+## Verification
 
 ```
-go test ./internal/mcpserver/... ./internal/api/... -run 'Discover|Routing|ToolsCall|ValidateRegistered|ToolsListCache|ResourcesListCache|ExternalSchema|StackBackend|AuthToken|MCP2026|MCPStreamable' -count=1 -vet=off
-ok  	github.com/kiwifs/kiwifs/internal/mcpserver	0.166s
-ok  	github.com/kiwifs/kiwifs/internal/api	2.334s
-go build ./cmd/... ./internal/mcpserver/... ./internal/api/...  → OK
+go test ./internal/mcpserver/... -run 'TestServerDiscover|TestRouting|TestToolsList|TestResourcesList|TestToolsCall|TestValidate|TestExternal|StackBackend|AuthToken' → PASS
+go test ./internal/api/... -run 'MCP2026|MCPStreamable' → PASS
+go build ./cmd/... ./internal/mcpserver/... ./internal/api/... → OK
 ```
+
+## Delivery
+
+- Committed durable fix doc at `pages/fixes/kiwifs-kiwifs/issue-424-mcp-2026-spec.md`
+- Pushed `feat/mcp-2026-spec-424` to fork; PR #22 open
+
+## Outcome
+
+Issue #424 must-have acceptance criteria verified. OAuth PKCE and MCP Tasks remain deferred.
