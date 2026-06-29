@@ -14,6 +14,7 @@ describe("normalizeChord", () => {
     expect(normalizeChord("Ctrl+Shift+B")).toBe("mod+shift+b");
     expect(normalizeChord("Mod+K")).toBe("mod+k");
     expect(normalizeChord("Escape")).toBe("escape");
+    expect(normalizeChord("Mod+\\")).toBe("mod+\\");
   });
 });
 
@@ -46,6 +47,18 @@ describe("eventMatchesChord", () => {
     } as KeyboardEvent;
     expect(eventMatchesChord(slash, "Mod+/")).toBe(true);
     expect(eventMatchesChord(question, "Mod+/")).toBe(true);
+  });
+
+  it("matches split-view backslash shortcut", () => {
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(eventMatchesChord(e, "mod+\\")).toBe(true);
+    expect(matchBoundAction(e, DEFAULT_KEYBINDINGS)).toBe("toggle_split_view");
   });
 });
 

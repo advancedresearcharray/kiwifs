@@ -51,10 +51,12 @@ import { buildResolver, remarkWikiLinks } from "@kw/lib/wikiLinks";
 import { remarkMark, stripObsidianComments, remarkInlineTags, rehypeCodeMeta } from "@kw/lib/remarkPlugins";
 import remarkDirective from "remark-directive";
 import { remarkKiwiDirectives } from "@kw/lib/remarkDirectives";
+import { WikiLinkContextMenu } from "./WikiLinkContextMenu";
 
 type Props = {
   path: string;
   tree: TreeEntry | null;
+  versionHash?: string | null;
   onNavigate: (path: string) => void;
   onEdit: () => void;
   onHistory?: () => void;
@@ -371,7 +373,7 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
   return "unknown";
 }
 
-export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
+export function KiwiPage({ path, tree, versionHash = null, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
   const treeEntry = useMemo(() => findEntry(tree, path), [tree, path]);
   const isDir = treeEntry?.isDir ?? false;
 
@@ -393,9 +395,11 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
     setContent(null);
     setError(null);
     setLastModified(null);
-    trackRecent(path);
-    api
-      .readFile(path)
+    if (!versionHash) trackRecent(path);
+    const load = versionHash
+      ? api.readVersion(path, versionHash).then((content) => ({ content, lastModified: null as string | null }))
+      : api.readFile(path).then((r) => ({ content: r.content, lastModified: r.lastModified }));
+    load
       .then((r) => {
         if (!cancelled) {
           setContent(r.content);
@@ -406,7 +410,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
         if (!cancelled) setError(String(e));
       });
     return () => { cancelled = true; };
-  }, [path, refreshKey, isDir]);
+  }, [path, refreshKey, isDir, versionHash]);
 
   useEffect(() => {
     if (isDir) return;
@@ -624,9 +628,11 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                     <HistoryIcon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">History</span>
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={onEdit}>
-                  <Edit className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
-                </Button>
+                {!versionHash ? (
+                  <Button variant="outline" size="sm" onClick={onEdit}>
+                    <Edit className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
+                  </Button>
+                ) : null}
                 <PublishButton path={path} onPublishedChanged={onPublishedChanged} />
                 <PageActions
                   path={path}
@@ -636,6 +642,12 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                 />
               </div>
             </div>
+
+            {versionHash ? (
+              <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+                Viewing historical version <span className="font-mono">{versionHash.slice(0, 7)}</span>
+              </div>
+            ) : null}
 
             {/* ── Metadata bar ── */}
             <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground flex-wrap">
@@ -762,11 +774,11 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                         const pagePath = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
                         const anchor = hashIdx >= 0 ? raw.slice(hashIdx) : "";
                         return (
-                          <a
-                            href={`#${raw}`}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              onNavigate(pagePath);
+                          <WikiLinkContextMenu
+                            pagePath={pagePath}
+                            className="inline"
+                            onNavigate={(target) => {
+                              onNavigate(target);
                               if (anchor) {
                                 requestAnimationFrame(() => {
                                   setTimeout(() => {
@@ -776,11 +788,27 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                                 });
                               }
                             }}
-                            className="wiki-link"
-                            {...(rest as any)}
                           >
-                            {children}
-                          </a>
+                            <a
+                              href={`#${raw}`}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                onNavigate(pagePath);
+                                if (anchor) {
+                                  requestAnimationFrame(() => {
+                                    setTimeout(() => {
+                                      const el = document.getElementById(anchor.slice(1));
+                                      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                    }, 100);
+                                  });
+                                }
+                              }}
+                              className="wiki-link"
+                              {...(rest as any)}
+                            >
+                              {children}
+                            </a>
+                          </WikiLinkContextMenu>
                         );
                       }
                       if (h.startsWith("#kiwi-missing:")) {
