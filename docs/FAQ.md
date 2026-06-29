@@ -14,6 +14,7 @@
 - **Protocols:** [Which one?](#when-should-i-use-nfs-vs-s3-vs-webdav-vs-fuse) · [Same pipeline?](#do-all-protocols-go-through-the-same-pipeline)
 - **POSIX:** [Compatible?](#is-kiwifs-posix-compatible) · [Symlinks?](#do-symlinks-work) · [Open-then-delete?](#what-happens-if-i-open-a-file-and-then-delete-it) · [mmap?](#can-i-mmap-files-on-a-kiwifs-mount) · [Two servers?](#what-prevents-two-kiwifs-servers-from-sharing-the-same-directory) · [Stuck git?](#what-happens-if-git-gets-stuck-mid-commit)
 - **Data:** [Crash mid-write?](#what-happens-if-kiwifs-crashes-mid-write) · [Backup?](#how-do-i-back-up-my-knowledge-base) · [Migrate from Obsidian/Notion?](#can-i-migrate-from-obsidian--notion--confluence) · [Import sources?](#what-data-sources-can-i-import-from) · [Idempotent?](#is-import-idempotent) · [Export?](#what-export-formats-are-available) · [ML training?](#can-i-use-exported-data-for-ml-training)
+- **Workflows & Templates:** [Templates?](#what-init-templates-are-available) · [Workflows?](#what-are-workflows) · [Widgets?](#what-are-widgets) · [Publishing?](#how-does-publishing-work)
 - **Queries:** [DQL?](#what-is-dql) · [Aggregation?](#what-aggregation-functions-are-available) · [Computed views?](#what-are-computed-views) · [Computed fields?](#what-are-computed-frontmatter-fields)
 - **Analytics:** [kiwifs analytics?](#what-does-kiwifs-analytics-report) · [Health check?](#what-is-a-health-check)
 - **Deployment:** [Production setup?](#whats-the-recommended-production-setup) · [Multiple KBs?](#can-i-run-multiple-knowledge-bases-on-one-server) · [KiwiFS Cloud?](#how-does-kiwifs-cloud-differ-from-self-hosted)
@@ -41,7 +42,7 @@ No. Git runs under the hood (every write is an atomic commit) but users never in
 
 ### Is KiwiFS production-ready?
 
-KiwiFS is in active development (v0.4). The core is stable: file CRUD, search, versioning, web UI, MCP, data import/export, DQL queries, and all access protocols work. We use it in production internally. That said, APIs may evolve before v1.0.
+KiwiFS is in active development (v0.19.x). The core is stable: file CRUD, search, versioning, web UI, MCP (68+ tools), data import/export, DQL queries, workflows, schemas, widgets, publishing, and all access protocols work. We use it in production internally. That said, APIs may evolve before v1.0.
 
 ---
 
@@ -102,11 +103,11 @@ Three ways, depending on what your agent has access to:
 
 1. **Filesystem** — if you mount KiwiFS via NFS or FUSE, the agent uses `cat`, `echo`, `grep`, `ls` directly. No SDK.
 2. **REST API** — `curl -X PUT localhost:3333/api/kiwi/file?path=page.md -d "content"`.
-3. **MCP** — `kiwifs mcp --root ~/knowledge` gives Claude, Cursor, or any MCP-compatible agent 62 structured tools (`kiwi_read`, `kiwi_write`, `kiwi_search`, etc.).
+3. **MCP** — `kiwifs mcp --root ~/knowledge` gives Claude, Cursor, or any MCP-compatible agent 68+ structured tools (`kiwi_read`, `kiwi_write`, `kiwi_search`, `kiwi_task_create`, `kiwi_remember`, etc.).
 
 ### What is MCP and why does KiwiFS support it?
 
-[Model Context Protocol](https://modelcontextprotocol.io) is a standard for connecting AI agents to external tools. KiwiFS's MCP server exposes 62 tools and 3 resources, so any MCP-compatible agent can read, write, search, and query your knowledge base without custom integration code. Call `kiwi_context` first to get the schema, playbook, and index in one shot.
+[Model Context Protocol](https://modelcontextprotocol.io) is a standard for connecting AI agents to external tools. KiwiFS's MCP server exposes 68+ tools and 3 resources, so any MCP-compatible agent can read, write, search, query, create tasks, manage workflows, and remember observations without custom integration code. Call `kiwi_context` first to get the schema, playbook, and index in one shot.
 
 ### Can agents use KiwiFS without a running server?
 
@@ -162,7 +163,7 @@ Three tiers, configurable at startup:
 Yes. Two local options are supported:
 
 - `provider = "ollama"` with sqlite-vec. Ollama runs locally, but still requires the Ollama service to be running.
-- `provider = "onnx"` with a KiwiFS binary built using `-tags onnx`. This loads an ONNX model and matching HuggingFace `tokenizer.json` in-process, so no API key or embedding service is required. For Korean/Japanese/Chinese search, prefer a multilingual model such as `intfloat/multilingual-e5-small` and configure `query_prefix = "query: "` plus `passage_prefix = "passage: "`.
+- `type = "onnx"` (or `provider = "onnx"`) with a KiwiFS binary built using `-tags onnx`. Run `kiwifs model download all-minilm-l6-v2` (or `multilingual-e5-small`) to fetch model artifacts; `tokenizer.json` is auto-discovered beside the model. No API key or embedding service is required. For Korean/Japanese/Chinese search, prefer `multilingual-e5-small` and configure `query_prefix = "query: "` plus `passage_prefix = "passage: "`.
 
 On small CPU-only machines, set `[search.vector].worker_count` lower and `[search.vector.embedder].timeout` higher for service-backed embedders.
 
@@ -292,11 +293,54 @@ Yes. Re-importing the same data skips unchanged rows. KiwiFS tracks `_source` an
 
 ### What export formats are available?
 
-JSONL and CSV. Both support optional flags: `--include-content` (full markdown body), `--include-links` (wiki link graph), `--include-embeddings` (vector embeddings with `.schema.json` sidecar), `--columns` (specific frontmatter fields).
+**Data export:** JSONL, CSV, and Parquet. All support optional flags: `--include-content` (full markdown body), `--include-links` (wiki link graph), `--include-embeddings` (vector embeddings with `.schema.json` sidecar), `--columns` (specific frontmatter fields).
+
+**Document export:** PDF (Typst or XeLaTeX via Pandoc), HTML (standalone), slides (Marp: html/pdf/pptx), MkDocs project, and static site (ZIP). The web UI also supports in-browser PDF export via Typst without server-side tools. Use `kiwifs export --format <format>` or `POST /api/kiwi/export/document`.
 
 ### Can I use exported data for ML training?
 
 Yes. The JSONL export with `--include-embeddings` produces ML-ready datasets. The `.schema.json` sidecar documents the embedding dimensions and model used. Combined with DQL for feature selection, you can build training pipelines directly from your knowledge base.
+
+---
+
+## Workflows, Templates & Widgets
+
+### What init templates are available?
+
+KiwiFS ships 12 workspace templates, each with a `SCHEMA.md`, `playbook.md`, sample content, and optional workflows/schemas:
+
+| Template | Use case |
+|---|---|
+| `kb` | Governed knowledge base with article verification |
+| `wiki` | Team wiki with page templates |
+| `memory` | Agent episodic memory with consolidation |
+| `tasks` | Task tracking with Kanban workflow |
+| `data` | Structured data collections with DQL dashboards |
+| `cms` | Headless CMS with editorial workflow and feeds |
+| `runbook` | Ops runbooks with execution staleness |
+| `adr` | Architecture decision records with supersession |
+| `prompt` | Versioned prompt management with rubrics |
+| `research` | Research library with reading workflow |
+| `log` | Append-only event log with sequence validation |
+| `blank` | Empty starting point |
+
+```bash
+kiwifs init --template tasks --root ./my-workspace
+```
+
+### What are workflows?
+
+State machines defined in `.kiwi/workflows/*.json` that govern frontmatter transitions. Each workflow defines allowed states and valid transitions. The web UI renders workflow-driven pages as Kanban boards grouped by state. Use `kiwi_workflow_advance` (MCP) or `POST /api/kiwi/workflow/advance` (REST) to move pages between states.
+
+### What are widgets?
+
+Rich blocks embedded in markdown pages using fenced code blocks. They render as interactive components in the web UI and degrade to plain code in other viewers. Available widgets: `kiwi-chart` (bar/line/area/pie/radar/scatter), `kiwi-query` (inline DQL tables), `kiwi-kanban` (inline boards), `kiwi-playground` (interactive controls), `kiwi-app` (sandboxed HTML/JS), `kiwi-diff` (annotated diffs), `kiwi-progress` (bars/gauges), `kiwi-color` (color swatches), `mermaid` (diagrams), `widget:live` (React Live), `widget:code` (Python via Pyodide).
+
+Container directives `:::tabs` and `:::columns` provide layout control. GitHub-style callouts (`> [!NOTE]`, `> [!WARNING]`, etc.) render as styled admonitions.
+
+### How does publishing work?
+
+Per-page publishing via `POST /api/kiwi/publish` sets `published: true` in frontmatter. Published pages are readable at `/p/{path}` with a themed reader view. Share links provide token-based access to unpublished pages. Space visibility can be set to `public` or `private`.
 
 ---
 

@@ -17,6 +17,10 @@ Practical workflows for agents, teams, and developers using KiwiFS.
 - [Aggregation](#aggregation)
 - [Data Import](#data-import)
 - [Data Export](#data-export)
+- [Init Templates](#init-templates)
+- [Widgets](#widgets)
+- [Workflows and Task Orchestration](#workflows-and-task-orchestration)
+- [Publishing](#publishing)
 - [Configuration](#configuration)
 - [Deployment](#deployment)
 
@@ -56,7 +60,7 @@ The agent calls `kiwi_context` on connect to receive both documents plus the cur
 | **Consolidate** | Merge episodes into durable pages |
 | **Lint** | Audit for orphan pages, broken links, stale content |
 
-Other templates: `wiki`, `runbook`, `research`, or start blank with `kiwifs init`.
+Other templates: `kb`, `wiki`, `tasks`, `data`, `cms`, `runbook`, `adr`, `prompt`, `research`, `log`, or start blank with `kiwifs init`.
 
 ---
 
@@ -265,6 +269,7 @@ Features: idempotent upserts (re-importing skips unchanged rows), `--dry-run`, `
 ```bash
 kiwifs export --format jsonl --output knowledge.jsonl
 kiwifs export --format csv --include-embeddings --output dataset.csv
+kiwifs export --format parquet --include-content --output knowledge.parquet
 ```
 
 ```
@@ -279,6 +284,190 @@ Options:
 | `--include-links` | Wiki link graph for each page |
 | `--include-embeddings` | Vector embeddings (writes `.schema.json` sidecar) |
 | `--columns` | Export only specific frontmatter fields |
+
+### Document export
+
+```bash
+kiwifs export --format pdf --path docs/report.md --output report.pdf
+kiwifs export --format html --path concepts/ --self-contained --output site.html
+kiwifs export --format slides --path talks/intro.md --output slides.html
+kiwifs export --format mkdocs --path docs/ --site-name "My Wiki" --output docs-project/
+```
+
+```
+POST /api/kiwi/export/document
+{"format": "pdf", "path": "pages/report.md", "pdf_engine": "typst"}
+```
+
+Formats: `pdf` (Typst or XeLaTeX), `html`, `slides` (Marp), `mkdocs`, `site` (static ZIP). The web UI also supports in-browser PDF via Typst.
+
+---
+
+## Init Templates
+
+Scaffold a workspace for any use case:
+
+```bash
+kiwifs init --template kb --root ./docs-kb          # Governed knowledge base
+kiwifs init --template wiki --root ./team-wiki       # Team wiki
+kiwifs init --template memory --root ./agent-memory  # Agent episodic memory
+kiwifs init --template tasks --root ./project        # Task tracking + Kanban
+kiwifs init --template data --root ./analytics       # Data collections + DQL dashboards
+kiwifs init --template cms --root ./blog             # Headless CMS + feeds
+kiwifs init --template runbook --root ./ops          # Ops runbooks
+kiwifs init --template adr --root ./decisions        # Architecture decision records
+kiwifs init --template prompt --root ./prompts       # Prompt library + eval
+kiwifs init --template research --root ./research    # Research + citations
+kiwifs init --template log --root ./audit            # Append-only event log
+```
+
+---
+
+## Widgets
+
+Embed interactive blocks in markdown using fenced code blocks:
+
+### Chart
+
+````
+```kiwi-chart
+type: bar
+title: Sprint velocity
+data:
+  - label: Sprint 1
+    value: 21
+  - label: Sprint 2
+    value: 34
+  - label: Sprint 3
+    value: 28
+```
+````
+
+Supported types: `bar`, `line`, `area`, `pie`, `radar`, `scatter`.
+
+### Inline DQL query
+
+````
+```kiwi-query
+TABLE title, status, priority
+FROM "tasks"
+WHERE status != "done"
+SORT priority DESC
+```
+````
+
+### Inline kanban
+
+````
+```kiwi-kanban
+columns:
+  - name: Todo
+    cards:
+      - title: Design API
+  - name: In Progress
+    cards:
+      - title: Build UI
+  - name: Done
+    cards:
+      - title: Write tests
+```
+````
+
+### Tabs and columns
+
+```
+:::tabs
+::tab[REST]
+Use `PUT /api/kiwi/file` to create or update a page.
+::tab[MCP]
+Call `kiwi_write` with `path` and `content` arguments.
+:::
+```
+
+Callouts: `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`, `> [!CAUTION]`, `> [!IMPORTANT]`. Foldable: `> [!NOTE]-` (collapsed) or `> [!NOTE]+` (expanded).
+
+---
+
+## Workflows and Task Orchestration
+
+### Define a workflow
+
+```json
+// .kiwi/workflows/review.json
+{
+  "name": "review",
+  "states": ["draft", "review", "approved", "published"],
+  "transitions": {
+    "draft": ["review"],
+    "review": ["approved", "draft"],
+    "approved": ["published"]
+  }
+}
+```
+
+### Advance a page via REST
+
+```bash
+curl -X POST 'http://localhost:3333/api/kiwi/workflow/advance' \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"pages/report.md","target_state":"review","actor":"agent:reviewer"}'
+```
+
+### Task orchestration via MCP
+
+```
+kiwi_task_create({
+  "title": "Implement auth flow",
+  "priority": "high",
+  "assignee": "agent:eng-bot"
+})
+
+kiwi_task_progress({
+  "path": "tasks/implement-auth-flow.md",
+  "status": "Started OAuth2 integration",
+  "actor": "agent:eng-bot"
+})
+
+kiwi_workflow_advance({
+  "path": "tasks/implement-auth-flow.md",
+  "target_state": "review"
+})
+```
+
+### Memory tools
+
+```
+kiwi_remember({
+  "content": "The auth service returns 403 when tokens expire within 5 minutes of a request",
+  "scope": "backend"
+})
+
+kiwi_forget({
+  "path": "episodes/2026-06-15/abc123.md"
+})
+```
+
+---
+
+## Publishing
+
+### Publish a page
+
+```bash
+curl -X POST 'http://localhost:3333/api/kiwi/publish' \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"blog/welcome-post.md"}'
+```
+
+Published pages are accessible at `/p/blog/welcome-post.md`. Subscribe to feeds at `/api/kiwi/feed.xml` (Atom) or `/api/kiwi/feed.json`.
+
+### Create a share link
+
+```bash
+curl -X POST 'http://localhost:3333/api/kiwi/share' \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"reports/q2-review.md"}'
+```
 
 ---
 
@@ -312,16 +501,13 @@ provider = "sqlite-vec"          # sqlite-vec | qdrant | pgvector | pinecone | w
 
 # Fully local ONNX alternative (requires a binary built with `go build -tags onnx`):
 # [search.vector.embedder]
-# provider = "onnx"
+# type = "onnx"                  # provider = "onnx" also works
 # model_path = "~/.kiwi/models/multilingual-e5-small/onnx/model.onnx"
-# tokenizer_path = "~/.kiwi/models/multilingual-e5-small/onnx/tokenizer.json"
-# runtime_path = "/opt/onnxruntime/lib/libonnxruntime.so.1.25.0"  # optional if lib is discoverable
 # dimensions = 384
-# max_tokens = 512
-# pooling = "mean"
-# normalize = true
 # query_prefix = "query: "
 # passage_prefix = "passage: "
+# tokenizer_path optional — auto-discovered from parent dir after kiwifs model download
+# runtime_path = "/opt/onnxruntime/lib/libonnxruntime.so.1.25.0"  # optional if lib is discoverable
 
 [versioning]
 strategy = "git"                 # git | cow | none
@@ -339,20 +525,20 @@ CLI flags override config: `kiwifs serve --port 4000 --search sqlite --versionin
 Build KiwiFS with ONNX support when you want vector search without API keys or a running embedding service:
 
 ```bash
+kiwifs model download all-minilm-l6-v2          # English baseline (384-dim)
+# or: kiwifs model download multilingual-e5-small  # CJK-friendly
 go build -tags onnx -o kiwifs .
 ```
 
-Download an ONNX Runtime shared library that matches `github.com/yalue/onnxruntime_go` and point `runtime_path` at it if it is not on the system library path. For CJK-friendly search, use a multilingual model such as `intfloat/multilingual-e5-small` rather than an English-only MiniLM model:
-
-```bash
-mkdir -p ~/.kiwi/models/multilingual-e5-small
-# Download these files from HuggingFace:
-#   intfloat/multilingual-e5-small/onnx/model.onnx
-#   intfloat/multilingual-e5-small/tokenizer.json
-# Some exports place tokenizer.json under onnx/; keep tokenizer_path aligned with the file you download.
+```toml
+[search.vector.embedder]
+type = "onnx"                  # provider = "onnx" also works
+model_path = "~/.kiwi/models/all-MiniLM-L6-v2/onnx/model.onnx"
+dimensions = 384
+# tokenizer_path optional — auto-discovered from parent dir after kiwifs model download
 ```
 
-E5 models expect different prefixes for indexed passages and search queries. Configure both prefixes so reindexing stores `passage: ...` vectors and search embeds `query: ...`.
+Download an ONNX Runtime shared library that matches `github.com/yalue/onnxruntime_go` and point `runtime_path` at it if it is not on the system library path. For CJK-friendly search, use `multilingual-e5-small` and set `query_prefix = "query: "` plus `passage_prefix = "passage: "` so reindexing stores `passage: ...` vectors and search embeds `query: ...`.
 
 ---
 
