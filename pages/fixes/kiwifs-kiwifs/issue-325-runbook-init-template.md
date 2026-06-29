@@ -8,9 +8,9 @@ issue_number: 325
 languages: [go, markdown, json]
 status: verified
 peer_review: pass
-date: 2026-06-21
-verified: 2026-06-21T15:42:00Z
-delivery_commit: 2724b00e162490a9b7440546a7f5a950c8f5cf33
+date: 2026-06-29
+verified: 2026-06-29T16:53:00Z
+delivery_commit: 3013d4b56385e481ceb7c4cfc1759e4f13331d96
 ci_run: 27909055535
 ---
 
@@ -52,10 +52,19 @@ Replace the legacy runbook scaffold with UC-6 DevHelm format:
 3. **Removed legacy paths** — `incidents/`, `postmortems/`, `procedures/` subdirs replaced
    by flat runbook files and `.kiwi/` schema/template.
 
+4. **Embed filter (2026-06-29)** — Legacy scaffold files may still exist on disk under
+   `templates/runbook/{incidents,postmortems,procedures}/` from pre-UC-6 commits. They
+   contain placeholder wiki links (`[[incidents/YYYY-MM-DD-slug]]`) that break
+   `schema.Lint` on generated workspaces. `filteredTemplatesFS` in `embed_filter.go`
+   hides these paths from the embed FS and from `copyEmbedDir` during init.
+
 ## Files changed
 
 - `internal/workspace/templates/runbook/**` — new UC-6 scaffold
-- `internal/workspace/runbook_template_test.go` — schema, scaffold, lint, metadata tests
+- `internal/workspace/embed_filter.go` — filter legacy runbook paths from embed FS
+- `internal/workspace/init.go` — wrap embed FS with filter; skip legacy paths in copy
+- `internal/workspace/runbook_template_test.go` — schema, scaffold, lint, metadata tests;
+  `TestRunbookEmbedUsesUC6ScaffoldOnly` regression guard
 - `internal/workspace/init_test.go` — include `runbook` in `ListInitTemplates` assertion
 - `cmd/init.go` — flag help + example for `--template runbook`
 - `cmd/init_test.go` — `TestRunbookTemplateEmbedded`, `TestRunbookTemplateInit`, `TestInitCmdDocumentsRunbookTemplate`, `TestRunbookTemplateInitBlankRoot`
