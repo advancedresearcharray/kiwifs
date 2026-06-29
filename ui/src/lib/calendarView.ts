@@ -185,6 +185,47 @@ export function buildMonthGrid(month: Date): CalendarCell[] {
   return cells;
 }
 
+/** Anchor date for mobile week-only grid: selected day in month, else today, else month start. */
+export function weekGridAnchor(selectedDateKey: string | null, month: Date): Date {
+  if (selectedDateKey) {
+    try {
+      const parsed = parseISO(selectedDateKey);
+      if (
+        !Number.isNaN(parsed.getTime()) &&
+        parsed.getFullYear() === month.getFullYear() &&
+        parsed.getMonth() === month.getMonth()
+      ) {
+        return parsed;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const today = new Date();
+  if (
+    today.getFullYear() === month.getFullYear() &&
+    today.getMonth() === month.getMonth()
+  ) {
+    return today;
+  }
+
+  return startOfMonth(month);
+}
+
+export function defaultSelectedDateKey(month: Date): string {
+  const today = todayKey();
+  const parsed = parseISO(today);
+  if (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.getFullYear() === month.getFullYear() &&
+    parsed.getMonth() === month.getMonth()
+  ) {
+    return today;
+  }
+  return format(startOfMonth(month), "yyyy-MM-dd");
+}
+
 export function buildWeekGrid(anchor: Date): CalendarCell[] {
   const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
   const cells: CalendarCell[] = [];

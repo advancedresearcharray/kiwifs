@@ -14,6 +14,7 @@ import { Badge } from "@kw/components/ui/badge";
 
 type Props = {
   month: Date;
+  weekAnchor?: Date;
   byDate: Map<string, CalendarPageEntry[]>;
   selectedDateKey: string | null;
   weekOnly?: boolean;
@@ -22,14 +23,15 @@ type Props = {
 
 export function CalendarGrid({
   month,
+  weekAnchor,
   byDate,
   selectedDateKey,
   weekOnly = false,
   onSelectDate,
 }: Props) {
   const cells = useMemo(
-    () => (weekOnly ? buildWeekGrid(month) : buildMonthGrid(month)),
-    [month, weekOnly],
+    () => (weekOnly ? buildWeekGrid(weekAnchor ?? month) : buildMonthGrid(month)),
+    [month, weekAnchor, weekOnly],
   );
   const today = todayKey();
 

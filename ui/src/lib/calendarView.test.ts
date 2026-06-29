@@ -3,6 +3,7 @@ import {
   buildMonthGrid,
   buildMonthRangeQuery,
   buildWeekGrid,
+  defaultSelectedDateKey,
   discoverDateFields,
   groupEntriesByDate,
   isCalendarViewPath,
@@ -11,6 +12,7 @@ import {
   parseCalendarQueryRows,
   parseMonthInput,
   shiftMonth,
+  weekGridAnchor,
 } from "./calendarView";
 
 describe("calendarView helpers", () => {
@@ -106,5 +108,23 @@ describe("calendarView helpers", () => {
   it("detects calendar view route", () => {
     expect(isCalendarViewPath("/view/calendar")).toBe(true);
     expect(isCalendarViewPath("/page/foo")).toBe(false);
+  });
+
+  it("anchors mobile week grid on selected day instead of month start", () => {
+    const june = new Date("2026-06-15T12:00:00Z");
+    const anchor = weekGridAnchor("2026-06-18", june);
+    const week = buildWeekGrid(anchor);
+
+    expect(week.some((cell) => cell.dateKey === "2026-06-18")).toBe(true);
+    expect(week.some((cell) => cell.dateKey === "2026-06-01")).toBe(false);
+  });
+
+  it("defaults selected date to today when in month, else month start", () => {
+    const june = new Date("2026-06-15T12:00:00Z");
+    const selected = defaultSelectedDateKey(june);
+    expect(selected).toMatch(/^2026-06-\d{2}$/);
+
+    const july = new Date("2026-07-01T12:00:00Z");
+    expect(defaultSelectedDateKey(july)).toBe("2026-07-01");
   });
 });

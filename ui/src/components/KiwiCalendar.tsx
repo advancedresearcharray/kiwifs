@@ -8,11 +8,12 @@ import {
   ChevronRight,
   Loader2,
 } from "lucide-react";
-import { format, startOfMonth } from "date-fns";
+import { format, parseISO, startOfMonth } from "date-fns";
 import { api } from "@kw/lib/api";
 import { cn } from "@kw/lib/cn";
 import {
   buildMonthRangeQuery,
+  defaultSelectedDateKey,
   discoverDateFields,
   groupEntriesByDate,
   monthLabel,
@@ -20,6 +21,7 @@ import {
   parseMonthInput,
   shiftMonth,
   todayKey,
+  weekGridAnchor,
   type CalendarPageEntry,
 } from "@kw/lib/calendarView";
 import { Button } from "@kw/components/ui/button";
@@ -114,7 +116,30 @@ export function KiwiCalendar({ onClose, onNavigate }: Props) {
     }
   }, [dateField]);
 
+  useEffect(() => {
+    setSelectedDateKey((current) => {
+      if (!current) return defaultSelectedDateKey(month);
+      try {
+        const parsed = parseISO(current);
+        if (
+          !Number.isNaN(parsed.getTime()) &&
+          parsed.getFullYear() === month.getFullYear() &&
+          parsed.getMonth() === month.getMonth()
+        ) {
+          return current;
+        }
+      } catch {
+        /* fall through */
+      }
+      return defaultSelectedDateKey(month);
+    });
+  }, [month]);
+
   const byDate = useMemo(() => groupEntriesByDate(entries), [entries]);
+  const weekAnchor = useMemo(
+    () => weekGridAnchor(selectedDateKey, month),
+    [selectedDateKey, month],
+  );
   const selectedEntries = selectedDateKey ? byDate.get(selectedDateKey) ?? [] : [];
 
   const monthPickerValue = format(month, "yyyy-MM");
@@ -215,6 +240,7 @@ export function KiwiCalendar({ onClose, onNavigate }: Props) {
             <div className={cn(isMobile ? "shrink-0" : "overflow-auto kiwi-scroll")}>
               <CalendarGrid
                 month={month}
+                weekAnchor={weekAnchor}
                 byDate={byDate}
                 selectedDateKey={selectedDateKey}
                 weekOnly={isMobile}

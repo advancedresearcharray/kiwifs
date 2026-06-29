@@ -656,6 +656,9 @@ const handleSpaceSwitch = useCallback(() => {
   useEffect(() => {
     if (!features.calendar && calendarOpen) {
       setCalendarOpen(false);
+      if (typeof window !== "undefined" && window.location.pathname === "/view/calendar") {
+        window.history.replaceState(null, "", "/");
+      }
     }
   }, [features.calendar, calendarOpen]);
 
