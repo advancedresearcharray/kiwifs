@@ -138,6 +138,17 @@ func TestToolsListCacheHints(t *testing.T) {
 	}
 }
 
+func TestResourcesListCacheHints(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"resources":[{"uri":"page://x","name":"x"}]}}`)
+	out := augmentCacheableResult(body, "resources/list")
+	if !strings.Contains(string(out), `"ttlMs":`) {
+		t.Fatalf("missing ttlMs: %s", out)
+	}
+	if !strings.Contains(string(out), `"cacheScope":"public"`) {
+		t.Fatalf("missing cacheScope: %s", out)
+	}
+}
+
 func TestToolsCallEmitsMcpNameHeader(t *testing.T) {
 	s := server.NewMCPServer("kiwifs", "1.0.0")
 	s.AddTool(mcp.NewTool("ping"), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
