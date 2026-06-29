@@ -6,7 +6,6 @@ export type TreeEntry = {
   name: string;
   isDir: boolean;
   size?: number;
-  order?: number;
   frontmatterError?: string;
   children?: TreeEntry[];
 };
@@ -373,7 +372,7 @@ export const api = {
 
   async getLocalState<T = Record<string, unknown>>(name: string): Promise<T> {
     const qs = new URLSearchParams({ name });
-    const res = await fetch(`${kiwiBase()}/local-state?${qs}`, {
+    const res = await fetch(`${kiwiBase()}/me/state?${qs}`, {
       headers: { "X-Actor": actor(), ..._extraHeaders },
     });
     if (!res.ok) return {} as T;
@@ -382,7 +381,7 @@ export const api = {
 
   async putLocalState(name: string, state: unknown): Promise<void> {
     const qs = new URLSearchParams({ name });
-    await fetch(`${kiwiBase()}/local-state?${qs}`, {
+    await fetch(`${kiwiBase()}/me/state?${qs}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "X-Actor": actor(), ..._extraHeaders },
       body: JSON.stringify(state),
@@ -423,14 +422,6 @@ export const api = {
       method: "PATCH",
       headers,
       body: JSON.stringify(fields),
-    });
-  },
-
-  async patchTreeOrder(orders: Record<string, number>): Promise<{ updated: number }> {
-    return request(`${kiwiBase()}/tree/order`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "X-Actor": actor(), ..._extraHeaders },
-      body: JSON.stringify({ orders }),
     });
   },
 

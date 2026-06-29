@@ -82,19 +82,19 @@ func (s *Server) SetBackupStatus(fn func() any) {
 	}
 }
 
-func (s *Server) SetProtocolHealth(probes []ProtocolHealthProbe) {
-	s.protocolHealth = probes
-	if s.handlers != nil {
-		s.handlers.protocolHealth = probes
-	}
-}
-
 func (s *Server) SetMCPHandler(handler http.Handler) {
 	if handler == nil || s.mcpHandler != nil {
 		return
 	}
 	s.mcpHandler = handler
 	s.echo.Any("/mcp", echo.WrapHandler(handler))
+}
+
+func (s *Server) SetProtocolHealth(probes []ProtocolHealthProbe) {
+	s.protocolHealth = probes
+	if s.handlers != nil {
+		s.handlers.protocolHealth = probes
+	}
 }
 
 type ProtocolHealthProbe struct {
@@ -505,14 +505,13 @@ func (s *Server) setupRoutes() {
 	api.GET("/changes", h.Changes)
 	api.GET("/tree", h.Tree)
 	api.GET("/file", h.ReadFile)
-	api.GET("/local-note", h.ReadLocalNote)
-	api.GET("/local-state", h.GetLocalState)
-	api.PUT("/local-state", h.PutLocalState)
+	api.GET("/me/note", h.ReadMyNote)
+	api.GET("/me/state", h.GetMyState)
+	api.PUT("/me/state", h.PutMyState)
 	api.GET("/readlink", h.Readlink)
 	api.PUT("/file", h.WriteFile)
 	api.PATCH("/file", h.PatchFile)
 	api.PATCH("/file/frontmatter", h.PatchFrontmatter)
-	api.PATCH("/tree/order", h.PatchTreeOrder)
 	api.DELETE("/file", h.DeleteFile)
 	api.POST("/rename", h.RenameFile)
 	api.POST("/rename-dir", h.RenameDir)
@@ -587,6 +586,9 @@ func (s *Server) setupRoutes() {
 	api.POST("/analytics/content-gaps/dismiss", h.AnalyticsDismissContentGap)
 	api.GET("/analytics/sources", h.AnalyticsSources)
 	api.POST("/lint", h.Lint)
+	api.GET("/links/broken", h.BrokenLinks)
+	api.GET("/links/orphans", h.Orphans)
+	api.POST("/refactor/fix-broken", h.FixBrokenLinks)
 	api.GET("/health-check", h.HealthCheck)
 	api.GET("/context", h.Context)
 	api.GET("/rules", h.Rules)
