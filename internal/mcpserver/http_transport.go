@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/kiwifs/kiwifs/internal/bootstrap"
 	"github.com/kiwifs/kiwifs/internal/config"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -73,23 +72,3 @@ func (h spec2026Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Stateless: strip session id if upstream emitted one (2026 spec).
 	w.Header().Del(server.HeaderKeySessionID)
 }
-
-// stackBackend reuses a live bootstrap stack without closing it on MCP shutdown.
-type stackBackend struct {
-	*LocalBackend
-}
-
-// NewStackBackend reuses a live bootstrap stack (e.g. from kiwifs serve) without owning its lifetime.
-func NewStackBackend(stack *bootstrap.Stack) Backend {
-	return &stackBackend{LocalBackend: newLocalBackendFromStack(stack)}
-}
-
-func newLocalBackendFromStack(stack *bootstrap.Stack) *LocalBackend {
-	b := &LocalBackend{root: stack.Root, stack: stack}
-	b.once.Do(func() {}) // skip bootstrap rebuild; stack is injected
-	return b
-}
-
-func (b *stackBackend) Close() error { return nil }
-
-var _ Backend = (*stackBackend)(nil)

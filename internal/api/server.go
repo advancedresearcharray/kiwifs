@@ -85,6 +85,16 @@ func (s *Server) SetProtocolHealth(probes []ProtocolHealthProbe) {
 	}
 }
 
+// SetMCPHandler mounts Streamable HTTP MCP at /mcp before the UI catch-all.
+// Idempotent: subsequent calls are ignored.
+func (s *Server) SetMCPHandler(h http.Handler) {
+	if h == nil || s.mcpHandler != nil {
+		return
+	}
+	s.mcpHandler = h
+	s.echo.Any("/mcp", echo.WrapHandler(h))
+}
+
 type ProtocolHealthProbe struct {
 	Name    string
 	Enabled bool
@@ -137,6 +147,8 @@ type Server struct {
 	syncCancel context.CancelFunc
 
 	analyticsWriter *analytics.Writer
+
+	mcpHandler http.Handler
 
 	auth atomic.Pointer[liveAuth]
 }
@@ -666,15 +678,6 @@ func (s *Server) setupRoutes() {
 	uiHandler := webui.Handler()
 	s.echo.GET("/", uiHandler)
 	s.echo.GET("/*", uiHandler)
-}
-
-// SetMCPHandler mounts Streamable HTTP MCP at /mcp. Safe to call after NewServer;
-// registers before the UI catch-all takes precedence for POST /mcp.
-func (s *Server) SetMCPHandler(handler http.Handler) {
-	if handler == nil {
-		return
-	}
-	s.echo.Any("/mcp", echo.WrapHandler(handler))
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
