@@ -35,7 +35,7 @@ Fixed-height bar (`h-12`, 48px). Three zones:
 |--------|-------------------------------------------------|
 | Left   | Sidebar toggle, logo, space name                |
 | Center | Search bar (opens command palette, `⌘K`)        |
-| Right  | New page, toolbar views, theme toggle             |
+| Right  | New page, graph, history, theme toggle           |
 
 ### Sidebar
 
@@ -54,19 +54,12 @@ Each section is collapsible (state saved to localStorage).
 
 Fills the remaining width (`flex-1`). Renders one of:
 
-- **Page view** (`KiwiPage`) — markdown render with ToC, backlinks, comments, widgets.
-- **Editor** (`KiwiEditor`) — source-preserving BlockNote editor with slash commands.
-- **Graph** (`KiwiGraph`) — Sigma.js force-directed knowledge graph with link-type filtering.
+- **Page view** (`KiwiPage`) — markdown render with ToC, backlinks, comments.
+- **Editor** (`KiwiEditor`) — source-preserving Markdown editor.
+- **Graph** (`KiwiGraph`) — Sigma.js force-directed knowledge graph.
 - **History** (`KiwiHistory`) — version diff viewer.
-- **Bases** (`KiwiBases`) — saved DQL views with table, cards, list, map layouts.
-- **Canvas** (`KiwiCanvasScreen`) — interactive Flow editor for `.canvas.json` files.
-- **Whiteboard** (`KiwiWhiteboardScreen`) — Excalidraw editor for `.excalidraw.md` files.
-- **Kanban** (`KiwiKanban`) — workflow boards grouped by state.
-- **Timeline** (`KiwiTimeline`) — recent git-backed activity.
-- **Data sources** (`KiwiData`) — import connections with sync controls.
 - **Theme editor** (`KiwiThemeEditor`) — live color/font customization.
-- **Analytics** (`KiwiAnalytics`) — page views, search analytics, content gaps, trends.
-- **Welcome / recent** (`KiwiRecentStart`) — shown when no page is selected.
+- **Welcome screen** — shown when no page is selected.
 
 ### Breadcrumb
 

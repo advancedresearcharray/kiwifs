@@ -1,11 +1,10 @@
-name: deploy demo site
+name: deploy storybook
 
 on:
   push:
     branches: [main]
     paths:
       - "ui/**"
-      - "deploy/**"
       - ".github/workflows/deploy-storybook.yml"
   workflow_dispatch:
 
@@ -20,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    name: build demo + storybook
+    name: build storybook
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,15 +38,11 @@ jobs:
         run: npm run build-storybook
         working-directory: ui
 
-      - name: build demo
-        run: npm run build-demo
-        working-directory: ui
-
-      - name: assemble site
+      - name: move into /storybook subpath
         run: |
           mkdir -p _site/storybook
-          cp -r ui/demo-static/* _site/
           cp -r ui/storybook-static/* _site/storybook/
+          cp deploy/pages/index.html _site/index.html
 
       - name: upload pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -60,7 +55,7 @@ jobs:
     needs: build
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}storybook/
     steps:
       - name: deploy to github pages
         id: deployment

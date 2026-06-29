@@ -61,55 +61,23 @@ You can't replace Confluence if you can't migrate from it.
 - [x] `kiwifs import --from confluence` — convert XHTML storage format to markdown
 - [x] `kiwifs import` — 18 total sources (PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB, Redis, Elasticsearch, CSV, JSON, JSONL, YAML, Excel, Notion, Airtable, Google Sheets, Confluence, Obsidian, Firestore)
 - [x] `kiwifs export --format jsonl` / `--format csv` — export with optional embeddings, content, and link graph
-- [x] `kiwifs export --format mkdocs` — generate MkDocs static doc site projects
-- [ ] `kiwifs export --format docusaurus` — generate Docusaurus static doc sites
+- [ ] `kiwifs export --format mkdocs` / `--format docusaurus` — generate static doc sites
 
-## v0.4 — Webhooks & analytics
+## v0.4 — Webhooks & analytics (current)
 
 Outbound integration and content health signals.
 
-- [x] **Webhooks** — POST to Slack/CI/custom URLs on write/delete events, HMAC signing, retry with backoff
+- [ ] **Webhooks** — POST to Slack/CI/custom URLs on write/delete events, HMAC signing, retry with backoff
 - [x] **Content analytics** — stale page detection, orphan pages, broken links, empty pages, link coverage, health checks (`kiwifs analytics`, `kiwifs janitor`, `GET /api/kiwi/analytics`)
 - [x] **Page view tracking** — SQLite `page_views` + `failed_searches` tables, REST `/analytics/views` and `/analytics/failed-searches`, engagement section in `/analytics` + `kiwifs analytics`, web UI engagement panel + per-page view counts
-- [x] **Analytics v2** — overview, trends, content gaps, search analytics, sources, failed search dismissal
 
-## v0.5 — Workflows, schemas & templates (current)
-
-Structured knowledge management across diverse use cases.
-
-- [x] **Workflows** — state machines in `.kiwi/workflows/*.json`, frontmatter-driven transitions, Kanban board view, assign/advance/reorder API
-- [x] **JSON Schema validation** — `.kiwi/schemas/*.json`, enforcement toggle, per-template schemas
-- [x] **Init templates** — 12 templates: `kb`, `wiki`, `memory`, `tasks`, `data`, `cms`, `runbook`, `adr`, `prompt`, `research`, `log`, `blank`
-- [x] **Widget system** — `kiwi-chart`, `kiwi-query`, `kiwi-kanban`, `kiwi-playground`, `kiwi-app`, `kiwi-diff`, `kiwi-progress`, `kiwi-color`, `widget:live`, `widget:code`, container directives (tabs, columns), callouts
-- [x] **Task orchestration** — `kiwi_task_create`, `kiwi_task_progress`, claims, Kanban, task template
-- [x] **Agent memory tools** — `kiwi_remember`, `kiwi_forget`, memory report, contradiction detection
-- [x] **Publishing** — per-page publish, share links, space visibility, themed reader at `/p/*`
-- [x] **Document export** — PDF (Typst/XeLaTeX), HTML, slides (Marp), MkDocs project, static site
-- [x] **Draft spaces** — git-backed staging branches, merge/discard, file ops inside drafts
-- [x] **Canvas** — `.canvas.json` (Obsidian-compatible), Flow UI, auto-layout, patch, query, generate
-- [x] **Whiteboard** — `.excalidraw.md` files, Excalidraw editor
-- [x] **ONNX embedder** — fully offline vector search, multilingual support
-- [x] **MCP Streamable HTTP** — `/mcp` on main server port via `--mcp` flag
-- [x] **OpenAPI** — `GET /api/openapi.json`, Swagger UI at `/api/docs`
-- [x] **Graph analytics** — PageRank, betweenness centrality, Louvain communities, shortest path, link-type filtering
-- [x] **Bases** — saved DQL views with table, cards, list, map layouts
-- [x] **Audit log** — `[audit] enabled`, query API, actor/action/path entries
-- [x] **Connect CLI** — `kiwifs connect` auto-configures MCP for Cursor, Claude Desktop, VS Code, Windsurf, Claude Code
-- [x] **Rules export** — `kiwifs rules export` for Cursor, Claude, AGENTS.md formats
-- [x] **Feeds** — Atom and JSON Feed for CMS template
-- [x] **Parquet export** — columnar export for data warehouses
-- [x] **In-browser PDF** — Typst WASM compiler for client-side PDF generation
-- [x] **Shiki syntax highlighting** — with line highlights and titles
-
-## v0.6 — Access control & governance
+## v0.5 — Access control & governance
 
 Enterprise features for teams that need enforced boundaries.
 
 - [ ] **RBAC permissions** (Casbin) — per-space role-based access, JWT/API key/OIDC identity
 - [ ] **Content lifecycle** — retention policies, legal holds, auto-archival
-- [ ] **React component library** (`kiwifs-ui` on npm) — `<KiwiProvider>`, `<KiwiTree>`, `<KiwiPage>`, `<KiwiEditor>`, `<KiwiSearch>`, `<KiwiGraph>` as standalone components
-- [ ] **Pipeline hooks** (Go) — `OnBeforeWrite`, `OnAfterWrite` callbacks for custom validation/notifications
-- [ ] **JS hooks** — `.kiwi/hooks/*.js` scripts via embedded runtime, no recompile needed
+- [ ] **Editorial states** — draft → review → published workflow via frontmatter
 
 ---
 
@@ -124,4 +92,4 @@ Items labeled [`good first issue`](https://github.com/kiwifs/kiwifs/labels/good%
 
 ---
 
-*Last updated: June 2026*
+*Last updated: May 2026*
