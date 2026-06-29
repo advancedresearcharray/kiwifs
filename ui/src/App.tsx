@@ -64,6 +64,8 @@ import { useTheme } from "./hooks/useTheme";
 import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
+import { SplitViewProvider } from "./contexts/SplitViewContext";
+import { SplitAwarePageContent, dispatchToggleSplitView } from "./components/SplitAwarePageContent";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -393,6 +395,11 @@ export default function App() {
           treeFilterRef.current?.focus();
           treeFilterRef.current?.select();
           break;
+        case "toggle_split_view": {
+          e.preventDefault();
+          dispatchToggleSplitView(state.activePath);
+          break;
+        }
         case "close_overlay": {
           const overlay = resolveOverlayDismiss(stateRef.current);
           if (!overlay) return;
@@ -654,6 +661,7 @@ const handleSpaceSwitch = useCallback(() => {
 
   return (
     <TooltipProvider delayDuration={250}>
+      <SplitViewProvider primaryPath={activePath}>
       <KanbanDragProvider>
         <div className="h-full flex flex-col bg-background text-foreground">
         {/* ── Header: full-width app bar ── */}
@@ -771,6 +779,11 @@ const handleSpaceSwitch = useCallback(() => {
             recent={recent}
             onSpaceSwitch={handleSpaceSwitch}
             onNavigate={navigate}
+            onOpenInSplit={(path) => {
+              window.dispatchEvent(
+                new CustomEvent("kiwi:open-split-view", { detail: { path } }),
+              );
+            }}
             onToggleStar={toggleStar}
             onTogglePin={togglePin}
             onCreatePage={(folder) => {
@@ -857,6 +870,13 @@ const handleSpaceSwitch = useCallback(() => {
                 path={activePath}
                 onClose={() => setHistoryOpen(false)}
                 onRestored={() => setRefreshKey((k) => k + 1)}
+                onCompareWithCurrent={(versionHash) => {
+                  window.dispatchEvent(
+                    new CustomEvent("kiwi:compare-with-current", {
+                      detail: { path: activePath, versionHash },
+                    }),
+                  );
+                }}
               />
             ) : editing && activePath ? (
               <KiwiEditor
@@ -875,35 +895,55 @@ const handleSpaceSwitch = useCallback(() => {
                 }}
               />
             ) : activePath ? (
-              <KiwiPage
-                path={activePath}
+              <SplitAwarePageContent
+                activePath={activePath}
                 tree={tree}
-                onNavigate={navigate}
-                onEdit={() => setEditing(true)}
-                onHistory={() => setHistoryOpen(true)}
+                refreshKey={refreshKey}
+                onPrimaryNavigate={navigate}
                 onRevealInTree={revealActivePageInTree}
-                onToggleStar={() => toggleStar(activePath)}
-                isStarred={isStarred(activePath)}
-                onTogglePin={() => togglePin(activePath)}
-                isPinned={isPinned(activePath)}
-                onDeleted={() => {
-                  setActivePath(null);
-                  setRefreshKey((k) => k + 1);
-                }}
-                onDuplicated={(p) => {
-                  setRefreshKey((k) => k + 1);
-                  navigate(p);
-                }}
-                onMoved={(p) => {
-                  setRefreshKey((k) => k + 1);
-                  navigate(p);
-                }}
+                onToggleStar={toggleStar}
+                isStarred={isStarred}
+                onTogglePin={togglePin}
+                isPinned={isPinned}
+                onTreeRefresh={() => setRefreshKey((k) => k + 1)}
+                onPublishedChanged={refreshPublishedPages}
+                onOpenHistory={() => setHistoryOpen(true)}
                 onTagClick={(tag) => {
                   setSearchQuery(`tag:${tag}`);
                   setSearchOpen(true);
                 }}
-                refreshKey={refreshKey}
-                onPublishedChanged={refreshPublishedPages}
+                singlePane={
+                  <KiwiPage
+                    path={activePath}
+                    tree={tree}
+                    onNavigate={navigate}
+                    onEdit={() => setEditing(true)}
+                    onHistory={() => setHistoryOpen(true)}
+                    onRevealInTree={revealActivePageInTree}
+                    onToggleStar={() => toggleStar(activePath)}
+                    isStarred={isStarred(activePath)}
+                    onTogglePin={() => togglePin(activePath)}
+                    isPinned={isPinned(activePath)}
+                    onDeleted={() => {
+                      setActivePath(null);
+                      setRefreshKey((k) => k + 1);
+                    }}
+                    onDuplicated={(p) => {
+                      setRefreshKey((k) => k + 1);
+                      navigate(p);
+                    }}
+                    onMoved={(p) => {
+                      setRefreshKey((k) => k + 1);
+                      navigate(p);
+                    }}
+                    onTagClick={(tag) => {
+                      setSearchQuery(`tag:${tag}`);
+                      setSearchOpen(true);
+                    }}
+                    refreshKey={refreshKey}
+                    onPublishedChanged={refreshPublishedPages}
+                  />
+                }
               />
             ) : treeLoading || !uiConfigLoaded ? (
               <div className="flex h-full items-center justify-center">
@@ -937,6 +977,7 @@ const handleSpaceSwitch = useCallback(() => {
         </div>
         </div>
       </KanbanDragProvider>
+      </SplitViewProvider>
 
       {/* Modals */}
       <KiwiSearch
