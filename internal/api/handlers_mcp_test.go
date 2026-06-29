@@ -81,6 +81,12 @@ func TestMCPStreamableHTTPInitialize(t *testing.T) {
 	if strings.Contains(resp, "<html") || strings.Contains(resp, "<!DOCTYPE") {
 		t.Fatalf("expected JSON, got HTML: %s", resp[:min(200, len(resp))])
 	}
+	if got := rec.Header().Get("Mcp-Method"); got != "initialize" {
+		t.Fatalf("Mcp-Method = %q, want initialize", got)
+	}
+	if rec.Header().Get("Mcp-Session-Id") != "" {
+		t.Fatal("stateless response must not include Mcp-Session-Id")
+	}
 }
 
 func TestMCPStreamableHTTPGetIsNotHTML(t *testing.T) {
