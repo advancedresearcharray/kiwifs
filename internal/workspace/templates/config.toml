@@ -52,6 +52,9 @@ type = "none"
 # [janitor]
 # stale_days = 90
 # startup_scan = true
+# external_link_check = true
+# external_link_timeout = "5s"
+# external_link_ignore = ["localhost", "127.0.0.1", "example.com"]
 
 # Runbook execution staleness (UC-6). Flags files under directory when a date
 # field is too old or when flag_values frontmatter matches (e.g. failed runs).

@@ -455,6 +455,14 @@ func (h *Handlers) Janitor(c echo.Context) error {
 		es := h.cfg.Janitor.ExecutionStaleness
 		execOpts = janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
 	}
+	if h.cfg != nil {
+		execOpts = append(execOpts, janitor.OptionsFromExternalLinkCheck(
+			h.cfg.Janitor.ExternalLinkCheck,
+			h.cfg.Janitor.ExternalLinkTimeout,
+			h.cfg.Janitor.ExternalLinkIgnore,
+			h.root,
+		)...)
+	}
 	scanner := janitor.New(h.root, h.store, h.searcher, staleDays, execOpts...)
 	result, err := scanner.Scan(c.Request().Context())
 	if err != nil {

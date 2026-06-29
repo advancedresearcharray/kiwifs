@@ -22,6 +22,7 @@ Reports:
   - missing-status — page without a status field
   - empty-page     — page with < 50 chars of content
   - broken-link    — wiki link target doesn't exist
+  - external-link-rot — external http(s) URL returned 4xx/5xx
   - no-review-date — has owner but no next-review
   - decision-found — meeting note contains decision language
 
@@ -37,6 +38,13 @@ Runbook execution staleness is opt-in via .kiwi/config.toml:
 
   [janitor.execution_staleness.flag_values]
   last_outcome = "failure"
+
+External link rot detection is opt-in via .kiwi/config.toml:
+
+  [janitor]
+  external_link_check = true
+  external_link_timeout = "5s"
+  external_link_ignore = ["localhost", "127.0.0.1", "example.com"]
 
 Files under directory with date_field older than max_age_days are flagged.
 Any flag_values match (e.g. last_outcome = failure) is flagged regardless of

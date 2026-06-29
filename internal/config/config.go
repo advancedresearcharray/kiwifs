@@ -184,10 +184,13 @@ type DraftsConfig struct {
 }
 
 type JanitorConfig struct {
-	Interval           string                     `toml:"interval"`
-	StaleDays          int                        `toml:"stale_days"`
-	StartupScan        bool                       `toml:"startup_scan"`
-	ExecutionStaleness ExecutionStalenessConfig   `toml:"execution_staleness"`
+	Interval            string                   `toml:"interval"`
+	StaleDays           int                      `toml:"stale_days"`
+	StartupScan         bool                     `toml:"startup_scan"`
+	ExecutionStaleness  ExecutionStalenessConfig `toml:"execution_staleness"`
+	ExternalLinkCheck   bool                     `toml:"external_link_check"`
+	ExternalLinkTimeout string                   `toml:"external_link_timeout"`
+	ExternalLinkIgnore  []string                 `toml:"external_link_ignore"`
 }
 
 // ExecutionStalenessConfig flags runbooks (or other directory-scoped pages) when
