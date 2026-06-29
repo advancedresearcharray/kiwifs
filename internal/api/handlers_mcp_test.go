@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -175,6 +176,99 @@ api_key = "secret-key"
 	stack.Server.ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("authed status = %d, want 200; body: %s", rec2.Code, rec2.Body.String())
+	}
+}
+
+func TestMCPStreamableHTTPServerDiscover(t *testing.T) {
+	srv := setupMCPAPIServer(t)
+
+	body := `{"jsonrpc":"2.0","id":"api-disc-1","method":"server/discover","params":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /mcp server/discover status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Mcp-Method"); got != "server/discover" {
+		t.Fatalf("Mcp-Method = %q, want server/discover", got)
+	}
+	if got := rec.Header().Get("MCP-Protocol-Version"); got != "2026-07-28" {
+		t.Fatalf("MCP-Protocol-Version = %q, want 2026-07-28", got)
+	}
+	if rec.Header().Get("Mcp-Session-Id") != "" {
+		t.Fatal("stateless response must not include Mcp-Session-Id")
+	}
+
+	var resp struct {
+		Result struct {
+			SupportedVersions []string       `json:"supportedVersions"`
+			Capabilities      map[string]any `json:"capabilities"`
+			TTLMs             int            `json:"ttlMs"`
+			CacheScope        string         `json:"cacheScope"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Result.SupportedVersions) == 0 || resp.Result.SupportedVersions[0] != "2026-07-28" {
+		t.Fatalf("supportedVersions = %v", resp.Result.SupportedVersions)
+	}
+	if resp.Result.TTLMs != 3_600_000 {
+		t.Fatalf("ttlMs = %d, want 3600000", resp.Result.TTLMs)
+	}
+	if resp.Result.CacheScope != "public" {
+		t.Fatalf("cacheScope = %q, want public", resp.Result.CacheScope)
+	}
+	if _, ok := resp.Result.Capabilities["tools"]; !ok {
+		t.Fatalf("expected tools capability, got %v", resp.Result.Capabilities)
+	}
+}
+
+func TestMCPStreamableHTTPToolsListCachingHeaders(t *testing.T) {
+	srv := setupMCPAPIServer(t)
+
+	body := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Method", "tools/list")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /mcp tools/list status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Mcp-Method"); got != "tools/list" {
+		t.Fatalf("Mcp-Method = %q, want tools/list", got)
+	}
+	if rec.Header().Get("Mcp-Session-Id") != "" {
+		t.Fatal("stateless response must not include Mcp-Session-Id")
+	}
+
+	var resp struct {
+		Result struct {
+			TTLMs      int `json:"ttlMs"`
+			CacheScope string `json:"cacheScope"`
+			Tools      []struct {
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Result.TTLMs != 300_000 {
+		t.Fatalf("ttlMs = %d, want 300000", resp.Result.TTLMs)
+	}
+	if resp.Result.CacheScope != "public" {
+		t.Fatalf("cacheScope = %q, want public", resp.Result.CacheScope)
+	}
+	if len(resp.Result.Tools) == 0 {
+		t.Fatal("expected tools")
+	}
+	if got := resp.Result.Tools[0].InputSchema["$schema"]; got != "https://json-schema.org/draft/2020-12/schema" {
+		t.Fatalf("inputSchema.$schema = %v", got)
 	}
 }
 
