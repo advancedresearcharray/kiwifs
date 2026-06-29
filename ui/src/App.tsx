@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  CalendarDays,
   Clock4,
   Columns3,
   Database,
@@ -30,6 +31,7 @@ import { KiwiBases } from "./components/KiwiBases";
 import { KiwiCanvasScreen } from "./components/KiwiCanvasScreen";
 import { KiwiWhiteboardScreen } from "./components/KiwiWhiteboardScreen";
 import { KiwiTimeline } from "./components/KiwiTimeline";
+import { KiwiCalendar } from "./components/KiwiCalendar";
 import { KiwiKanban } from "./components/KiwiKanban";
 import { KiwiRecentStart } from "./components/KiwiRecentStart";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
@@ -64,6 +66,7 @@ import { useTheme } from "./hooks/useTheme";
 import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
+import { isCalendarViewPath } from "./lib/calendarView";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -98,6 +101,9 @@ export default function App() {
   const [initialWhiteboardPath, setInitialWhiteboardPath] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(
+    () => typeof window !== "undefined" && isCalendarViewPath(window.location.pathname),
+  );
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
   const treeRef = useRef<KiwiTreeHandle>(null);
   const treeFilterRef = useRef<HTMLInputElement>(null);
@@ -120,6 +126,7 @@ export default function App() {
     setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setCalendarOpen(false);
     setDataOpen(false);
     setGraphOpen(false);
     setHistoryOpen(false);
@@ -202,6 +209,7 @@ export default function App() {
     whiteboardOpen,
     timelineOpen,
     kanbanOpen,
+    calendarOpen,
   });
   stateRef.current = {
     editing,
@@ -217,6 +225,7 @@ export default function App() {
     whiteboardOpen,
     timelineOpen,
     kanbanOpen,
+    calendarOpen,
   };
 
   useEffect(() => {
@@ -428,6 +437,9 @@ export default function App() {
             case "timeline":
               setTimelineOpen(false);
               break;
+            case "calendar":
+              setCalendarOpen(false);
+              break;
             case "kanban":
               setKanbanOpen(false);
               break;
@@ -636,9 +648,40 @@ const handleSpaceSwitch = useCallback(() => {
     setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setCalendarOpen(false);
     recordVisit(path);
     if (isMobile) setSidebarOpen(false);
   }
+
+  useEffect(() => {
+    if (!features.calendar && calendarOpen) {
+      setCalendarOpen(false);
+      if (typeof window !== "undefined" && window.location.pathname === "/view/calendar") {
+        window.history.replaceState(null, "", "/");
+      }
+    }
+  }, [features.calendar, calendarOpen]);
+
+  useEffect(() => {
+    if (calendarOpen && typeof window !== "undefined" && window.location.pathname !== "/view/calendar") {
+      window.history.pushState(null, "", "/view/calendar");
+    } else if (!calendarOpen && typeof window !== "undefined" && window.location.pathname === "/view/calendar") {
+      window.history.replaceState(null, "", "/");
+    }
+  }, [calendarOpen]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (isCalendarViewPath(window.location.pathname) && features.calendar) {
+        closeAllViews();
+        setCalendarOpen(true);
+      } else if (calendarOpen) {
+        setCalendarOpen(false);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [calendarOpen, closeAllViews, features.calendar]);
 
   useEffect(() => {
     if (isMobile) setSidebarOpen(false);
@@ -704,6 +747,7 @@ const handleSpaceSwitch = useCallback(() => {
                   whiteboard: whiteboardOpen,
                   timeline: timelineOpen,
                   kanban: kanbanOpen,
+                  calendar: calendarOpen,
                   data: dataOpen,
                 }[id];
                 closeAllViews();
@@ -722,6 +766,9 @@ const handleSpaceSwitch = useCallback(() => {
                     break;
                   case "timeline":
                     setTimelineOpen(!wasOpen);
+                    break;
+                  case "calendar":
+                    setCalendarOpen(!wasOpen);
                     break;
                   case "kanban":
                     setKanbanOpen(!wasOpen);
@@ -810,7 +857,7 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || calendarOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
             {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
@@ -834,6 +881,22 @@ const handleSpaceSwitch = useCallback(() => {
               <KiwiTimeline
                 onClose={() => setTimelineOpen(false)}
                 onNavigate={(p) => { setTimelineOpen(false); navigate(p); }}
+              />
+            ) : calendarOpen ? (
+              <KiwiCalendar
+                onClose={() => {
+                  setCalendarOpen(false);
+                  if (window.location.pathname === "/view/calendar") {
+                    window.history.replaceState(null, "", "/");
+                  }
+                }}
+                onNavigate={(p) => {
+                  setCalendarOpen(false);
+                  if (window.location.pathname === "/view/calendar") {
+                    window.history.replaceState(null, "", "/");
+                  }
+                  navigate(p);
+                }}
               />
             ) : kanbanOpen ? (
               <KiwiKanban
@@ -1042,6 +1105,7 @@ const BUILTIN_TOOLBAR_BUTTONS: Record<
   canvas: { label: "Canvas", Icon: Presentation },
   whiteboard: { label: "Whiteboard", Icon: PenTool },
   timeline: { label: "Timeline", Icon: Clock4 },
+  calendar: { label: "Calendar", Icon: CalendarDays },
   kanban: { label: "Kanban", Icon: Columns3 },
   data: { label: "Data sources", Icon: Database },
 };
