@@ -54,6 +54,7 @@ import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
 import { formatDocumentTitle } from "./lib/pageTitle";
 import { useUIConfigStore } from "./lib/uiConfigStore";
+import { isViewRouteAllowed } from "./lib/uiFeatures";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -231,9 +232,11 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (features.calendar || !calendarOpen) return;
-    setCalendarOpen(false);
-  }, [features.calendar, calendarOpen]);
+    if (!uiConfigLoaded) return;
+    if (calendarOpen && !features.calendar) {
+      setCalendarOpen(false);
+    }
+  }, [uiConfigLoaded, features.calendar, calendarOpen]);
 
   useEffect(() => {
     dispatchPageChanged(activePath);
@@ -573,7 +576,7 @@ const handleSpaceSwitch = useCallback(() => {
 
   useEffect(() => {
     if (isCloudMode || isDemoMode) return;
-    if (calendarOpen) {
+    if (calendarOpen && features.calendar) {
       if (window.location.pathname !== "/view/calendar") {
         if (fromPopState.current) {
           fromPopState.current = false;
@@ -582,6 +585,15 @@ const handleSpaceSwitch = useCallback(() => {
         }
       }
       return;
+    }
+    if (window.location.pathname === "/view/calendar") {
+      const space = getCurrentSpace();
+      const fallback = activePath
+        ? (space && space !== "default"
+          ? `/page/${space}/${activePath}`
+          : `/page/${activePath}`)
+        : "/";
+      window.history.replaceState(null, "", fallback);
     }
     if (!activePath) {
       if (window.location.pathname !== "/" && !window.location.pathname.startsWith("/view/")) {
@@ -600,7 +612,7 @@ const handleSpaceSwitch = useCallback(() => {
         window.history.pushState(null, "", target);
       }
     }
-  }, [activePath, calendarOpen, spaceKey, isCloudMode, isDemoMode]);
+  }, [activePath, calendarOpen, features.calendar, spaceKey, isCloudMode, isDemoMode]);
 
   useEffect(() => {
     if (isCloudMode || isDemoMode) return;
@@ -623,6 +635,12 @@ const handleSpaceSwitch = useCallback(() => {
         setKanbanOpen(false);
         setCalendarOpen(false);
       } else if (pathname === "/view/calendar") {
+        if (!isViewRouteAllowed(pathname, features)) {
+          fromPopState.current = true;
+          setCalendarOpen(false);
+          window.history.replaceState(null, "", "/");
+          return;
+        }
         fromPopState.current = true;
         closeAllViews();
         setCalendarOpen(true);
@@ -636,7 +654,7 @@ const handleSpaceSwitch = useCallback(() => {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [isCloudMode, isDemoMode, closeAllViews]);
+  }, [isCloudMode, isDemoMode, closeAllViews, features]);
 
   function revealActivePageInTree() {
     if (!activePath) return;

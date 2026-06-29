@@ -31,8 +31,12 @@ const STATE_DOT_COLORS: Record<string, string> = {
 
 const DATE_LIKE_RE = /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?/;
 
+function localDateISO(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDateISO(new Date());
 }
 
 export function formatYearMonth(year: number, month: number): string {
@@ -62,7 +66,17 @@ export function monthStartEnd(yearMonth: string): { start: string; end: string }
 
 export function buildCalendarQuery(dateField: string, yearMonth: string): string {
   const { start, end } = monthStartEnd(yearMonth);
-  return `TABLE _path, ${dateField}, tags, state, title WHERE ${dateField} >= "${start}" AND ${dateField} < "${end}"`;
+  return buildCalendarQueryRange(dateField, start, end);
+}
+
+export function buildCalendarQueryRange(dateField: string, start: string, end: string): string {
+  return `TABLE _path, ${dateField}, tags, state, title WHERE striptime(${dateField}) >= DATE("${start}") AND striptime(${dateField}) < DATE("${end}")`;
+}
+
+export function dayAfter(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  return localDateISO(d);
 }
 
 export function isDateLikeValue(value: unknown): boolean {
@@ -75,7 +89,7 @@ export function toDateKey(value: unknown): string | null {
   if (value == null) return null;
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
-    return value.toISOString().slice(0, 10);
+    return localDateISO(value);
   }
   const raw = String(value);
   const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -181,7 +195,7 @@ export function weekDateKeys(anchor: Date): string[] {
 
   const keys: string[] = [];
   for (let i = 0; i < 7; i++) {
-    keys.push(d.toISOString().slice(0, 10));
+    keys.push(localDateISO(d));
     d.setDate(d.getDate() + 1);
   }
   return keys;

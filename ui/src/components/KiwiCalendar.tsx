@@ -11,7 +11,9 @@ import { cn } from "@kw/lib/cn";
 import {
   addMonths,
   buildCalendarQuery,
+  buildCalendarQueryRange,
   buildMonthGrid,
+  dayAfter,
   DEFAULT_DATE_FIELDS,
   detectDateFields,
   entryDotColor,
@@ -71,6 +73,7 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
   const [entries, setEntries] = useState<CalendarEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [openDay, setOpenDay] = useState<string | null>(null);
 
   const { year, month } = parseYearMonth(yearMonth);
@@ -97,17 +100,26 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
   const loadMonth = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setTruncated(false);
     try {
-      const dql = buildCalendarQuery(dateField, yearMonth);
-      const data = await api.query(dql);
+      let dql: string;
+      if (isMobile) {
+        const anchorDay = Math.min(now.getDate(), new Date(year, month, 0).getDate());
+        const week = weekDateKeys(new Date(year, month - 1, anchorDay));
+        dql = buildCalendarQueryRange(dateField, week[0]!, dayAfter(week[6]!));
+      } else {
+        dql = buildCalendarQuery(dateField, yearMonth);
+      }
+      const data = await api.query(dql, { limit: 200 });
       setEntries(parseCalendarResponse(data, dateField));
+      setTruncated(data.has_more);
     } catch (e) {
       setEntries([]);
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, [dateField, yearMonth]);
+  }, [dateField, yearMonth, isMobile, year, month, now]);
 
   useEffect(() => {
     loadMonth();
@@ -399,10 +411,15 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
           <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
             {error}
           </div>
-        ) : isMobile ? (
-          renderWeekView()
         ) : (
-          renderMonthGrid()
+          <>
+            {truncated && (
+              <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                Showing first 200 pages for this range. Narrow the date field or month if entries are missing.
+              </div>
+            )}
+            {isMobile ? renderWeekView() : renderMonthGrid()}
+          </>
         )}
       </div>
     </div>

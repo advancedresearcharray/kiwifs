@@ -15,7 +15,7 @@ import {
 describe("calendarView", () => {
   it("builds month-scoped TABLE query", () => {
     expect(buildCalendarQuery("date", "2026-06")).toBe(
-      'TABLE _path, date, tags, state, title WHERE date >= "2026-06-01" AND date < "2026-07-01"',
+      'TABLE _path, date, tags, state, title WHERE striptime(date) >= DATE("2026-06-01") AND striptime(date) < DATE("2026-07-01")',
     );
   });
 
@@ -87,7 +87,7 @@ describe("calendarView", () => {
   });
 
   it("returns seven ISO keys for a week", () => {
-    const keys = weekDateKeys(new Date("2026-06-18")); // Wednesday
+    const keys = weekDateKeys(new Date(2026, 5, 18)); // Wednesday, local time
     expect(keys).toHaveLength(7);
     expect(keys[0]).toBe("2026-06-15"); // Monday
     expect(keys[6]).toBe("2026-06-21"); // Sunday
