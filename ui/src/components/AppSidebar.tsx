@@ -52,6 +52,7 @@ type AppSidebarProps = {
   recent: RecentPage[];
   onSpaceSwitch: () => void;
   onNavigate: (path: string) => void;
+  onOpenInSplit?: (path: string) => void;
   onToggleStar: (path: string) => void;
   onTogglePin: (path: string) => void;
   onCreatePage: (folder?: string) => void;
@@ -80,6 +81,7 @@ export function AppSidebar({
   recent,
   onSpaceSwitch,
   onNavigate,
+  onOpenInSplit,
   onToggleStar,
   onTogglePin,
   onCreatePage,
@@ -245,6 +247,7 @@ export function AppSidebar({
                     activePath={activePath}
                     revealRequest={treeRevealRequest}
                     onSelect={onNavigate}
+                    onOpenInSplit={onOpenInSplit}
                     refreshKey={refreshKey}
                     filterQuery={treeFilter}
                     sortMode={treeSortMode}
@@ -329,6 +332,7 @@ export function AppSidebar({
               activePath={activePath}
               revealRequest={treeRevealRequest}
               onSelect={onNavigate}
+              onOpenInSplit={onOpenInSplit}
               refreshKey={refreshKey}
               filterQuery={treeFilter}
               sortMode={treeSortMode}

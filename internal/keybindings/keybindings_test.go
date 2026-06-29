@@ -38,6 +38,9 @@ func TestResolveDefaultsWhenMissing(t *testing.T) {
 	if res.Bindings["search"] != "mod+k" {
 		t.Fatalf("search = %q, want mod+k", res.Bindings["search"])
 	}
+	if res.Bindings["toggle_split_view"] != "mod+\\" {
+		t.Fatalf("toggle_split_view = %q, want mod+\\", res.Bindings["toggle_split_view"])
+	}
 	if len(res.Conflicts) != 0 {
 		t.Fatalf("expected no conflicts, got %+v", res.Conflicts)
 	}
@@ -66,6 +69,9 @@ func TestResolveFileOverrides(t *testing.T) {
 	}
 	if res.Bindings["save"] != "mod+s" {
 		t.Fatalf("save default missing: %q", res.Bindings["save"])
+	}
+	if res.Bindings["toggle_split_view"] != "mod+\\" {
+		t.Fatalf("toggle_split_view = %q, want mod+\\", res.Bindings["toggle_split_view"])
 	}
 }
 

@@ -47,6 +47,18 @@ describe("eventMatchesChord", () => {
     expect(eventMatchesChord(slash, "Mod+/")).toBe(true);
     expect(eventMatchesChord(question, "Mod+/")).toBe(true);
   });
+
+  it("matches split-view backslash shortcut", () => {
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(eventMatchesChord(e, "mod+\\")).toBe(true);
+    expect(matchBoundAction(e, DEFAULT_KEYBINDINGS)).toBe("toggle_split_view");
+  });
 });
 
 describe("mergeKeybindings", () => {
