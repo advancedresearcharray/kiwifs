@@ -1,5 +1,5 @@
 export interface MatrixViewProps {
-  /** 2D array of cell values. */
+  /** 2D array of cell values. Rows can have different lengths (ragged/triangular). */
   values: (string | number)[][];
   /** [row, col] of the active cell. */
   activeCell?: [number, number];
@@ -13,6 +13,11 @@ export interface MatrixViewProps {
   colPointers?: { col: number; label: string; color?: string }[];
   /** Whether to show row/col indices. Default true. */
   showIndices?: boolean;
+  /** Ragged row mode — only render actual cells per row (no padding to max width).
+   *  "start" = left-aligned (staircase), "center" = centered (pyramid). Default false. */
+  centerRows?: boolean | "start" | "center";
+  /** Use circular cells instead of squares (for coin/token grids). Default false. */
+  roundCells?: boolean;
   activeColor?: string;
   highlightColor?: string;
   cellSize?: number;
@@ -35,6 +40,8 @@ export function MatrixView({
   rowPointers = [],
   colPointers = [],
   showIndices = true,
+  centerRows = false,
+  roundCells = false,
   activeColor = DEFAULTS.activeColor,
   highlightColor = DEFAULTS.highlightColor,
   cellSize = DEFAULTS.cellSize,
@@ -48,6 +55,12 @@ export function MatrixView({
   }
 
   const cols = Math.max(...values.map((r) => r.length));
+  const raggedAlign = centerRows === true || centerRows === "center"
+    ? "center"
+    : centerRows === "start"
+      ? "flex-start"
+      : undefined;
+  const isRagged = !!centerRows;
 
   const rowPtrMap = new Map<number, typeof rowPointers>();
   for (const p of rowPointers) {
@@ -65,8 +78,8 @@ export function MatrixView({
   return (
     <div style={{ display: "flex", justifyContent: "center", padding: "0.5rem 0", overflow: "auto" }}>
       <div style={{ display: "inline-flex", flexDirection: "column", gap: 0 }}>
-        {/* Column pointer row */}
-        {colPointers.length > 0 && (
+        {/* Column pointer row (hidden for ragged layouts) */}
+        {colPointers.length > 0 && !isRagged && (
           <div style={{ display: "flex", marginLeft: showIndices ? 28 : 0 }}>
             {Array.from({ length: cols }, (_, c) => {
               const ptrs = colPtrMap.get(c);
@@ -81,8 +94,8 @@ export function MatrixView({
           </div>
         )}
 
-        {/* Column index row */}
-        {showIndices && (
+        {/* Column index row (hidden for ragged layouts) */}
+        {showIndices && !isRagged && (
           <div style={{ display: "flex", marginLeft: 28 }}>
             {Array.from({ length: cols }, (_, c) => (
               <div key={c} style={{
@@ -102,10 +115,11 @@ export function MatrixView({
         {/* Rows */}
         {values.map((row, r) => {
           const rptrs = rowPtrMap.get(r);
+          const rowLen = isRagged ? row.length : cols;
           return (
-            <div key={r} style={{ display: "flex", alignItems: "center" }}>
+            <div key={r} style={{ display: "flex", alignItems: "center", justifyContent: raggedAlign }}>
               {/* Row index */}
-              {showIndices && (
+              {showIndices && !isRagged && (
                 <div style={{
                   width: 24,
                   textAlign: "right",
@@ -120,7 +134,7 @@ export function MatrixView({
               )}
 
               {/* Cells */}
-              {Array.from({ length: cols }, (_, c) => {
+              {Array.from({ length: rowLen }, (_, c) => {
                 const key = `${r},${c}`;
                 const isActive = activeCell && activeCell[0] === r && activeCell[1] === c;
                 const isHighlight = highlightCells?.has(key) ?? false;
@@ -151,6 +165,7 @@ export function MatrixView({
                       width: cellSize,
                       height: cellSize,
                       border: `1.5px solid ${border}`,
+                      borderRadius: roundCells ? "50%" : 0,
                       background: bg,
                       color,
                       opacity,
@@ -161,7 +176,7 @@ export function MatrixView({
                       fontWeight: 700,
                       fontVariantNumeric: "tabular-nums",
                       transition: "all 0.2s ease",
-                      margin: -0.5,
+                      margin: roundCells ? 1 : -0.5,
                     }}
                   >
                     {val}
