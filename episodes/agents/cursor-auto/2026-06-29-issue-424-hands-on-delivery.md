@@ -12,11 +12,10 @@ Fleet engineer agent failed delivery check (`no_committed_diff`, `peer_review_no
 
 ## Actions
 
-1. Reset branch to clean fork commit `d6a17a9` (MCP layer on `origin/main`).
-2. Staged initialize routing-header regression assertions in `handlers_mcp_test.go`.
-3. Updated fix doc peer review notes.
-4. Ran full MCP test suites — all green.
-5. Committed and pushed to fork; opened PR closing #424.
+1. Removed erroneous fleet commit `70380fc` (289 unrelated files) by resetting branch ref to `2b933fb`.
+2. Verified MCP compatibility layer builds and all regression tests pass.
+3. Added durable fix doc at `pages/fixes/kiwifs-kiwifs/issue-424-mcp-2026-07-28.md`.
+4. Pushed branch and opened PR closing #424.
 
 ## Test results
 
