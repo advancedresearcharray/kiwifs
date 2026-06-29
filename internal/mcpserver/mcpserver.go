@@ -34,6 +34,7 @@ var stderr = log.New(os.Stderr, "kiwifs-mcp: ", log.LstdFlags)
 type Options struct {
 	Remote  string
 	Root    string
+	Backend Backend
 	APIKey  string
 	Space   string
 	HTTP    bool
@@ -43,9 +44,12 @@ type Options struct {
 
 func New(opts Options) (*server.MCPServer, Backend, error) {
 	var backend Backend
-	if opts.Remote != "" {
+	switch {
+	case opts.Backend != nil:
+		backend = opts.Backend
+	case opts.Remote != "":
 		backend = NewRemoteBackend(opts.Remote, opts.APIKey, opts.Space)
-	} else {
+	default:
 		backend = NewLocalBackend(opts.Root)
 	}
 
@@ -63,6 +67,10 @@ func New(opts Options) (*server.MCPServer, Backend, error) {
 
 	registerTools(s, backend, opts)
 	registerResources(s, backend, opts)
+
+	if err := validateRegisteredToolSchemas(s); err != nil {
+		return nil, nil, err
+	}
 
 	return s, backend, nil
 }
@@ -2772,14 +2780,8 @@ func httpAuthToken(opts Options) (string, error) {
 }
 
 func newHTTPHandler(s *server.MCPServer, started time.Time, authToken string) http.Handler {
-	mcpHandler := server.NewStreamableHTTPServer(
-		s,
-		server.WithEndpointPath("/mcp"),
-		server.WithStateLess(true),
-	)
-
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", bearerAuth(authToken, mcpHandler))
+	mux.Handle("/mcp", StreamableHTTPHandler(s, authToken))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

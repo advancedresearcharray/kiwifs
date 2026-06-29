@@ -668,6 +668,15 @@ func (s *Server) setupRoutes() {
 	s.echo.GET("/*", uiHandler)
 }
 
+// SetMCPHandler mounts Streamable HTTP MCP at /mcp. Safe to call after NewServer;
+// registers before the UI catch-all takes precedence for POST /mcp.
+func (s *Server) SetMCPHandler(handler http.Handler) {
+	if handler == nil {
+		return
+	}
+	s.echo.Any("/mcp", echo.WrapHandler(handler))
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.echo.ServeHTTP(w, r)
 }
