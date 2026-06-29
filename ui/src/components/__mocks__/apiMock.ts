@@ -212,6 +212,33 @@ function createMockFetch(overrides: MockOverrides = {}) {
             has_more: false,
           });
         }
+        const calendarTable = dql.match(
+          /TABLE\s+_path,\s*(\w+),\s*tags,\s*state\s+WHERE\s+\1\s>=\s*DATE\("(\d{4}-\d{2})-\d{2}"\)/i,
+        );
+        if (calendarTable) {
+          const [, field, yyyyMm] = calendarTable;
+          return jsonResponse({
+            columns: ["_path", field, "tags", "state"],
+            rows: [
+              {
+                _path: "pages/frontmatter.md",
+                [field]: `${yyyyMm}-03`,
+                tags: ["docs"],
+                state: "accepted",
+                title: "Frontmatter Guide",
+              },
+              {
+                _path: "pages/task.md",
+                [field]: `${yyyyMm}-12`,
+                tags: ["task"],
+                state: "proposed",
+                title: "Sample Task",
+              },
+            ],
+            total: 2,
+            has_more: false,
+          });
+        }
         const rows = overrides.queryRows ?? [
           { _path: "pages/frontmatter.md", title: "Frontmatter Guide", status: "published", priority: "high" },
           { _path: "pages/wikilinks.md", title: "Wiki Links", status: "published", priority: "medium" },
@@ -305,7 +332,8 @@ function createMockFetch(overrides: MockOverrides = {}) {
 
       if (url.includes("/meta")) {
         const results = overrides.metaResults ?? [
-          { path: "pages/frontmatter.md", frontmatter: { title: "Frontmatter Guide", tags: ["documentation", "guide", "metadata"], status: "published" } },
+          { path: "pages/frontmatter.md", frontmatter: { title: "Frontmatter Guide", date: "2026-06-03", tags: ["documentation", "guide", "metadata"], status: "published" } },
+          { path: "pages/task.md", frontmatter: { title: "Sample Task", due: "2026-06-12", state: "proposed", tags: ["task"] } },
           { path: "pages/wikilinks.md", frontmatter: { title: "Wiki Links", tags: ["documentation", "links"], status: "published" } },
           { path: "pages/use-sqlite-for-search.md", frontmatter: { title: "SQLite for Search", tags: ["architecture", "search"], status: "draft" } },
           { path: "episodes/example-episode.md", frontmatter: { title: "Example Episode", tags: ["episode", "guide"], status: "published" } },
@@ -370,6 +398,7 @@ function createMockFetch(overrides: MockOverrides = {}) {
             canvas: true,
             whiteboard: true,
             timeline: true,
+            calendar: true,
             bases: true,
             data_sources: true,
             ...(cfg.features ?? {}),
