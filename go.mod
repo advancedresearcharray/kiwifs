@@ -13,6 +13,7 @@ require (
 	github.com/bluuewhale/loom v0.0.0-20260402142357-ae7e94ccfead
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fvbommel/sortorder v1.1.0
 	github.com/go-git/go-billy/v5 v5.6.0
 	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0
 	github.com/go-sql-driver/mysql v1.9.3
@@ -24,7 +25,7 @@ require (
 	github.com/johannesboyne/gofakes3 v0.0.0-20260208201424-4c385a1f6a73
 	github.com/jomei/notionapi v1.13.3
 	github.com/labstack/echo/v4 v4.15.2
-	github.com/mark3labs/mcp-go v0.49.0
+	github.com/mark3labs/mcp-go v0.55.1
 	github.com/nickng/bibtex v1.1.0
 	github.com/parquet-go/parquet-go v0.29.0
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
@@ -105,7 +106,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/flopp/go-findfont v0.1.0 // indirect
 	github.com/fogleman/gg v1.3.0 // indirect
-	github.com/fvbommel/sortorder v1.1.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

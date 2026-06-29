@@ -82,19 +82,19 @@ func (s *Server) SetBackupStatus(fn func() any) {
 	}
 }
 
-func (s *Server) SetProtocolHealth(probes []ProtocolHealthProbe) {
-	s.protocolHealth = probes
-	if s.handlers != nil {
-		s.handlers.protocolHealth = probes
-	}
-}
-
 func (s *Server) SetMCPHandler(handler http.Handler) {
 	if handler == nil || s.mcpHandler != nil {
 		return
 	}
 	s.mcpHandler = handler
 	s.echo.Any("/mcp", echo.WrapHandler(handler))
+}
+
+func (s *Server) SetProtocolHealth(probes []ProtocolHealthProbe) {
+	s.protocolHealth = probes
+	if s.handlers != nil {
+		s.handlers.protocolHealth = probes
+	}
 }
 
 type ProtocolHealthProbe struct {
