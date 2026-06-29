@@ -427,7 +427,7 @@ func Build(name, root string, cfg *config.Config) (*Stack, error) {
 		if staleDays <= 0 {
 			staleDays = janitor.DefaultStaleDays
 		}
-		scanner := janitor.New(root, store, searcher, staleDays, janitorExecutionOpts(cfg)...)
+		scanner := janitor.New(root, store, searcher, staleDays, janitorExecutionOpts(cfg, root)...)
 		opts := janitor.ScheduleOptions{
 			Interval:    iv,
 			Jitter:      60 * time.Second,
@@ -663,10 +663,20 @@ func generateBootstrapSecret() string {
 	return hex.EncodeToString(b)
 }
 
-func janitorExecutionOpts(cfg *config.Config) []janitor.Option {
-	if cfg == nil || !cfg.Janitor.ExecutionStaleness.Enabled() {
-		return nil
+func janitorExecutionOpts(cfg *config.Config, root string) []janitor.Option {
+	var opts []janitor.Option
+	if cfg == nil {
+		return opts
 	}
-	es := cfg.Janitor.ExecutionStaleness
-	return janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
+	if cfg.Janitor.ExecutionStaleness.Enabled() {
+		es := cfg.Janitor.ExecutionStaleness
+		opts = append(opts, janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)...)
+	}
+	opts = append(opts, janitor.OptionsFromExternalLinkCheck(
+		cfg.Janitor.ExternalLinkCheck,
+		cfg.Janitor.ExternalLinkTimeout,
+		cfg.Janitor.ExternalLinkIgnore,
+		root,
+	)...)
+	return opts
 }

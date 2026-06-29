@@ -804,3 +804,29 @@ func TestLoadJanitorExecutionStalenessDisabledByDefault(t *testing.T) {
 		t.Fatal("expected execution staleness disabled when section omitted")
 	}
 }
+
+func TestLoadJanitorExternalLinkCheck(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[janitor]
+external_link_check = true
+external_link_timeout = "10s"
+external_link_ignore = ["localhost", "test.example"]
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.Janitor.ExternalLinkCheck {
+		t.Fatal("expected external_link_check enabled")
+	}
+	if cfg.Janitor.ExternalLinkTimeout != "10s" {
+		t.Fatalf("timeout = %q", cfg.Janitor.ExternalLinkTimeout)
+	}
+	if len(cfg.Janitor.ExternalLinkIgnore) != 2 {
+		t.Fatalf("ignore = %+v", cfg.Janitor.ExternalLinkIgnore)
+	}
+}
