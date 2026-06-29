@@ -527,6 +527,7 @@ func (s *Server) setupRoutes() {
 	api.GET("/theme", h.GetTheme)
 	api.PUT("/theme", h.PutTheme)
 	api.GET("/ui-config", h.UIConfig)
+	api.GET("/keybindings", h.GetKeybindings)
 	api.GET("/janitor", h.Janitor)
 	api.GET("/memory/report", h.MemoryReport)
 	api.GET("/query", h.Query)

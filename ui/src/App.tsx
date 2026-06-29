@@ -3,6 +3,7 @@ import {
   Clock4,
   Columns3,
   Database,
+  HelpCircle,
   LayoutGrid,
   Moon,
   Network,
@@ -34,6 +35,9 @@ import { KiwiKanban } from "./components/KiwiKanban";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { useKeybindings, type KeybindingAction } from "./hooks/useKeybindings";
+import { isTextInputTarget, matchBoundAction } from "./lib/kiwiKeybindings";
+import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { dispatchPageChanged } from "./lib/hostConfig";
 import { useRecentPages } from "./hooks/useRecentPages";
 import { useStarredPages } from "./hooks/useStarredPages";
@@ -134,6 +138,7 @@ export default function App() {
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
+  const { bindings } = useKeybindings();
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
   const treeReconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,6 +146,32 @@ export default function App() {
   const suppressTreeEventsUntilRef = useRef(0);
   const stateRef = useRef({ editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen });
   stateRef.current = { editing, activePath, graphOpen, historyOpen, dataOpen, basesOpen, canvasOpen, whiteboardOpen, timelineOpen, kanbanOpen };
+  const overlayRef = useRef({
+    shortcutsOpen,
+    newOpen,
+    searchOpen,
+    graphOpen,
+    historyOpen,
+    dataOpen,
+    basesOpen,
+    canvasOpen,
+    whiteboardOpen,
+    timelineOpen,
+    kanbanOpen,
+  });
+  overlayRef.current = {
+    shortcutsOpen,
+    newOpen,
+    searchOpen,
+    graphOpen,
+    historyOpen,
+    dataOpen,
+    basesOpen,
+    canvasOpen,
+    whiteboardOpen,
+    timelineOpen,
+    kanbanOpen,
+  };
 
   useEffect(() => {
     dispatchPageChanged(activePath);
@@ -221,62 +252,139 @@ export default function App() {
     if (firstMd) setActivePath(firstMd);
   }, [tree, activePath]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
-      const mod = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
-      if (mod && key === "k") {
-        e.preventDefault();
+  const dismissOverlay = useCallback((target: ReturnType<typeof resolveOverlayDismiss>) => {
+    switch (target) {
+      case "shortcuts":
+        setShortcutsOpen(false);
+        break;
+      case "new":
+        setNewOpen(false);
+        break;
+      case "search":
+        setSearchOpen(false);
+        setSearchQuery(undefined);
+        break;
+      case "graph":
+        setGraphOpen(false);
+        break;
+      case "history":
+        setHistoryOpen(false);
+        break;
+      case "data":
+        setDataOpen(false);
+        break;
+      case "bases":
+        setBasesOpen(false);
+        break;
+      case "canvas":
+        setCanvasOpen(false);
+        break;
+      case "whiteboard":
+        setWhiteboardOpen(false);
+        break;
+      case "timeline":
+        setTimelineOpen(false);
+        break;
+      case "kanban":
+        setKanbanOpen(false);
+        break;
+      default:
+        break;
+    }
+  }, []);
+
+  const dispatchKeybinding = useCallback((action: KeybindingAction) => {
+    switch (action) {
+      case "search":
         setSearchOpen((v) => !v);
-      } else if (mod && key === "n") {
-        e.preventDefault();
+        break;
+      case "new_page":
         setNewFolder(undefined);
         setNewOpen(true);
-      } else if (mod && key === "e") {
-        const { activePath, graphOpen, historyOpen, dataOpen } = stateRef.current;
-        if (!activePath || graphOpen || historyOpen || dataOpen) return;
-        e.preventDefault();
+        break;
+      case "toggle_editor": {
+        const { activePath: path, graphOpen: graph, historyOpen: history, dataOpen: data } = stateRef.current;
+        if (!path || graph || history || data) return;
         setEditing((v) => !v);
-      } else if (mod && key === "s") {
+        break;
+      }
+      case "save":
         if (!stateRef.current.editing) return;
-        e.preventDefault();
         editorRef.current?.save().catch(() => {});
-      } else if (mod && e.shiftKey && key === "e") {
-        if (!stateRef.current.editing) return;
-        e.preventDefault();
-        editorRef.current?.toggleMode?.();
-      } else if (mod && e.shiftKey && key === "b") {
-        e.preventDefault();
+        break;
+      case "toggle_sidebar":
+        setSidebarOpen((open) => {
+          const next = !open;
+          if (!isMobile) {
+            try { localStorage.setItem("kiwifs-sidebar", next ? "open" : "collapsed"); } catch {}
+          }
+          return next;
+        });
+        break;
+      case "graph":
+        setGraphOpen((v) => !v);
+        break;
+      case "toggle_bases":
         setBasesOpen((v) => !v);
-      } else if (mod && e.shiftKey && key === "t") {
-        e.preventDefault();
+        break;
+      case "toggle_timeline":
         setTimelineOpen((v) => !v);
-      } else if (mod && e.shiftKey && key === "w") {
-        e.preventDefault();
+        break;
+      case "toggle_kanban":
         setKanbanOpen((v) => !v);
-      } else if (mod && (key === "/" || key === "?")) {
-        e.preventDefault();
+        break;
+      case "toggle_mode":
+        if (!stateRef.current.editing) return;
+        editorRef.current?.toggleMode?.();
+        break;
+      case "shortcuts_help":
         setShortcutsOpen((v) => !v);
-      } else if (mod && key === "z" && !e.shiftKey) {
+        break;
+      case "undo":
         if (stateRef.current.editing) return;
-        e.preventDefault();
         undoFileOp()
           .then((msg) => {
             if (msg) setRefreshKey((k) => k + 1);
           })
           .catch(() => {});
-      } else if (mod && e.altKey && key === "f") {
-        e.preventDefault();
+        break;
+      case "focus_tree_filter":
         treeFilterRef.current?.focus();
         treeFilterRef.current?.select();
-      } else if (e.key === "Escape") {
-        setSearchOpen(false);
+        break;
+      case "close_overlay": {
+        const target = resolveOverlayDismiss(overlayRef.current);
+        if (target) dismissOverlay(target);
+        break;
       }
+      default:
+        break;
+    }
+  }, [dismissOverlay, isMobile]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+
+      if (!isTextInputTarget(e) && e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
+
+      const action = matchBoundAction(e, bindings);
+      if (!action) return;
+
+      if (action === "toggle_editor" || action === "save" || action === "toggle_mode") {
+        if (isTextInputTarget(e) && action !== "save") return;
+      }
+
+      e.preventDefault();
+      dispatchKeybinding(action);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [bindings, dispatchKeybinding]);
 
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
@@ -521,6 +629,9 @@ const handleSpaceSwitch = useCallback(() => {
               <Database className="h-4 w-4" />
             </ToolbarButton>
             <HostToolbarActions />
+            <ToolbarButton onClick={() => setShortcutsOpen(true)} label="Keyboard shortcuts (?)">
+              <HelpCircle className="h-4 w-4" />
+            </ToolbarButton>
             <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </ToolbarButton>

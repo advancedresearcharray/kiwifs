@@ -579,6 +579,14 @@ export const api = {
     return request(`${kiwiBase()}/ui-config`);
   },
 
+  async getKeybindings(): Promise<{
+    bindings: Record<string, string>;
+    defaults: Record<string, string>;
+    conflicts: { chord: string; actions: string[] }[];
+  }> {
+    return request(`${kiwiBase()}/keybindings`);
+  },
+
   async getTheme(): Promise<Record<string, unknown>> {
     return request(`${kiwiBase()}/theme`);
   },
