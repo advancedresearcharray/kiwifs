@@ -174,6 +174,24 @@ function createMockFetch(overrides: MockOverrides = {}) {
         });
       }
 
+      if (url.includes("/peek")) {
+        const pathMatch = url.match(/[?&]path=([^&]+)/);
+        const path = pathMatch ? decodeURIComponent(pathMatch[1]) : "";
+        if (path.includes("missing") || path.includes("ghost")) {
+          return jsonResponse({ error: "not found" }, 404);
+        }
+        return jsonResponse({
+          path,
+          title: path.split("/").pop()?.replace(/\.md$/, "") ?? path,
+          frontmatter: { tags: ["documentation"] },
+          snippet: "Preview snippet for the linked page.",
+          links_out: [],
+          links_in: [],
+          word_count: 120,
+          headings: ["Overview"],
+        });
+      }
+
       if (url.includes("/search") && method === "GET") {
         const qMatch = url.match(/[?&]q=([^&]+)/);
         const q = qMatch ? decodeURIComponent(qMatch[1]) : "";

@@ -71,6 +71,17 @@ export type BacklinkEntry = {
   count: number;
 };
 
+export type PeekResponse = {
+  path: string;
+  title: string;
+  frontmatter: unknown;
+  snippet: string;
+  links_out: string[];
+  links_in: string[];
+  word_count: number;
+  headings: string[];
+};
+
 export type GraphNode = { path: string; tags?: string[] };
 export type GraphEdge = { source: string; target: string; relation?: string };
 export type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] };
@@ -508,6 +519,11 @@ export const api = {
   async backlinks(path: string): Promise<{ path: string; backlinks: BacklinkEntry[] }> {
     const qs = new URLSearchParams({ path });
     return request(`${kiwiBase()}/backlinks?${qs}`);
+  },
+
+  async peek(path: string): Promise<PeekResponse> {
+    const qs = new URLSearchParams({ path });
+    return request(`${kiwiBase()}/peek?${qs}`);
   },
 
   async graph(): Promise<GraphResponse> {

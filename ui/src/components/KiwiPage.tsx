@@ -38,7 +38,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { KiwiWidget } from "./KiwiWidget";
 import { CodeRunner } from "@kw/widgets/CodeRunner";
 import { PageTracker } from "@kw/widgets/PageTracker";
-
+import { WikiLinkPreview } from "./WikiLinkPreview";
 import { PageSkeleton } from "./PageSkeleton";
 import { trackRecent } from "./KiwiFavorites";
 import { Badge } from "@kw/components/ui/badge";
@@ -762,42 +762,46 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                         const pagePath = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
                         const anchor = hashIdx >= 0 ? raw.slice(hashIdx) : "";
                         return (
-                          <a
-                            href={`#${raw}`}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              onNavigate(pagePath);
-                              if (anchor) {
-                                requestAnimationFrame(() => {
-                                  setTimeout(() => {
-                                    const el = document.getElementById(anchor.slice(1));
-                                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                  }, 100);
-                                });
-                              }
-                            }}
-                            className="wiki-link"
-                            {...(rest as any)}
-                          >
-                            {children}
-                          </a>
+                          <WikiLinkPreview pagePath={pagePath}>
+                            <a
+                              href={`#${raw}`}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                onNavigate(pagePath);
+                                if (anchor) {
+                                  requestAnimationFrame(() => {
+                                    setTimeout(() => {
+                                      const el = document.getElementById(anchor.slice(1));
+                                      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                    }, 100);
+                                  });
+                                }
+                              }}
+                              className="wiki-link"
+                              {...(rest as any)}
+                            >
+                              {children}
+                            </a>
+                          </WikiLinkPreview>
                         );
                       }
                       if (h.startsWith("#kiwi-missing:")) {
                         const target = h.slice("#kiwi-missing:".length);
                         return (
-                          <a
-                            href="#"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              onNavigate(`${target}.md`);
-                            }}
-                            title={`Missing: ${target} — click to create`}
-                            className="wiki-link-missing"
-                            {...(rest as any)}
-                          >
-                            {children}
-                          </a>
+                          <WikiLinkPreview pagePath={target} isMissing>
+                            <a
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                onNavigate(`${target}.md`);
+                              }}
+                              title={`Missing: ${target} — click to create`}
+                              className="wiki-link-missing"
+                              {...(rest as any)}
+                            >
+                              {children}
+                            </a>
+                          </WikiLinkPreview>
                         );
                       }
                       return (
