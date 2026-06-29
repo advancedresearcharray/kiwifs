@@ -25,6 +25,7 @@ var knownActions = map[string]struct{}{
 	"undo":               {},
 	"focus_tree_filter":  {},
 	"close_overlay":      {},
+	"toggle_split_view":  {},
 }
 
 // DefaultBindings are used when no config overrides are present.
@@ -43,6 +44,7 @@ var DefaultBindings = map[string]string{
 	"undo":              "Mod+Z",
 	"focus_tree_filter": "Mod+Alt+F",
 	"close_overlay":     "Escape",
+	"toggle_split_view": "Mod+\\",
 }
 
 // Conflict describes two or more actions bound to the same chord.
