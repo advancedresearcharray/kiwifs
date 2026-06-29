@@ -73,6 +73,9 @@ func TestRoutingHeadersRequiredWhenProvided(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 for header/body mismatch", rec.Code)
 	}
+	if got := rec.Header().Get(HeaderMCPMethod); got != "initialize" {
+		t.Fatalf("error response Mcp-Method = %q, want initialize", got)
+	}
 }
 
 func TestRoutingHeadersEmittedOnResponse(t *testing.T) {

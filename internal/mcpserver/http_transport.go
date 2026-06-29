@@ -40,14 +40,14 @@ func (h spec2026Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		httpErrorJSON(w, nil, -32700, "read request body failed")
+		httpErrorJSON(w, nil, -32700, "read request body failed", "", "")
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	env, err := parseRPCRequest(body)
 	if err != nil {
-		httpErrorJSON(w, nil, -32700, "invalid JSON-RPC request")
+		httpErrorJSON(w, nil, -32700, "invalid JSON-RPC request", "", "")
 		return
 	}
 	if env.Method == MethodServerDiscover {
@@ -57,7 +57,7 @@ func (h spec2026Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	name := rpcResourceName(env.Method, env.Params)
 	if err := validateRoutingHeaders(r, env.Method, name); err != nil {
-		httpErrorJSON(w, env.ID, -32600, err.Error())
+		httpErrorJSON(w, env.ID, -32600, err.Error(), env.Method, name)
 		return
 	}
 

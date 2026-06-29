@@ -48,16 +48,16 @@ func writeDiscoverResponse(w http.ResponseWriter, id json.RawMessage, mcpSrv *se
 		"result":  result,
 	})
 	if err != nil {
-		httpErrorJSON(w, id, -32603, "failed to encode discover response")
+		httpErrorJSON(w, id, -32603, "failed to encode discover response", MethodServerDiscover, "")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set(HeaderMCPMethod, MethodServerDiscover)
+	setRoutingHeaders(w, MethodServerDiscover, "")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(payload)
 }
 
-func httpErrorJSON(w http.ResponseWriter, id json.RawMessage, code int, message string) {
+func httpErrorJSON(w http.ResponseWriter, id json.RawMessage, code int, message, method, name string) {
 	payload, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      id,
@@ -67,6 +67,7 @@ func httpErrorJSON(w http.ResponseWriter, id json.RawMessage, code int, message 
 		},
 	})
 	w.Header().Set("Content-Type", "application/json")
+	setRoutingHeaders(w, method, name)
 	w.WriteHeader(http.StatusBadRequest)
 	_, _ = w.Write(payload)
 }
