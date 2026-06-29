@@ -75,6 +75,7 @@ export type KiwiDemoViewId =
   | "timeline"
   | "canvas"
   | "whiteboard"
+  | "calendar"
   | "data";
 
 export type KiwiDemoConfig = {

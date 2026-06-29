@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kiwifs/kiwifs/internal/config"
+	"github.com/labstack/echo/v4"
 )
 
 func TestUIConfig_DefaultStartPage(t *testing.T) {
@@ -230,5 +231,55 @@ func TestUIConfig_SidebarFromConfig(t *testing.T) {
 	}
 	if len(res.Sidebar.Sections) != 1 || res.Sidebar.Sections[0].Label != "Core" {
 		t.Fatalf("sections = %+v", res.Sidebar.Sections)
+	}
+}
+
+func TestUIConfigIncludesCalendarFeature(t *testing.T) {
+	falseVal := false
+	h := &Handlers{ui: config.UIConfig{
+		Features: config.UIFeaturesConfig{Calendar: &falseVal},
+	}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/ui-config", nil)
+	rec := httptest.NewRecorder()
+	if err := h.UIConfig(echo.New().NewContext(req, rec)); err != nil {
+		t.Fatalf("UIConfig: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var body struct {
+		Features struct {
+			Calendar bool `json:"calendar"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Features.Calendar {
+		t.Fatal("calendar feature should be false")
+	}
+}
+
+func TestUIConfigCalendarDefaultsTrue(t *testing.T) {
+	h := &Handlers{ui: config.UIConfig{}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/ui-config", nil)
+	rec := httptest.NewRecorder()
+	if err := h.UIConfig(echo.New().NewContext(req, rec)); err != nil {
+		t.Fatalf("UIConfig: %v", err)
+	}
+
+	var body struct {
+		Features struct {
+			Calendar bool `json:"calendar"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !body.Features.Calendar {
+		t.Fatal("calendar feature should default to true")
 	}
 }

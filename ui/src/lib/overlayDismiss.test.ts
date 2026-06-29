@@ -13,6 +13,7 @@ const closed: OverlayState = {
   whiteboardOpen: false,
   timelineOpen: false,
   kanbanOpen: false,
+  calendarOpen: false,
 };
 
 describe("resolveOverlayDismiss", () => {
@@ -38,5 +39,6 @@ describe("resolveOverlayDismiss", () => {
     expect(resolveOverlayDismiss({ ...closed, graphOpen: true, kanbanOpen: true })).toBe("graph");
     expect(resolveOverlayDismiss({ ...closed, historyOpen: true, dataOpen: true })).toBe("history");
     expect(resolveOverlayDismiss({ ...closed, kanbanOpen: true })).toBe("kanban");
+    expect(resolveOverlayDismiss({ ...closed, calendarOpen: true })).toBe("calendar");
   });
 });

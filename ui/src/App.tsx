@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Clock4,
+  CalendarDays,
   Columns3,
   Database,
   LayoutGrid,
@@ -31,6 +32,7 @@ import { KiwiCanvasScreen } from "./components/KiwiCanvasScreen";
 import { KiwiWhiteboardScreen } from "./components/KiwiWhiteboardScreen";
 import { KiwiTimeline } from "./components/KiwiTimeline";
 import { KiwiKanban } from "./components/KiwiKanban";
+import { KiwiCalendar } from "./components/KiwiCalendar";
 import { KiwiRecentStart } from "./components/KiwiRecentStart";
 import { KanbanDragProvider } from "./components/kanban/KanbanDragProvider";
 import { NewPageDialog } from "./components/NewPageDialog";
@@ -77,6 +79,11 @@ function getInitialActivePath(): string | null {
   return raw || null;
 }
 
+function getInitialCalendarOpen(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.location.pathname === "/view/calendar";
+}
+
 export default function App() {
   const [tree, setTree] = useState<TreeEntry | null>(null);
   const [activePath, setActivePath] = useState<string | null>(getInitialActivePath);
@@ -98,6 +105,7 @@ export default function App() {
   const [initialWhiteboardPath, setInitialWhiteboardPath] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(getInitialCalendarOpen);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
   const treeRef = useRef<KiwiTreeHandle>(null);
   const treeFilterRef = useRef<HTMLInputElement>(null);
@@ -120,6 +128,7 @@ export default function App() {
     setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setCalendarOpen(false);
     setDataOpen(false);
     setGraphOpen(false);
     setHistoryOpen(false);
@@ -202,6 +211,7 @@ export default function App() {
     whiteboardOpen,
     timelineOpen,
     kanbanOpen,
+    calendarOpen,
   });
   stateRef.current = {
     editing,
@@ -217,7 +227,14 @@ export default function App() {
     whiteboardOpen,
     timelineOpen,
     kanbanOpen,
+    calendarOpen,
   };
+
+  useEffect(() => {
+    if (!features.calendar && calendarOpen) {
+      setCalendarOpen(false);
+    }
+  }, [features.calendar, calendarOpen]);
 
   useEffect(() => {
     dispatchPageChanged(activePath);
@@ -375,6 +392,14 @@ export default function App() {
           setKanbanOpen(next);
           break;
         }
+        case "toggle_calendar": {
+          if (!features.calendar) return;
+          e.preventDefault();
+          const next = !state.calendarOpen;
+          closeAllViews();
+          setCalendarOpen(next);
+          break;
+        }
         case "shortcuts_help":
           e.preventDefault();
           setShortcutsOpen((v) => !v);
@@ -431,6 +456,9 @@ export default function App() {
             case "kanban":
               setKanbanOpen(false);
               break;
+            case "calendar":
+              setCalendarOpen(false);
+              break;
           }
           break;
         }
@@ -438,7 +466,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar]);
+  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar, features.calendar]);
 
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
@@ -450,6 +478,7 @@ const handleSpaceSwitch = useCallback(() => {
     setCanvasOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setCalendarOpen(false);
     setSpaceKey((k) => k + 1);
     setRefreshKey((k) => k + 1);
   }, []);
@@ -521,6 +550,9 @@ const handleSpaceSwitch = useCallback(() => {
       case "kanban":
         setKanbanOpen(true);
         break;
+      case "calendar":
+        setCalendarOpen(true);
+        break;
       case "bases":
         setBasesOpen(true);
         break;
@@ -542,6 +574,12 @@ const handleSpaceSwitch = useCallback(() => {
 
   useEffect(() => {
     if (isCloudMode || isDemoMode) return;
+    if (calendarOpen) {
+      if (window.location.pathname !== "/view/calendar") {
+        window.history.pushState(null, "", "/view/calendar");
+      }
+      return;
+    }
     if (!activePath) {
       if (window.location.pathname !== "/") {
         window.history.pushState(null, "", "/");
@@ -559,7 +597,7 @@ const handleSpaceSwitch = useCallback(() => {
         window.history.pushState(null, "", target);
       }
     }
-  }, [activePath, spaceKey, isCloudMode, isDemoMode]);
+  }, [activePath, spaceKey, isCloudMode, isDemoMode, calendarOpen]);
 
   useEffect(() => {
     if (isCloudMode || isDemoMode) return;
@@ -580,6 +618,11 @@ const handleSpaceSwitch = useCallback(() => {
         setCanvasOpen(false);
         setTimelineOpen(false);
         setKanbanOpen(false);
+        setCalendarOpen(false);
+      } else if (pathname === "/view/calendar") {
+        fromPopState.current = true;
+        closeAllViews();
+        setCalendarOpen(true);
       } else if (pathname === "/") {
         fromPopState.current = true;
         setActivePath(null);
@@ -587,7 +630,7 @@ const handleSpaceSwitch = useCallback(() => {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [isCloudMode, isDemoMode]);
+  }, [isCloudMode, isDemoMode, closeAllViews]);
 
   function revealActivePageInTree() {
     if (!activePath) return;
@@ -704,6 +747,7 @@ const handleSpaceSwitch = useCallback(() => {
                   whiteboard: whiteboardOpen,
                   timeline: timelineOpen,
                   kanban: kanbanOpen,
+                  calendar: calendarOpen,
                   data: dataOpen,
                 }[id];
                 closeAllViews();
@@ -725,6 +769,9 @@ const handleSpaceSwitch = useCallback(() => {
                     break;
                   case "kanban":
                     setKanbanOpen(!wasOpen);
+                    break;
+                  case "calendar":
+                    setCalendarOpen(!wasOpen);
                     break;
                   case "data":
                     setDataOpen(!wasOpen);
@@ -810,7 +857,7 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || calendarOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
             {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
@@ -839,6 +886,12 @@ const handleSpaceSwitch = useCallback(() => {
               <KiwiKanban
                 onClose={() => setKanbanOpen(false)}
                 onNavigate={(p) => { setKanbanOpen(false); navigate(p); }}
+              />
+            ) : calendarOpen ? (
+              <KiwiCalendar
+                isMobile={isMobile}
+                onClose={() => setCalendarOpen(false)}
+                onNavigate={(p) => { setCalendarOpen(false); navigate(p); }}
               />
             ) : dataOpen ? (
               <KiwiData onClose={() => setDataOpen(false)} />
@@ -1043,6 +1096,7 @@ const BUILTIN_TOOLBAR_BUTTONS: Record<
   whiteboard: { label: "Whiteboard", Icon: PenTool },
   timeline: { label: "Timeline", Icon: Clock4 },
   kanban: { label: "Kanban", Icon: Columns3 },
+  calendar: { label: "Calendar", Icon: CalendarDays },
   data: { label: "Data sources", Icon: Database },
 };
 

@@ -20,6 +20,7 @@ var knownActions = map[string]struct{}{
 	"toggle_bases":       {},
 	"toggle_timeline":    {},
 	"toggle_kanban":      {},
+	"toggle_calendar":    {},
 	"toggle_mode":        {},
 	"shortcuts_help":     {},
 	"undo":               {},
@@ -38,6 +39,7 @@ var DefaultBindings = map[string]string{
 	"toggle_bases":      "Mod+Shift+B",
 	"toggle_timeline":   "Mod+Shift+T",
 	"toggle_kanban":     "Mod+Shift+W",
+	"toggle_calendar":   "Mod+Shift+C",
 	"toggle_mode":       "Mod+Shift+E",
 	"shortcuts_help":    "Mod+/",
 	"undo":              "Mod+Z",
@@ -127,6 +129,8 @@ func normalizeKey(key string) string {
 		return "/"
 	case "question", "?":
 		return "?"
+	case "backslash", "\\":
+		return "\\"
 	default:
 		if len(key) == 1 {
 			return key
