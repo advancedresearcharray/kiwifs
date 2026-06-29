@@ -1,13 +1,17 @@
 package workspace
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kiwifs/kiwifs/internal/janitor"
 	"github.com/kiwifs/kiwifs/internal/markdown"
 	"github.com/kiwifs/kiwifs/internal/schema"
+	"github.com/kiwifs/kiwifs/internal/search"
+	"github.com/kiwifs/kiwifs/internal/storage"
 )
 
 func TestRunbookSchemaValidatesExample(t *testing.T) {
@@ -58,6 +62,8 @@ func TestInitRunbookTemplateScaffold(t *testing.T) {
 		"example-high-cpu.md",
 		"index.md",
 		"SCHEMA.md",
+		"services/api-service.md",
+		"services/monitoring.md",
 	} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Fatalf("missing %s: %v", p, err)
@@ -263,5 +269,50 @@ func TestInitRunbookDoesNotOverwriteExisting(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "example-high-cpu.md")); err != nil {
 		t.Fatal("expected example-high-cpu.md to be created alongside existing index.md")
+	}
+}
+
+func TestRunbookInitJanitorClean(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "runbook-janitor")
+	if err := Init(root, "runbook"); err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var searcher search.Searcher
+	if sq, sqerr := search.NewSQLite(root, store); sqerr == nil {
+		defer sq.Close()
+		searcher = sq
+	}
+	scanner := janitor.New(root, store, searcher, 90)
+	result, err := scanner.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, is := range result.Issues {
+		if is.Severity == "error" {
+			t.Fatalf("janitor error on runbook scaffold: %+v", is)
+		}
+	}
+}
+
+func TestRunbookEmbedIncludesServiceStubs(t *testing.T) {
+	t.Parallel()
+	required := []string{
+		"templates/runbook/SCHEMA.md",
+		"templates/runbook/index.md",
+		"templates/runbook/example-high-cpu.md",
+		"templates/runbook/.kiwi/schemas/runbook.json",
+		"templates/runbook/.kiwi/templates/runbook.md",
+		"templates/runbook/services/api-service.md",
+		"templates/runbook/services/monitoring.md",
+	}
+	for _, p := range required {
+		if _, err := templates.ReadFile(p); err != nil {
+			t.Fatalf("required UC-6 runbook scaffold missing %q: %v", p, err)
+		}
 	}
 }
