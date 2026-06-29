@@ -20,7 +20,7 @@ func TestListInitTemplatesIncludesKnown(t *testing.T) {
 		}
 		ids[item.ID] = true
 	}
-	for _, want := range []string{"blank", "knowledge", "wiki"} {
+	for _, want := range []string{"blank", "knowledge", "wiki", "runbook"} {
 		if !ids[want] {
 			t.Fatalf("missing template %q in %v", want, list)
 		}
@@ -89,6 +89,34 @@ func TestKnowledgeTemplateEmbedded(t *testing.T) {
 	for _, p := range paths {
 		if _, err := fs.Stat(templates, p); err != nil {
 			t.Fatalf("embedded template missing %s: %v", p, err)
+		}
+	}
+}
+
+func TestRunbookTemplateEmbedded(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"templates/runbook/SCHEMA.md",
+		"templates/runbook/index.md",
+		"templates/runbook/playbook.md",
+		"templates/runbook/example-high-cpu.md",
+		"templates/runbook/.kiwi/schemas/runbook.json",
+		"templates/runbook/.kiwi/config.toml",
+		"templates/runbook/.kiwi/templates/runbook.md",
+	}
+	for _, p := range paths {
+		if _, err := fs.Stat(templates, p); err != nil {
+			t.Fatalf("embedded template missing %s: %v", p, err)
+		}
+	}
+	legacy := []string{
+		"templates/runbook/incidents/template.md",
+		"templates/runbook/postmortems/template.md",
+		"templates/runbook/procedures/scale-up.md",
+	}
+	for _, p := range legacy {
+		if _, err := fs.Stat(templates, p); err == nil {
+			t.Fatalf("legacy runbook scaffold %q must not be embedded", p)
 		}
 	}
 }
