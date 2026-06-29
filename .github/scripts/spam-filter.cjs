@@ -27,6 +27,15 @@ function isCjkDominant(body, threshold = 0.5) {
   return cjkRatio(body) >= threshold;
 }
 
+function sanitizeSnippet(body, maxLen = 200) {
+  return body
+    .substring(0, maxLen)
+    .replace(/\n/g, ' ')
+    .replace(/(?:ghp_|gho_|github_pat_)[A-Za-z0-9_]+/g, '[REDACTED_TOKEN]')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[REDACTED_EMAIL]')
+    .replace(/https?:\/\/[^\s]+/g, '[REDACTED_URL]');
+}
+
 function buildLogCommentBody({
   maintainer,
   action,
@@ -47,7 +56,7 @@ function buildLogCommentBody({
     `| CJK ratio | ${(cjkRatioValue * 100).toFixed(0)}% |`,
     `| Action taken | ${isComment ? 'Comment minimized' : 'Issue closed + locked'} + user blocked |`,
     '',
-    '**Content preview:**',
+    '**Content preview (sanitized):**',
     `> ${snippet}${bodyLength > 200 ? '...' : ''}`,
   ].join('\n');
 }
@@ -83,7 +92,12 @@ async function logSpamModeration(github, context, details) {
     body,
   } = details;
 
-  const snippet = body.substring(0, 200).replace(/\n/g, ' ');
+  if (issueNumber === SPAM_LOG_ISSUE) {
+    console.log(`Skipping moderation log for #${SPAM_LOG_ISSUE} (log target)`);
+    return;
+  }
+
+  const snippet = sanitizeSnippet(body);
   const action = isComment ? 'comment' : 'issue';
   const commentBody = buildLogCommentBody({
     maintainer: MAINTAINER,
@@ -113,29 +127,15 @@ async function logSpamModeration(github, context, details) {
       body: commentBody,
     });
   } catch (error) {
-    console.log(`Failed to log spam to #${SPAM_LOG_ISSUE}: ${error.message}`);
+    console.error(`Failed to log spam to #${SPAM_LOG_ISSUE}: ${error.message}`);
   }
 }
 
-async function runSpamFilter({ github, context }) {
-  const isComment = !!context.payload.comment;
-  const body = isComment
-    ? context.payload.comment.body
-    : context.payload.issue.body || '';
-  const author = isComment
-    ? context.payload.comment.user.login
-    : context.payload.issue.user.login;
-  const issueNumber = context.payload.issue.number;
+function isTrustedAuthor(author) {
+  return TRUSTED_BOTS.includes(author) || author === MAINTAINER;
+}
 
-  if (issueNumber === SPAM_LOG_ISSUE) {
-    console.log(`Skipping spam filter on moderation log issue #${SPAM_LOG_ISSUE}`);
-    return;
-  }
-
-  if (TRUSTED_BOTS.includes(author) || author === MAINTAINER) {
-    return;
-  }
-
+async function hasElevatedAccess(github, context, author) {
   try {
     const { data: permLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
       owner: context.repo.owner,
@@ -143,10 +143,10 @@ async function runSpamFilter({ github, context }) {
       username: author,
     });
     if (['admin', 'write', 'maintain'].includes(permLevel.permission)) {
-      return;
+      return true;
     }
   } catch (error) {
-    // Not a collaborator — continue with validation.
+    console.log(`Permission check for ${author}: ${error.message}`);
   }
 
   try {
@@ -154,98 +154,134 @@ async function runSpamFilter({ github, context }) {
       org: context.repo.owner,
       username: author,
     });
-    return;
+    return true;
   } catch (error) {
-    // Not an org member — continue.
+    console.log(`Org membership check for ${author}: ${error.message}`);
   }
 
-  const ratio = cjkRatio(body);
-  if (ratio < 0.5) {
-    return;
-  }
+  return false;
+}
 
-  let hasPriorActivity = false;
+async function hasPriorActivity(github, context, author, issueNumber, commentId) {
   try {
-    const { data: comments } = await github.rest.issues.listCommentsForRepo({
+    const { data: comments } = await github.rest.issues.listComments({
       owner: context.repo.owner,
       repo: context.repo.repo,
-      per_page: 5,
-      sort: 'created',
-      direction: 'desc',
+      issue_number: issueNumber,
+      per_page: 20,
     });
-    hasPriorActivity = comments.some(
-      (comment) =>
-        comment.user.login === author &&
-        comment.id !== (context.payload.comment?.id),
+    return comments.some(
+      (comment) => comment.user.login === author && comment.id !== commentId,
     );
   } catch (error) {
-    // Best-effort prior activity check.
+    console.log(`Prior activity check on #${issueNumber}: ${error.message}`);
+    return false;
   }
+}
 
-  let isContributor = false;
+async function isRepoContributor(github, context, author) {
   try {
     const { data: contributors } = await github.rest.repos.listContributors({
       owner: context.repo.owner,
       repo: context.repo.repo,
       per_page: 100,
     });
-    isContributor = contributors.some((contributor) => contributor.login === author);
+    return contributors.some((contributor) => contributor.login === author);
   } catch (error) {
-    // Best-effort contributor check.
+    console.log(`Contributor check for ${author}: ${error.message}`);
+    return false;
   }
+}
 
-  if (hasPriorActivity || isContributor) {
-    return;
-  }
-
-  console.log(
-    `🚨 Spam detected from ${author} on #${issueNumber} (CJK ratio: ${(ratio * 100).toFixed(0)}%)`,
-  );
-
-  if (isComment) {
-    const commentNodeId = context.payload.comment.node_id;
-    await github.graphql(
-      `
-        mutation($id: ID!) {
-          minimizeComment(input: { subjectId: $id, classifier: SPAM }) {
-            minimizedComment { isMinimized }
-          }
-        }
-      `,
-      { id: commentNodeId },
-    );
-  } else {
-    await github.rest.issues.update({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      issue_number: issueNumber,
-      state: 'closed',
-      state_reason: 'not_planned',
-    });
-    await github.rest.issues.lock({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      issue_number: issueNumber,
-      lock_reason: 'spam',
-    });
-  }
-
+async function runSpamFilter({ github, context }) {
   try {
-    await github.rest.orgs.blockUser({
-      org: context.repo.owner,
-      username: author,
+    const isComment = !!context.payload.comment;
+    const body = isComment
+      ? context.payload.comment.body
+      : context.payload.issue.body || '';
+    const author = isComment
+      ? context.payload.comment.user.login
+      : context.payload.issue.user.login;
+    const issueNumber = context.payload.issue.number;
+
+    if (issueNumber === SPAM_LOG_ISSUE) {
+      console.log(`Skipping spam filter on moderation log issue #${SPAM_LOG_ISSUE}`);
+      return;
+    }
+
+    if (isTrustedAuthor(author)) {
+      return;
+    }
+
+    if (await hasElevatedAccess(github, context, author)) {
+      return;
+    }
+
+    const ratio = cjkRatio(body);
+    if (ratio < 0.5) {
+      return;
+    }
+
+    const commentId = context.payload.comment?.id;
+    if (
+      (await hasPriorActivity(github, context, author, issueNumber, commentId)) ||
+      (await isRepoContributor(github, context, author))
+    ) {
+      return;
+    }
+
+    console.log(
+      `🚨 Spam detected from ${author} on #${issueNumber} (CJK ratio: ${(ratio * 100).toFixed(0)}%)`,
+    );
+
+    if (isComment) {
+      const commentNodeId = context.payload.comment.node_id;
+      await github.graphql(
+        `
+          mutation($id: ID!) {
+            minimizeComment(input: { subjectId: $id, classifier: SPAM }) {
+              minimizedComment { isMinimized }
+            }
+          }
+        `,
+        { id: commentNodeId },
+      );
+    } else {
+      await github.rest.issues.update({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: issueNumber,
+        state: 'closed',
+        state_reason: 'not_planned',
+      });
+      await github.rest.issues.lock({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: issueNumber,
+        lock_reason: 'spam',
+      });
+    }
+
+    try {
+      await github.rest.orgs.blockUser({
+        org: context.repo.owner,
+        username: author,
+      });
+    } catch (error) {
+      console.error(`Failed to block ${author}: ${error.message}`);
+    }
+
+    await logSpamModeration(github, context, {
+      author,
+      issueNumber,
+      cjkRatioValue: ratio,
+      isComment,
+      body,
     });
   } catch (error) {
-    console.log(`Failed to block ${author}: ${error.message}`);
+    console.error(`runSpamFilter failed: ${error.message}`);
+    throw error;
   }
-
-  await logSpamModeration(github, context, {
-    author,
-    issueNumber,
-    cjkRatioValue: ratio,
-    isComment,
-    body,
-  });
 }
 
 module.exports = {
@@ -254,6 +290,7 @@ module.exports = {
   TRUSTED_BOTS,
   cjkRatio,
   isCjkDominant,
+  sanitizeSnippet,
   buildLogCommentBody,
   ensureIssueUnlocked,
   logSpamModeration,
