@@ -15,6 +15,7 @@ export type KeybindingAction =
   | "toggle_bases"
   | "toggle_timeline"
   | "toggle_kanban"
+  | "toggle_calendar"
   | "toggle_mode"
   | "shortcuts_help"
   | "undo"
@@ -49,6 +50,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   toggle_bases: "mod+shift+b",
   toggle_timeline: "mod+shift+t",
   toggle_kanban: "mod+shift+w",
+  toggle_calendar: "mod+shift+c",
   toggle_mode: "mod+shift+e",
   shortcuts_help: "mod+/",
   undo: "mod+z",
@@ -186,6 +188,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { action: "toggle_bases", label: "Toggle Bases" },
       { action: "toggle_timeline", label: "Toggle Timeline" },
       { action: "toggle_kanban", label: "Toggle Kanban" },
+      { action: "toggle_calendar", label: "Toggle Calendar" },
     ],
   },
   {

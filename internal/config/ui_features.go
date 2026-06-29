@@ -5,6 +5,7 @@ package config
 type UIFeaturesConfig struct {
 	Graph       *bool `toml:"graph"`
 	Kanban      *bool `toml:"kanban"`
+	Calendar    *bool `toml:"calendar"`
 	Canvas      *bool `toml:"canvas"`
 	Whiteboard  *bool `toml:"whiteboard"`
 	Timeline    *bool `toml:"timeline"`
@@ -21,6 +22,7 @@ func (f UIFeaturesConfig) Resolved() map[string]bool {
 	return map[string]bool{
 		"graph":        featureEnabled(f.Graph),
 		"kanban":       featureEnabled(f.Kanban),
+		"calendar":     featureEnabled(f.Calendar),
 		"canvas":       featureEnabled(f.Canvas),
 		"whiteboard":   featureEnabled(f.Whiteboard),
 		"timeline":     featureEnabled(f.Timeline),

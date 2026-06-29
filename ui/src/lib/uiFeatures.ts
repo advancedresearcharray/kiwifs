@@ -1,6 +1,7 @@
 export type UIFeatureKey =
   | "graph"
   | "kanban"
+  | "calendar"
   | "canvas"
   | "whiteboard"
   | "timeline"
@@ -10,6 +11,7 @@ export type UIFeatureKey =
 export const DEFAULT_UI_FEATURES: Record<UIFeatureKey, boolean> = {
   graph: true,
   kanban: true,
+  calendar: true,
   canvas: true,
   whiteboard: true,
   timeline: true,
@@ -21,6 +23,7 @@ export const DEFAULT_UI_FEATURES: Record<UIFeatureKey, boolean> = {
 export const VIEW_ROUTE_ALIASES: Record<string, UIFeatureKey> = {
   graph: "graph",
   kanban: "kanban",
+  calendar: "calendar",
   canvas: "canvas",
   whiteboard: "whiteboard",
   timeline: "timeline",
