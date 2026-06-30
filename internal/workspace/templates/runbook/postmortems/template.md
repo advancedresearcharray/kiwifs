@@ -21,7 +21,7 @@ tags: [postmortem]
 
 # Postmortem: [Short Description]
 
-**Incident:** [[incidents/YYYY-MM-DD-slug]]
+**Incident:** [[incidents/template]]
 **Date:** YYYY-MM-DD
 **Severity:** P1 / P2 / P3 / P4
 **Duration:** X hours Y minutes
@@ -103,9 +103,9 @@ a new team member about this failure mode?_
 
 ## Related
 
-- Incident: [[incidents/YYYY-MM-DD-slug]]
+- Incident: [[incidents/template]]
 - Related past incidents: _link any similar events_
-- Procedures used: [[procedures/relevant-procedure]]
+- Procedures used: [[procedures/deploy-rollback]]
 
 ---
 

@@ -77,7 +77,7 @@ To re-run this experiment:
 
 ## Next Steps
 
-- [ ] Design [[experiments/exp-002|Experiment 002]] to test first variation
+- [ ] Design [[experiments/exp-002-placeholder|Experiment 002]] to test first variation
 - [ ] Document any anomalies for investigation
 
 ## Related

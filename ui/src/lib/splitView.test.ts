@@ -40,6 +40,18 @@ describe("splitView", () => {
     expect(loadSplitViewState()).toEqual(state);
   });
 
+  it("persists custom pane sizes across session reload", () => {
+    const state = openPathInSplit(
+      createSplitViewState({ sizes: [35, 65] }),
+      "notes/b.md",
+    );
+    saveSplitViewState(state);
+    const restored = loadSplitViewState();
+    expect(restored?.sizes).toEqual([35, 65]);
+    expect(restored?.enabled).toBe(true);
+    expect(restored?.rightPath).toBe("notes/b.md");
+  });
+
   it("ignores invalid session payloads", () => {
     storage.set(SPLIT_VIEW_SESSION_KEY, "{not json");
     expect(loadSplitViewState()).toBeNull();
