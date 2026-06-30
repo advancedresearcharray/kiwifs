@@ -629,12 +629,27 @@ export const api = {
       boolean
     >>;
     toolbarViews?: string[] | null;
+    theme?: { allowedPresets?: string[] };
   }> {
     return request(`${kiwiBase()}/ui-config`);
   },
 
   async getTheme(): Promise<Record<string, unknown>> {
     return request(`${kiwiBase()}/theme`);
+  },
+
+  async getThemePresets(): Promise<{
+    presets: Array<{
+      name: string;
+      description?: string;
+      light: Record<string, string>;
+      dark: Record<string, string>;
+      source?: string;
+      file?: string;
+    }>;
+    errors?: Array<{ file: string; error: string }>;
+  }> {
+    return request(`${kiwiBase()}/theme/presets`);
   },
 
   async getEditorSlashCommands(): Promise<{

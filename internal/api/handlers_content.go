@@ -363,6 +363,10 @@ type brandingConfigResponse struct {
 	WelcomeMessage string `json:"welcomeMessage"`
 }
 
+type uiThemeConfigResponse struct {
+	AllowedPresets []string `json:"allowedPresets"`
+}
+
 type uiConfigResponse struct {
 	ThemeLocked  bool                   `json:"themeLocked"`
 	StartPage    string                 `json:"startPage"`
@@ -370,6 +374,7 @@ type uiConfigResponse struct {
 	Branding     brandingConfigResponse `json:"branding"`
 	Features     map[string]bool        `json:"features"`
 	ToolbarViews *[]string              `json:"toolbarViews"`
+	Theme        uiThemeConfigResponse  `json:"theme"`
 }
 
 // UIConfig godoc
@@ -402,6 +407,10 @@ func (h *Handlers) UIConfig(c echo.Context) error {
 		toolbarViews = &views
 	}
 	b := h.ui.Branding
+	allowed := h.ui.Theme.AllowedPresets
+	if allowed == nil {
+		allowed = []string{}
+	}
 	return c.JSON(http.StatusOK, uiConfigResponse{
 		ThemeLocked: h.ui.ThemeLocked,
 		StartPage:   h.ui.ResolvedStartPage(),
@@ -419,6 +428,9 @@ func (h *Handlers) UIConfig(c echo.Context) error {
 		},
 		Features:     h.ui.Features.Resolved(),
 		ToolbarViews: toolbarViews,
+		Theme: uiThemeConfigResponse{
+			AllowedPresets: allowed,
+		},
 	})
 }
 

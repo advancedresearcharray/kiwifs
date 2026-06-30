@@ -375,7 +375,12 @@ function createMockFetch(overrides: MockOverrides = {}) {
             ...(cfg.features ?? {}),
           },
           toolbarViews: cfg.toolbarViews ?? null,
+          theme: { allowedPresets: cfg.theme?.allowedPresets ?? [] },
         });
+      }
+
+      if (url.includes("/theme/presets")) {
+        return jsonResponse({ presets: [], errors: [] });
       }
 
       if (url.includes("/theme") && method === "GET") {

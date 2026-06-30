@@ -37,6 +37,12 @@ type = "none"
 
 # [ui]
 # keybindings_file = ".kiwi/keybindings.json"
+# theme_locked = false
+#
+# Workspace-defined theme presets (JSON files) and optional allow-list for the UI selector.
+# [ui.theme]
+# presets_dir = ".kiwi/themes/"
+# allowed_presets = ["Kiwi", "corporate-light", "corporate-dark"]
 #
 # [ui.keybindings]
 # search = "Ctrl+J"
