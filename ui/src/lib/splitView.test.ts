@@ -1,7 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import {
   SPLIT_VIEW_SESSION_KEY,
-  clearSplitViewState,
   closeSecondaryPane,
   createSplitViewState,
   loadSplitViewState,
