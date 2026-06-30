@@ -13,7 +13,7 @@ import {
   presetToOverrides,
   findPreset,
   mergePresets,
-  filterPresets,
+  filterPresetsWithAllowList,
   resolvePresetName,
   type ThemePreset,
 } from "../themes";
@@ -144,10 +144,7 @@ export function useTheme(options?: {
         const workspace = (presetRes.presets || []).map(workspacePresetFromAPI);
         const merged = mergePresets(builtinPresets, workspace);
         const allowed = useUIConfigStore.getState().allowedPresets;
-        const filtered = filterPresets(
-          merged,
-          allowed.length > 0 ? allowed : undefined,
-        );
+        const filtered = filterPresetsWithAllowList(merged, allowed);
         setAvailablePresets(filtered);
         setPresetErrors(presetRes.errors || []);
         const saved = readLS(lsPreset(), "");
@@ -160,7 +157,8 @@ export function useTheme(options?: {
         }
       })
       .catch(() => {
-        setAvailablePresets(builtinPresets);
+        const allowed = useUIConfigStore.getState().allowedPresets;
+        setAvailablePresets(filterPresetsWithAllowList(builtinPresets, allowed));
         setPresetErrors([]);
       });
   }, [serverPreset, onPresetChange]);

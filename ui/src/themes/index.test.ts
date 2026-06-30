@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { filterPresets, findPreset, mergePresets, presets, resolvePresetName, type ThemePreset } from "./index";
+import {
+  filterPresets,
+  filterPresetsWithAllowList,
+  findPreset,
+  mergePresets,
+  presets,
+  resolvePresetName,
+  type ThemePreset,
+} from "./index";
 
 describe("theme presets", () => {
   it("finds presets case-insensitively", () => {
@@ -40,6 +48,12 @@ describe("theme presets", () => {
     const filtered = filterPresets(all, ["kiwi", "corporate"]);
     expect(filtered.map((p) => p.name)).toEqual(["Kiwi", "Corporate"]);
     expect(filterPresets(all, [])).toEqual(all);
+  });
+
+  it("filterPresetsWithAllowList applies allow-list for API failure fallback", () => {
+    const filtered = filterPresetsWithAllowList(presets, ["kiwi", "ocean"]);
+    expect(filtered.map((p) => p.name)).toEqual(["Kiwi", "Ocean"]);
+    expect(filterPresetsWithAllowList(presets, [])).toEqual(presets);
   });
 
   it("resolves preset name when current choice is not allowed", () => {

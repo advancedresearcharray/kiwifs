@@ -122,3 +122,20 @@ cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.t
 ```
 
 Feature code unchanged; branch pushed to fork. PR #58 open with CI green.
+
+## Hands-on takeover v4 (2026-06-30)
+
+Fixed peer-review gap: when `GET /theme/presets` fails, `useTheme` now still applies
+`allowed_presets` to built-in presets via `filterPresetsWithAllowList` (was showing
+all built-ins unfiltered). Added regression test in `index.test.ts`.
+
+Tests (all green):
+
+```
+go test ./internal/themepresets/... -count=1 -v          → 7 passed
+go test ./internal/config/... -run TestUIConfigThemePresets → PASS
+go test ./internal/api/... -run 'GetThemePresets|UIConfig_Theme' → 3 passed
+cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.ts → 10 passed
+```
+
+Committed and pushed to fork PR #58.

@@ -45,6 +45,11 @@ export function filterPresets(list: ThemePreset[], allowed: string[] | undefined
   return list.filter((p) => set.has(p.name.toLowerCase()));
 }
 
+/** Apply configured allow-list; empty allow-list keeps all presets. */
+export function filterPresetsWithAllowList(list: ThemePreset[], allowed: string[]): ThemePreset[] {
+  return filterPresets(list, allowed.length > 0 ? allowed : undefined);
+}
+
 /** Pick a valid preset name after filtering; falls back to the first available preset. */
 export function resolvePresetName(
   current: string,
