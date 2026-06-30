@@ -27,6 +27,7 @@ export type MockUIConfig = {
   features?: Record<string, boolean>;
   toolbarViews?: string[] | null;
   sidebar?: Record<string, unknown>;
+  theme?: { allowedPresets?: string[] };
 };
 
 export type MockTimelineEvent = {
