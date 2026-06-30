@@ -19,7 +19,8 @@ export type KeybindingAction =
   | "shortcuts_help"
   | "undo"
   | "focus_tree_filter"
-  | "close_overlay";
+  | "close_overlay"
+  | "toggle_split_view";
 
 export type ParsedChord = {
   mod: boolean;
@@ -54,7 +55,33 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   undo: "mod+z",
   focus_tree_filter: "mod+alt+f",
   close_overlay: "escape",
+  toggle_split_view: "mod+\\",
 };
+
+const KEY_ALIASES: Record<string, string> = {
+  esc: "escape",
+  escape: "escape",
+  slash: "/",
+  "/": "/",
+  question: "?",
+  "?": "?",
+  backslash: "\\",
+  "\\": "\\",
+  enter: "enter",
+  return: "enter",
+  tab: "tab",
+  space: "space",
+  " ": "space",
+  del: "delete",
+  delete: "delete",
+  backspace: "backspace",
+};
+
+/** Canonicalize a single key token (already lowercased). */
+export function normalizeKeyPart(part: string): string {
+  const key = part.trim().toLowerCase();
+  return KEY_ALIASES[key] ?? key;
+}
 
 export function normalizeChord(chord: string): string {
   const parts = chord.trim().split("+").map((p) => p.trim().toLowerCase()).filter(Boolean);
@@ -79,18 +106,8 @@ export function normalizeChord(chord: string): string {
       case "option":
         if (!mods.includes("alt")) mods.push("alt");
         break;
-      case "esc":
-      case "escape":
-        key = "escape";
-        break;
-      case "slash":
-        key = "/";
-        break;
-      case "question":
-        key = "?";
-        break;
       default:
-        key = part.length === 1 ? part : part;
+        key = normalizeKeyPart(part);
     }
   }
   mods.sort();
@@ -126,6 +143,9 @@ export function eventMatchesChord(e: KeyboardEvent, chord: string): boolean {
     return eventKey === "/" || eventKey === "slash" || eventKey === "?";
   }
   if (parsed.key === "?") return eventKey === "?" || (e.shiftKey && eventKey === "/");
+  if (parsed.key === "\\") {
+    return eventKey === "\\" || eventKey === "backslash";
+  }
   return eventKey === parsed.key;
 }
 
@@ -176,6 +196,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { action: "new_page", label: "New page" },
       { action: "toggle_editor", label: "Toggle editor" },
       { action: "toggle_sidebar", label: "Toggle sidebar" },
+      { action: "toggle_split_view", label: "Toggle split view" },
       { action: "shortcuts_help", label: "Keyboard shortcuts" },
     ],
   },

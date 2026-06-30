@@ -21,6 +21,7 @@ import type { TreeSortMode } from "./lib/treeTransform";
 import { shouldRefreshTreeImmediately } from "./lib/treeRefresh";
 import { usePublishedPagesStore } from "./stores/publishedPagesStore";
 import { KiwiPage } from "./components/KiwiPage";
+import { KiwiSplitView, SplitViewMobileNotice } from "./components/KiwiSplitView";
 import { KiwiEditor } from "./components/KiwiEditor";
 import { KiwiSearch } from "./components/KiwiSearch";
 import { KiwiGraph } from "./components/KiwiGraph";
@@ -64,6 +65,17 @@ import { useTheme } from "./hooks/useTheme";
 import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
+import {
+  closeSecondaryPane,
+  createSplitViewState,
+  loadSplitViewState,
+  openPathInSplit,
+  openVersionInSplit,
+  saveSplitViewState,
+  syncSplitViewWithActivePath,
+  toggleSplitView,
+  type SplitViewState,
+} from "./lib/splitView";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -89,6 +101,7 @@ export default function App() {
   const [newFolder, setNewFolder] = useState<string | undefined>();
   const [graphOpen, setGraphOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [dataOpen, setDataOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [basesOpen, setBasesOpen] = useState(false);
@@ -98,6 +111,10 @@ export default function App() {
   const [initialWhiteboardPath, setInitialWhiteboardPath] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
+  const [splitView, setSplitView] = useState<SplitViewState>(
+    () => loadSplitViewState() ?? createSplitViewState(),
+  );
+  const [splitMobileNotice, setSplitMobileNotice] = useState(false);
   const [treeRevealRequest, setTreeRevealRequest] = useState<TreeRevealRequest | null>(null);
   const treeRef = useRef<KiwiTreeHandle>(null);
   const treeFilterRef = useRef<HTMLInputElement>(null);
@@ -131,6 +148,72 @@ export default function App() {
     const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    saveSplitViewState(splitView);
+  }, [splitView]);
+
+  useEffect(() => {
+    setSplitView((prev) => syncSplitViewWithActivePath(prev, activePath));
+  }, [activePath]);
+
+  useEffect(() => {
+    if (isMobile && splitView.enabled) {
+      setSplitView(createSplitViewState({ sizes: splitView.sizes }));
+    }
+  }, [isMobile, splitView.enabled, splitView.sizes]);
+
+  const handleOpenInSplitView = useCallback((path: string) => {
+    if (isMobile) {
+      setSplitMobileNotice(true);
+      return;
+    }
+    if (!activePath) {
+      setActivePath(path);
+      setSplitView((prev) => ({ ...createSplitViewState({ sizes: prev.sizes }), enabled: true }));
+      return;
+    }
+    if (activePath === path) {
+      setSplitView((prev) => ({ ...createSplitViewState({ sizes: prev.sizes }), enabled: true }));
+      return;
+    }
+    setSplitView((prev) => openPathInSplit(prev, path));
+  }, [isMobile, activePath]);
+
+  const handleToggleSplitView = useCallback(() => {
+    if (isMobile) {
+      setSplitMobileNotice(true);
+      return;
+    }
+    setSplitView((prev) => toggleSplitView(prev, activePath));
+  }, [isMobile, activePath]);
+
+  const handleCompareWithCurrent = useCallback((hash: string) => {
+    if (!activePath) return;
+    if (isMobile) {
+      setSplitMobileNotice(true);
+      return;
+    }
+    setHistoryOpen(false);
+    setSplitView((prev) => openVersionInSplit(prev, { path: activePath, hash }));
+  }, [activePath, isMobile]);
+
+  const navigateRightPane = useCallback((path: string) => {
+    setSplitView((prev) => ({
+      ...prev,
+      enabled: true,
+      rightPath: path,
+      rightVersion: null,
+    }));
+  }, []);
+
+  const handleCloseSecondaryPane = useCallback(() => {
+    setSplitView((prev) => closeSecondaryPane(prev));
+  }, []);
+
+  const handleSplitSizesChange = useCallback((sizes: [number, number]) => {
+    setSplitView((prev) => ({ ...prev, sizes }));
   }, []);
 
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -388,6 +471,10 @@ export default function App() {
             })
             .catch(() => {});
           break;
+        case "toggle_split_view":
+          e.preventDefault();
+          handleToggleSplitView();
+          break;
         case "focus_tree_filter":
           e.preventDefault();
           treeFilterRef.current?.focus();
@@ -438,11 +525,12 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar]);
+  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar, handleToggleSplitView]);
 
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
     setEditing(false);
+    setSplitView(createSplitViewState());
     setGraphOpen(false);
     setHistoryOpen(false);
     setDataOpen(false);
@@ -781,6 +869,7 @@ const handleSpaceSwitch = useCallback(() => {
             onTreeSortModeChange={setTreeSortMode}
             onActivePathChange={setActivePath}
             onTreeRefresh={refreshTree}
+            onOpenInSplitView={handleOpenInSplitView}
           />
 
           {/* Sidebar resize handle (desktop only) */}
@@ -810,7 +899,7 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen || (splitView.enabled && !isMobile) ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
             {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
@@ -852,11 +941,15 @@ const handleSpaceSwitch = useCallback(() => {
                 }}
                 onClose={() => setGraphOpen(false)}
               />
-            ) : historyOpen && activePath ? (
+            ) : historyOpen && (historyPath ?? activePath) ? (
               <KiwiHistory
-                path={activePath}
-                onClose={() => setHistoryOpen(false)}
+                path={historyPath ?? activePath!}
+                onClose={() => {
+                  setHistoryOpen(false);
+                  setHistoryPath(null);
+                }}
                 onRestored={() => setRefreshKey((k) => k + 1)}
+                onCompareWithCurrent={handleCompareWithCurrent}
               />
             ) : editing && activePath ? (
               <KiwiEditor
@@ -874,13 +967,103 @@ const handleSpaceSwitch = useCallback(() => {
                   setRefreshKey((k) => k + 1);
                 }}
               />
+            ) : activePath && splitView.enabled && !isMobile ? (
+              <KiwiSplitView
+                tree={tree}
+                leftPath={activePath}
+                splitView={splitView}
+                refreshKey={refreshKey}
+                onLeftNavigate={navigate}
+                onRightNavigate={navigateRightPane}
+                onOpenInSplitView={handleOpenInSplitView}
+                onSizesChange={handleSplitSizesChange}
+                onCloseSecondary={handleCloseSecondaryPane}
+                leftPane={{
+                  onEdit: () => setEditing(true),
+                  onHistory: () => {
+                    setHistoryPath(activePath);
+                    setHistoryOpen(true);
+                  },
+                  onRevealInTree: revealActivePageInTree,
+                  onToggleStar: () => toggleStar(activePath),
+                  isStarred: isStarred(activePath),
+                  onTogglePin: () => togglePin(activePath),
+                  isPinned: isPinned(activePath),
+                  onDeleted: () => {
+                    setActivePath(null);
+                    setRefreshKey((k) => k + 1);
+                  },
+                  onDuplicated: (p) => {
+                    setRefreshKey((k) => k + 1);
+                    navigate(p);
+                  },
+                  onMoved: (p) => {
+                    setRefreshKey((k) => k + 1);
+                    navigate(p);
+                  },
+                  onTagClick: (tag) => {
+                    setSearchQuery(`tag:${tag}`);
+                    setSearchOpen(true);
+                  },
+                  onPublishedChanged: refreshPublishedPages,
+                }}
+                rightPane={{
+                  onEdit: () => {
+                    const target = splitView.rightPath ?? splitView.rightVersion?.path ?? activePath;
+                    setActivePath(target);
+                    setEditing(true);
+                  },
+                  onHistory: () => {
+                    const target = splitView.rightPath ?? splitView.rightVersion?.path ?? activePath;
+                    setHistoryPath(target);
+                    setHistoryOpen(true);
+                  },
+                  onToggleStar: splitView.rightPath
+                    ? () => toggleStar(splitView.rightPath!)
+                    : undefined,
+                  isStarred: splitView.rightPath ? isStarred(splitView.rightPath) : false,
+                  onTogglePin: splitView.rightPath
+                    ? () => togglePin(splitView.rightPath!)
+                    : undefined,
+                  isPinned: splitView.rightPath ? isPinned(splitView.rightPath) : false,
+                  onDeleted: () => {
+                    setSplitView((prev) => closeSecondaryPane(prev));
+                    setRefreshKey((k) => k + 1);
+                  },
+                  onDuplicated: (p) => {
+                    setSplitView((prev) => ({
+                      ...prev,
+                      rightPath: p,
+                      rightVersion: null,
+                    }));
+                    setRefreshKey((k) => k + 1);
+                  },
+                  onMoved: (p) => {
+                    setSplitView((prev) => ({
+                      ...prev,
+                      rightPath: p,
+                      rightVersion: null,
+                    }));
+                    setRefreshKey((k) => k + 1);
+                  },
+                  onTagClick: (tag) => {
+                    setSearchQuery(`tag:${tag}`);
+                    setSearchOpen(true);
+                  },
+                  onPublishedChanged: refreshPublishedPages,
+                }}
+              />
             ) : activePath ? (
               <KiwiPage
                 path={activePath}
                 tree={tree}
                 onNavigate={navigate}
+                onOpenInSplitView={handleOpenInSplitView}
                 onEdit={() => setEditing(true)}
-                onHistory={() => setHistoryOpen(true)}
+                onHistory={() => {
+                  setHistoryPath(activePath);
+                  setHistoryOpen(true);
+                }}
                 onRevealInTree={revealActivePageInTree}
                 onToggleStar={() => toggleStar(activePath)}
                 isStarred={isStarred(activePath)}
@@ -905,6 +1088,8 @@ const handleSpaceSwitch = useCallback(() => {
                 refreshKey={refreshKey}
                 onPublishedChanged={refreshPublishedPages}
               />
+            ) : splitMobileNotice ? (
+              <SplitViewMobileNotice onDismiss={() => setSplitMobileNotice(false)} />
             ) : treeLoading || !uiConfigLoaded ? (
               <div className="flex h-full items-center justify-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
