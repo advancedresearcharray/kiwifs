@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Clock4,
   Columns3,
   Database,
@@ -178,7 +179,7 @@ export default function App() {
     } catch { return 272; }
   });
   const resizing = useRef(false);
-  const { theme, toggleTheme, preset, setPreset, presets, themeLocked } = useTheme({
+  const { theme, toggleTheme, preset, setPreset, presets, presetErrors, themeLocked } = useTheme({
     serverPrefs: prefsLoaded ? prefs : null,
     onPresetChange: (preset) => updatePreferences({ theme: preset }),
   });
@@ -756,6 +757,28 @@ const handleSpaceSwitch = useCallback(() => {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {!themeLocked && presetErrors.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex text-destructive"
+                    aria-label="Theme preset validation errors"
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-sm">
+                  <p className="font-medium mb-1">Invalid theme preset files</p>
+                  <ul className="text-xs space-y-1">
+                    {presetErrors.map((err) => (
+                      <li key={err.file}>
+                        {err.file}: {err.error}
+                      </li>
+                    ))}
+                  </ul>
+                </TooltipContent>
+              </Tooltip>
             )}
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>

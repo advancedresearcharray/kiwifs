@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyKiwiTheme,
   applyKiwiCustomCSS,
@@ -129,6 +129,8 @@ export function useTheme(options?: {
   const [preset, setPresetState] = useState(() => serverPreset || readLS(lsPreset(), "Kiwi"));
   const [availablePresets, setAvailablePresets] = useState<ThemePreset[]>(builtinPresets);
   const [presetErrors, setPresetErrors] = useState<Array<{ file: string; error: string }>>([]);
+  const presetRef = useRef(preset);
+  presetRef.current = preset;
 
   useEffect(() => {
     if (serverPreset) {
@@ -137,27 +139,31 @@ export function useTheme(options?: {
   }, [serverPreset]);
 
   const loadPresets = useCallback(() => {
-    Promise.all([api.getThemePresets(), api.getUIConfig()])
-      .then(([presetRes, uiConfig]) => {
+    api.getThemePresets()
+      .then((presetRes) => {
         const workspace = (presetRes.presets || []).map(workspacePresetFromAPI);
         const merged = mergePresets(builtinPresets, workspace);
-        const allowed = uiConfig.theme?.allowedPresets;
-        const filtered = filterPresets(merged, allowed);
+        const allowed = useUIConfigStore.getState().allowedPresets;
+        const filtered = filterPresets(
+          merged,
+          allowed.length > 0 ? allowed : undefined,
+        );
         setAvailablePresets(filtered);
         setPresetErrors(presetRes.errors || []);
         const saved = readLS(lsPreset(), "");
-        const active = serverPreset || saved || preset;
+        const active = serverPreset || saved || presetRef.current;
         const resolved = resolvePresetName(active, filtered);
         if (resolved !== active) {
           setPresetState(resolved);
           writeLS(lsPreset(), resolved);
+          onPresetChange?.(resolved);
         }
       })
       .catch(() => {
         setAvailablePresets(builtinPresets);
         setPresetErrors([]);
       });
-  }, [preset, serverPreset]);
+  }, [serverPreset, onPresetChange]);
 
   useEffect(() => {
     loadPresets();

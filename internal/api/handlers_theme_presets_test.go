@@ -57,6 +57,42 @@ func TestGetThemePresets_LoadsWorkspacePresets(t *testing.T) {
 	}
 }
 
+func TestGetThemePresets_RejectsPathTraversalPresetsDir(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	outside := filepath.Join(dir, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	valid := `{"name":"outside-preset","light":{"background":"#fff"},"dark":{"background":"#111"}}`
+	if err := os.WriteFile(filepath.Join(outside, "outside-preset.json"), []byte(valid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	cfg.UI.Theme.PresetsDir = "../outside"
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/theme/presets", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var res struct {
+		Presets []struct {
+			Name string `json:"name"`
+		} `json:"presets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Presets) != 0 {
+		t.Fatalf("path traversal presets_dir should fall back to default dir, got presets %+v", res.Presets)
+	}
+}
+
 func TestUIConfig_ThemeAllowedPresets(t *testing.T) {
 	dir, pipe, cstore := buildTestPipeline(t)
 	cfg := &config.Config{}

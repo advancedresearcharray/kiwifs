@@ -70,3 +70,22 @@ cd ui && npm test -- --run src/themes/index.test.ts      → 4 passed
 ```
 
 Added durable fix doc to repo, pushed branch, updated fork PR #58 (removed Cursor attribution).
+
+## Hands-on takeover v2 (2026-06-30)
+
+Peer review found major issues in `useTheme` (redundant ui-config fetch, re-fetch on preset change, preset errors only in unused KiwiThemeEditor). Fixed:
+
+- `uiConfigStore`: store `allowedPresets` from boot-time `/ui-config` load
+- `useTheme.loadPresets`: single `/theme/presets` fetch; read allow-list from store; preset ref avoids refetch loop; `onPresetChange` on auto-resolve
+- `App.tsx`: show preset validation errors in header tooltip
+- API test: path-traversal `presets_dir` falls back to default
+- `uiConfigStore.test.ts`: cover `allowedPresets`
+
+Tests (all green):
+
+```
+go test ./internal/themepresets/... -count=1 -v          → 7 passed
+go test ./internal/api/... -run 'GetThemePresets|UIConfig_Theme' → 3 passed
+go test ./internal/config/... -run TestUIConfigThemePresets → PASS
+cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.ts → 9 passed
+```

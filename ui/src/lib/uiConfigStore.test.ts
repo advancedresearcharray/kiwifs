@@ -8,6 +8,7 @@ describe("uiConfigStore", () => {
   afterEach(() => {
     useUIConfigStore.setState({
       themeLocked: false,
+      allowedPresets: [],
       branding: DEFAULT_BRANDING,
       features: DEFAULT_UI_FEATURES,
       loaded: false,
@@ -56,6 +57,18 @@ describe("uiConfigStore", () => {
     expect(useUIConfigStore.getState().features.kanban).toBe(false);
     expect(useUIConfigStore.getState().features.graph).toBe(true);
     expect(useUIConfigStore.getState().features.canvas).toBe(true);
+  });
+
+  it("stores allowed theme presets from ui-config", async () => {
+    vi.spyOn(api, "getUIConfig").mockResolvedValue({
+      themeLocked: false,
+      startPage: "welcome",
+      theme: { allowedPresets: ["Kiwi", "corporate-light"] },
+    });
+
+    await useUIConfigStore.getState().load();
+
+    expect(useUIConfigStore.getState().allowedPresets).toEqual(["Kiwi", "corporate-light"]);
   });
 
   it("falls back to defaults when ui-config fetch fails", async () => {
