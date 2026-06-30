@@ -14,6 +14,7 @@ export type KeybindingAction =
   | "graph"
   | "toggle_bases"
   | "toggle_timeline"
+  | "toggle_calendar"
   | "toggle_kanban"
   | "toggle_mode"
   | "shortcuts_help"
@@ -48,6 +49,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   graph: "mod+g",
   toggle_bases: "mod+shift+b",
   toggle_timeline: "mod+shift+t",
+  toggle_calendar: "mod+shift+c",
   toggle_kanban: "mod+shift+w",
   toggle_mode: "mod+shift+e",
   shortcuts_help: "mod+/",
@@ -185,6 +187,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { action: "graph", label: "Knowledge graph" },
       { action: "toggle_bases", label: "Toggle Bases" },
       { action: "toggle_timeline", label: "Toggle Timeline" },
+      { action: "toggle_calendar", label: "Toggle Calendar" },
       { action: "toggle_kanban", label: "Toggle Kanban" },
     ],
   },
@@ -218,4 +221,21 @@ export function matchBoundAction(
     if (eventMatchesChord(e, chord)) return action;
   }
   return null;
+}
+
+const SHORTCUT_IGNORED_SELECTORS =
+  "input, textarea, select, [contenteditable='true'], [contenteditable=''], [role='textbox'], .cm-editor, .cm-content, [cmdk-input]";
+
+/** Skip global shortcuts while focus is in an editable field or CodeMirror surface. */
+export function isKeyboardShortcutTargetIgnored(target: EventTarget | null): boolean {
+  if (!target || typeof (target as Element).closest !== "function") return false;
+  return !!(target as Element).closest(SHORTCUT_IGNORED_SELECTORS);
+}
+
+/** Open shortcuts help on bare "?" (Shift+/) outside editable targets. */
+export function shouldTriggerBareShortcutsHelp(e: KeyboardEvent): boolean {
+  if (isKeyboardShortcutTargetIgnored(e.target)) return false;
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  return key === "?" || (e.shiftKey && key === "/");
 }
