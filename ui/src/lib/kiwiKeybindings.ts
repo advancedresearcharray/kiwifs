@@ -168,6 +168,52 @@ export type ShortcutSection = {
   items: { action: KeybindingAction; label: string }[];
 };
 
+/** True when keyboard shortcuts should not fire (inputs, editors, etc.). */
+export function isKeyboardShortcutIgnoredTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") return false;
+  const el = target as HTMLElement;
+  if (!("tagName" in el)) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  if (el.closest("[contenteditable='true']")) return true;
+  if (el.closest(".cm-editor")) return true;
+  if (el.closest("[role='textbox']")) return true;
+  return false;
+}
+
+/** Standalone `?` (Shift+/ on US keyboards) without modifier keys. */
+export function isQuestionMarkShortcut(e: Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">): boolean {
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  return e.key === "?" || (e.shiftKey && e.key === "/");
+}
+
+export function getCustomKeybindingItems(
+  bindings: Record<KeybindingAction, string>,
+  defaults: Record<KeybindingAction, string>,
+): { action: KeybindingAction; label: string }[] {
+  const labels = new Map(
+    SHORTCUT_SECTIONS.flatMap((s) => s.items).map((i) => [i.action, i.label]),
+  );
+  const items: { action: KeybindingAction; label: string }[] = [];
+  for (const action of Object.keys(bindings) as KeybindingAction[]) {
+    if (bindings[action] !== defaults[action]) {
+      items.push({ action, label: labels.get(action) ?? action });
+    }
+  }
+  return items;
+}
+
+/** Shortcut sections for the cheat sheet, including a Custom group for config overrides. */
+export function buildShortcutSectionsForDisplay(
+  bindings: Record<KeybindingAction, string>,
+  defaults: Record<KeybindingAction, string> = DEFAULT_KEYBINDINGS,
+): ShortcutSection[] {
+  const custom = getCustomKeybindingItems(bindings, defaults);
+  if (custom.length === 0) return SHORTCUT_SECTIONS;
+  return [...SHORTCUT_SECTIONS, { section: "Custom", items: custom }];
+}
+
 export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     section: "Navigation",
