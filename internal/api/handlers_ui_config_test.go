@@ -232,3 +232,50 @@ func TestUIConfig_SidebarFromConfig(t *testing.T) {
 		t.Fatalf("sections = %+v", res.Sidebar.Sections)
 	}
 }
+
+func TestUIConfig_CalendarFeatureDefaultsTrue(t *testing.T) {
+	s := buildTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/ui-config", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var res struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if !res.Features["calendar"] {
+		t.Fatal("calendar feature should default to true")
+	}
+}
+
+func TestUIConfig_CalendarFeatureDisabled(t *testing.T) {
+	dir, pipe, cstore := buildTestPipeline(t)
+	falseVal := false
+	cfg := &config.Config{}
+	cfg.Storage.Root = dir
+	cfg.UI.Features.Calendar = &falseVal
+	s := NewServer(cfg, pipe, nil, cstore, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/kiwi/ui-config", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var res struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Features["calendar"] {
+		t.Fatal("calendar feature should be false when disabled in config")
+	}
+}
