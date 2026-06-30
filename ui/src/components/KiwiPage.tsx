@@ -41,6 +41,7 @@ import { PageTracker } from "@kw/widgets/PageTracker";
 
 import { PageSkeleton } from "./PageSkeleton";
 import { renderWikiLinkAnchor } from "./WikiLinkPreview";
+import { clearWikiLinkPeekCache } from "@kw/lib/wikiLinkPeek";
 import { trackRecent } from "./KiwiFavorites";
 import { Badge } from "@kw/components/ui/badge";
 import { Button } from "@kw/components/ui/button";
@@ -408,6 +409,10 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
       });
     return () => { cancelled = true; };
   }, [path, refreshKey, isDir]);
+
+  useEffect(() => {
+    clearWikiLinkPeekCache();
+  }, [path, refreshKey]);
 
   useEffect(() => {
     if (isDir) return;

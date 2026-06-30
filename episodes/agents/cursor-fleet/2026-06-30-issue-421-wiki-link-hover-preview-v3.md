@@ -20,13 +20,14 @@ Implement inline page preview on `[[wiki-link]]` hover for kiwifs/kiwifs#421 on 
 1. Added `@radix-ui/react-hover-card` + shadcn `hover-card` component.
 2. Implemented `api.peek`, `wikiLinkPeek` cache/dedup layer, and `WikiLinkPreview` HoverCard wrapper.
 3. Wired `renderWikiLinkAnchor()` into `KiwiPage` prose and local-notes markdown renderers (read mode only).
-4. Added 10 regression tests in `wikiLinkPeek.test.ts`.
+4. Added 15 regression tests in `wikiLinkPeek.test.ts` and `wikiLinkAnchor.test.ts`.
+5. Peer review fixes: pointer-only HoverCard open (no keyboard popover), cache invalidation on navigation, skip loading skeleton on cache hit.
 
 ## Test results
 
 ```
-cd ui && npm test -- src/lib/wikiLinkPeek.test.ts
-# 10 passed (2026-06-30)
+cd ui && npm test -- src/lib/wikiLinkPeek.test.ts src/lib/wikiLinkAnchor.test.ts
+# 15 passed (2026-06-30)
 ```
 
 ## Notes

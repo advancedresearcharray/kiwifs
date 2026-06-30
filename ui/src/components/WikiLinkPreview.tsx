@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { FileQuestion, Tag } from "lucide-react";
 import {
   HoverCard,
@@ -15,9 +15,11 @@ import {
 import { Badge } from "@kw/components/ui/badge";
 import {
   fetchWikiLinkPeek,
+  getCachedWikiLinkPeek,
   type WikiLinkPeekData,
   type WikiLinkPeekResult,
 } from "@kw/lib/wikiLinkPeek";
+import { parseWikiLinkHref } from "@kw/lib/wikiLinkAnchor";
 
 function scrollToAnchor(anchor: string, delayMs = 100) {
   requestAnimationFrame(() => {
@@ -42,15 +44,12 @@ export function renderWikiLinkAnchor({
   onNavigate,
   rest,
 }: WikiLinkAnchorArgs): React.ReactNode | null {
-  if (href.startsWith("#kiwi:")) {
-    const raw = href.slice("#kiwi:".length);
-    const hashIdx = raw.indexOf("#");
-    const pagePath = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
-    const anchor = hashIdx >= 0 ? raw.slice(hashIdx) : "";
+  const parsed = parseWikiLinkHref(href);
+  if (parsed.kind === "resolved") {
     return (
       <WikiLinkPreview
-        pagePath={pagePath}
-        anchor={anchor || undefined}
+        pagePath={parsed.pagePath}
+        anchor={parsed.anchor}
         className="wiki-link"
         onNavigate={onNavigate}
         onAnchorScroll={(a) => scrollToAnchor(a)}
@@ -61,14 +60,13 @@ export function renderWikiLinkAnchor({
     );
   }
 
-  if (href.startsWith("#kiwi-missing:")) {
-    const target = href.slice("#kiwi-missing:".length);
+  if (parsed.kind === "missing") {
     return (
       <WikiLinkPreview
-        pagePath={target}
+        pagePath={parsed.pagePath}
         missing
         className="wiki-link-missing"
-        title={`Missing: ${target} — click to create`}
+        title={`Missing: ${parsed.pagePath} — click to create`}
         onNavigate={onNavigate}
         {...rest}
       >
@@ -127,7 +125,7 @@ function PreviewBody({
     );
   }
 
-  if (!result || loading) {
+  if (!result) {
     return <PreviewSkeleton />;
   }
 
@@ -171,23 +169,54 @@ export function WikiLinkPreview({
   onAnchorScroll,
   children,
 }: WikiLinkPreviewProps) {
+  const [open, setOpen] = useState(false);
   const [result, setResult] = useState<WikiLinkPeekResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const pointerInside = useRef(false);
+  const fetchGeneration = useRef(0);
+
+  const loadPreview = useCallback(async () => {
+    if (missing) {
+      setResult({ status: "not_found" });
+      return;
+    }
+    const cached = getCachedWikiLinkPeek(pagePath);
+    if (cached) {
+      setResult(cached);
+      setLoading(false);
+      return;
+    }
+    const generation = ++fetchGeneration.current;
+    setLoading(true);
+    const peek = await fetchWikiLinkPeek(pagePath);
+    if (generation !== fetchGeneration.current) return;
+    setResult(peek);
+    setLoading(false);
+  }, [missing, pagePath]);
 
   const handleOpenChange = useCallback(
-    async (open: boolean) => {
-      if (!open) return;
-      if (missing) {
-        setResult({ status: "not_found" });
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setOpen(false);
+        fetchGeneration.current += 1;
+        setLoading(false);
         return;
       }
-      setLoading(true);
-      const peek = await fetchWikiLinkPeek(pagePath);
-      setResult(peek);
-      setLoading(false);
+      // Radix opens on keyboard focus too; only allow pointer-driven opens.
+      if (!pointerInside.current) return;
+      setOpen(true);
+      void loadPreview();
     },
-    [missing, pagePath],
+    [loadPreview],
   );
+
+  const markPointerInside = () => {
+    pointerInside.current = true;
+  };
+
+  const markPointerOutside = () => {
+    pointerInside.current = false;
+  };
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
@@ -209,11 +238,13 @@ export function WikiLinkPreview({
   const previewResult: WikiLinkPeekResult | null = result;
 
   return (
-    <HoverCard openDelay={300} closeDelay={100} onOpenChange={handleOpenChange}>
+    <HoverCard open={open} openDelay={300} closeDelay={100} onOpenChange={handleOpenChange}>
       <HoverCardTrigger asChild>
         <a
           href={missing ? "#" : anchor ? `#${pagePath}${anchor}` : `#${pagePath}`}
           onClick={handleClick}
+          onPointerEnter={markPointerInside}
+          onPointerLeave={markPointerOutside}
           title={title}
           className={className}
         >
@@ -222,6 +253,8 @@ export function WikiLinkPreview({
       </HoverCardTrigger>
       <HoverCardContent
         className="max-w-[320px]"
+        onPointerEnter={markPointerInside}
+        onPointerLeave={markPointerOutside}
         onPointerDown={(e: React.PointerEvent) => e.preventDefault()}
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
