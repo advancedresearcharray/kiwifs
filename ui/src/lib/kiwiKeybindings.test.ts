@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_KEYBINDINGS,
   buildChordIndex,
+  buildShortcutSectionsForDisplay,
   eventMatchesChord,
   formatChordDisplay,
+  getCustomKeybindingItems,
+  isKeyboardShortcutIgnoredTarget,
+  isQuestionMarkShortcut,
   matchBoundAction,
   mergeKeybindings,
   normalizeChord,
@@ -99,5 +103,78 @@ describe("buildChordIndex", () => {
 describe("formatChordDisplay", () => {
   it("formats mod shortcuts for display", () => {
     expect(formatChordDisplay("mod+k")).toMatch(/K/i);
+  });
+});
+
+describe("isKeyboardShortcutIgnoredTarget", () => {
+  it("ignores native text inputs", () => {
+    const input = { tagName: "INPUT", isContentEditable: false, closest: () => null } as unknown as HTMLElement;
+    expect(isKeyboardShortcutIgnoredTarget(input)).toBe(true);
+  });
+
+  it("ignores contenteditable regions", () => {
+    const div = {
+      tagName: "DIV",
+      isContentEditable: true,
+      closest: () => null,
+    } as unknown as HTMLElement;
+    expect(isKeyboardShortcutIgnoredTarget(div)).toBe(true);
+  });
+
+  it("allows non-editable elements", () => {
+    const button = {
+      tagName: "BUTTON",
+      isContentEditable: false,
+      closest: () => null,
+    } as unknown as HTMLElement;
+    expect(isKeyboardShortcutIgnoredTarget(button)).toBe(false);
+  });
+});
+
+describe("isQuestionMarkShortcut", () => {
+  it("matches standalone question mark", () => {
+    expect(
+      isQuestionMarkShortcut({
+        key: "?",
+        shiftKey: true,
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects mod+/ combo", () => {
+    expect(
+      isQuestionMarkShortcut({
+        key: "/",
+        shiftKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("buildShortcutSectionsForDisplay", () => {
+  it("adds Custom section for config overrides", () => {
+    const bindings = mergeKeybindings({
+      bindings: { search: "mod+j" },
+      defaults: DEFAULT_KEYBINDINGS,
+      conflicts: [],
+    });
+    const custom = getCustomKeybindingItems(bindings, DEFAULT_KEYBINDINGS);
+    expect(custom).toEqual([{ action: "search", label: "Search" }]);
+
+    const sections = buildShortcutSectionsForDisplay(bindings, DEFAULT_KEYBINDINGS);
+    expect(sections.some((s) => s.section === "Custom")).toBe(true);
+    expect(sections.find((s) => s.section === "Custom")?.items).toEqual(custom);
+  });
+
+  it("omits Custom section when bindings match defaults", () => {
+    const bindings = mergeKeybindings(null);
+    const sections = buildShortcutSectionsForDisplay(bindings, DEFAULT_KEYBINDINGS);
+    expect(sections.some((s) => s.section === "Custom")).toBe(false);
   });
 });
