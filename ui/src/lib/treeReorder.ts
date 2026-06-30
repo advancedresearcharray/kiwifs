@@ -1,5 +1,5 @@
 import type { TreeEntry } from "./api";
-import { isMarkdown, stripTrailingSlash } from "./paths";
+import { stripTrailingSlash } from "./paths";
 
 export type OptimisticTreeMoveArgs = {
   dragIds: string[];
@@ -129,50 +129,22 @@ const removeEntry = (children: TreeEntry[], id: string): RemoveResult => {
 };
 
 /**
- * Reports whether a row should receive a visual sibling order number.
- *
- * @param child - Tree row in the destination sibling list.
- * @returns True for directories and markdown files.
- */
-const isOrderableSibling = (child: TreeEntry): boolean => {
-  if (child.isDir) {
-    return true;
-  }
-  return isMarkdown(child.path);
-};
-
-/**
- * Reassigns one-based order values to directories and markdown files only.
- *
- * @param children - Destination sibling list after insertion.
- * @returns A copied sibling list with updated order fields where applicable.
- */
-const renumberOrderableSiblings = (children: TreeEntry[]): TreeEntry[] => {
-  return children.reduce<{ rows: TreeEntry[]; order: number }>((state, child) => {
-    if (!isOrderableSibling(child)) {
-      return { rows: [...state.rows, child], order: state.order };
-    }
-    return { rows: [...state.rows, { ...child, order: state.order }], order: state.order + 1 };
-  }, { rows: [], order: 1 }).rows;
-};
-
-/**
  * Inserts a row into an immutable sibling list at a clamped index.
  *
  * @param children - Destination siblings.
  * @param parentId - Destination folder id, or null for the root.
  * @param index - Requested insertion index from the tree widget.
  * @param entry - Removed row to insert.
- * @returns New sibling list with recalculated order values.
+ * @returns New sibling list with the moved row at the requested position.
  */
 const insertAtIndex = (children: TreeEntry[], parentId: string | null, index: number, entry: TreeEntry): TreeEntry[] => {
   const safeIndex = Math.max(0, Math.min(index, children.length));
   const moved = retargetMovedEntry(entry, parentId);
-  return renumberOrderableSiblings([
+  return [
     ...children.slice(0, safeIndex),
     moved,
     ...children.slice(safeIndex),
-  ]);
+  ];
 };
 
 /**
