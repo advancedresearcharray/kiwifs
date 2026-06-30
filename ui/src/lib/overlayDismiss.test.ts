@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { resolveOverlayDismiss, type OverlayState } from "./overlayDismiss";
+import {
+  isKeyboardShortcutsOverlayOpen,
+  resolveOverlayDismiss,
+  setKeyboardShortcutsOverlayOpen,
+  shouldSuppressKeybindingWhileShortcutsOpen,
+  type OverlayState,
+} from "./overlayDismiss";
 
 const closed: OverlayState = {
   shortcutsOpen: false,
@@ -14,6 +20,31 @@ const closed: OverlayState = {
   timelineOpen: false,
   kanbanOpen: false,
 };
+
+describe("isKeyboardShortcutsOverlayOpen", () => {
+  it("tracks open state via setKeyboardShortcutsOverlayOpen", () => {
+    setKeyboardShortcutsOverlayOpen(false);
+    expect(isKeyboardShortcutsOverlayOpen()).toBe(false);
+    setKeyboardShortcutsOverlayOpen(true);
+    expect(isKeyboardShortcutsOverlayOpen()).toBe(true);
+    setKeyboardShortcutsOverlayOpen(false);
+  });
+});
+
+describe("shouldSuppressKeybindingWhileShortcutsOpen", () => {
+  it("allows close_overlay while shortcuts help is open", () => {
+    expect(shouldSuppressKeybindingWhileShortcutsOpen(true, "close_overlay")).toBe(false);
+  });
+
+  it("blocks other actions while shortcuts help is open", () => {
+    expect(shouldSuppressKeybindingWhileShortcutsOpen(true, "search")).toBe(true);
+    expect(shouldSuppressKeybindingWhileShortcutsOpen(true, "new_page")).toBe(true);
+  });
+
+  it("does not block when shortcuts help is closed", () => {
+    expect(shouldSuppressKeybindingWhileShortcutsOpen(false, "search")).toBe(false);
+  });
+});
 
 describe("resolveOverlayDismiss", () => {
   it("returns null when no overlays are open", () => {
