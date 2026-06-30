@@ -625,7 +625,7 @@ export const api = {
       welcomeMessage?: string;
     };
     features?: Partial<Record<
-      "graph" | "kanban" | "canvas" | "whiteboard" | "timeline" | "bases" | "data_sources",
+      "graph" | "kanban" | "canvas" | "whiteboard" | "timeline" | "calendar" | "bases" | "data_sources",
       boolean
     >>;
     toolbarViews?: string[] | null;

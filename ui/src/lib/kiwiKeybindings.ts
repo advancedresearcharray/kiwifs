@@ -14,6 +14,7 @@ export type KeybindingAction =
   | "graph"
   | "toggle_bases"
   | "toggle_timeline"
+  | "toggle_calendar"
   | "toggle_kanban"
   | "toggle_mode"
   | "shortcuts_help"
@@ -48,6 +49,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   graph: "mod+g",
   toggle_bases: "mod+shift+b",
   toggle_timeline: "mod+shift+t",
+  toggle_calendar: "mod+shift+c",
   toggle_kanban: "mod+shift+w",
   toggle_mode: "mod+shift+e",
   shortcuts_help: "mod+/",
@@ -185,6 +187,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { action: "graph", label: "Knowledge graph" },
       { action: "toggle_bases", label: "Toggle Bases" },
       { action: "toggle_timeline", label: "Toggle Timeline" },
+      { action: "toggle_calendar", label: "Toggle Calendar" },
       { action: "toggle_kanban", label: "Toggle Kanban" },
     ],
   },
