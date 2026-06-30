@@ -212,6 +212,34 @@ function createMockFetch(overrides: MockOverrides = {}) {
             has_more: false,
           });
         }
+        if (/striptime\(/i.test(dql) && /DATE\("/i.test(dql)) {
+          const rows = overrides.calendarRows ?? [
+            { _path: "pages/frontmatter.md", title: "Frontmatter Guide", date: new Date().toISOString().slice(0, 10), tags: ["docs"], status: "published" },
+          ];
+          const columns = rows.length > 0
+            ? ["_path", ...Object.keys(rows[0]).filter((k) => k !== "_path")]
+            : ["_path", "title", "date"];
+          return jsonResponse({
+            columns,
+            rows,
+            total: rows.length,
+            has_more: false,
+          });
+        }
+        if (/date != null OR due != null/i.test(dql)) {
+          const rows = overrides.calendarRows ?? [
+            { _path: "pages/frontmatter.md", date: "2026-06-20", due: "2026-06-25", created: "2026-06-01" },
+          ];
+          const columns = rows.length > 0
+            ? ["_path", ...Object.keys(rows[0]).filter((k) => k !== "_path")]
+            : ["_path", "date", "due", "created"];
+          return jsonResponse({
+            columns,
+            rows,
+            total: rows.length,
+            has_more: false,
+          });
+        }
         const rows = overrides.queryRows ?? [
           { _path: "pages/frontmatter.md", title: "Frontmatter Guide", status: "published", priority: "high" },
           { _path: "pages/wikilinks.md", title: "Wiki Links", status: "published", priority: "medium" },
@@ -370,6 +398,7 @@ function createMockFetch(overrides: MockOverrides = {}) {
             canvas: true,
             whiteboard: true,
             timeline: true,
+            calendar: true,
             bases: true,
             data_sources: true,
             ...(cfg.features ?? {}),
