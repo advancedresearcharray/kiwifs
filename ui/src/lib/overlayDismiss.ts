@@ -1,3 +1,15 @@
+/** Module flag synced from App when the shortcuts cheat sheet opens/closes. */
+let shortcutsOverlayOpen = false;
+
+export function setKeyboardShortcutsOverlayOpen(open: boolean): void {
+  shortcutsOverlayOpen = open;
+}
+
+/** True while the keyboard shortcuts cheat sheet is visible (blocks sub-view key handlers). */
+export function isKeyboardShortcutsOverlayOpen(): boolean {
+  return shortcutsOverlayOpen;
+}
+
 /** Overlay state used by Escape / close_overlay keybinding dispatch. */
 export type OverlayState = {
   shortcutsOpen: boolean;
@@ -25,6 +37,14 @@ export type OverlayDismissTarget =
   | "whiteboard"
   | "timeline"
   | "kanban";
+
+/** While the shortcuts cheat sheet is open, block other global keybindings (Esc still works via close_overlay). */
+export function shouldSuppressKeybindingWhileShortcutsOpen(
+  shortcutsOpen: boolean,
+  action: string,
+): boolean {
+  return shortcutsOpen && action !== "close_overlay";
+}
 
 /** Returns the topmost overlay to dismiss, or null when nothing is open. */
 export function resolveOverlayDismiss(state: OverlayState): OverlayDismissTarget | null {

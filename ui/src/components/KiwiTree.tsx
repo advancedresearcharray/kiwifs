@@ -60,6 +60,7 @@ import {
 import { type TreeRevealRequest } from "@kw/lib/treeReveal";
 import { createTreePageDragData } from "@kw/lib/kanbanDnd";
 import { shouldApplyTreeLoad } from "@kw/lib/treeRefresh";
+import { isKeyboardShortcutsOverlayOpen } from "@kw/lib/overlayDismiss";
 import { applyOptimisticTreeMove } from "@kw/lib/treeReorder";
 import {
   filterTreeForExclude,
@@ -685,6 +686,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
   // Copy / cut / paste (VS Code-style) when tree has focus
   useEffect(() => {
     const onKeyDown = async (e: KeyboardEvent) => {
+      if (isKeyboardShortcutsOverlayOpen()) return;
       const tree = treeRef.current;
       if (!tree?.hasFocus) return;
       const mod = e.metaKey || e.ctrlKey;

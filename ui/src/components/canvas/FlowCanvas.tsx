@@ -44,6 +44,7 @@ import {
   PopoverTrigger,
 } from "@kw/components/ui/popover";
 import { api, sseUrl } from "@kw/lib/api";
+import { isKeyboardShortcutsOverlayOpen } from "@kw/lib/overlayDismiss";
 import { applyDagreLayout } from "@kw/lib/canvasLayout";
 import CanvasTextNode from "./CanvasTextNode";
 import CanvasFileNode from "./CanvasFileNode";
@@ -685,6 +686,7 @@ function FlowCanvasInner({ path, onNavigate }: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isKeyboardShortcutsOverlayOpen()) return;
       const mod = e.metaKey || e.ctrlKey;
 
       if (mod && e.key.toLowerCase() === "s") {

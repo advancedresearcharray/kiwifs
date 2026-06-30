@@ -219,3 +219,20 @@ export function matchBoundAction(
   }
   return null;
 }
+
+const SHORTCUT_IGNORED_SELECTORS =
+  "input, textarea, select, [contenteditable='true'], [contenteditable=''], [role='textbox'], .cm-editor, .cm-content, [cmdk-input]";
+
+/** Skip global shortcuts while focus is in an editable field or CodeMirror surface. */
+export function isKeyboardShortcutTargetIgnored(target: EventTarget | null): boolean {
+  if (!target || typeof (target as Element).closest !== "function") return false;
+  return !!(target as Element).closest(SHORTCUT_IGNORED_SELECTORS);
+}
+
+/** Open shortcuts help on bare "?" (Shift+/) outside editable targets. */
+export function shouldTriggerBareShortcutsHelp(e: KeyboardEvent): boolean {
+  if (isKeyboardShortcutTargetIgnored(e.target)) return false;
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  return key === "?" || (e.shiftKey && key === "/");
+}
