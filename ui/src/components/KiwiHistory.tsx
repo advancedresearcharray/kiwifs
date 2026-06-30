@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { formatDistanceToNow, parseISO } from "date-fns";
-import { GitBranch, History, RotateCcw, User, X } from "lucide-react";
+import { GitBranch, History, RotateCcw, SplitSquareHorizontal, User, X } from "lucide-react";
 import { api, type BlameLine, type Version } from "@kw/lib/api";
 import { titleize } from "@kw/lib/paths";
 import { Button } from "@kw/components/ui/button";
@@ -14,6 +14,7 @@ type Props = {
   path: string;
   onClose: () => void;
   onRestored?: () => void;
+  onCompareWithCurrent?: (path: string, versionHash: string) => void;
 };
 
 // Parse git date strings liberally — git uses multiple formats depending on
@@ -36,7 +37,7 @@ function relative(d: string): string {
   return formatDistanceToNow(parsed, { addSuffix: true });
 }
 
-export function KiwiHistory({ path, onClose, onRestored }: Props) {
+export function KiwiHistory({ path, onClose, onRestored, onCompareWithCurrent }: Props) {
   const [versions, setVersions] = useState<Version[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
@@ -182,6 +183,18 @@ export function KiwiHistory({ path, onClose, onRestored }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {selectedHash && onCompareWithCurrent && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onCompareWithCurrent(path, selectedHash);
+                onClose();
+              }}
+            >
+              <SplitSquareHorizontal className="h-3.5 w-3.5" /> Compare with current
+            </Button>
+          )}
           {selectedHash && versions && versions.length > 0 && selectedHash !== versions[0].hash && (
             confirmRestore ? (
               <div className="flex items-center gap-1">
