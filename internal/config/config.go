@@ -273,9 +273,31 @@ type ToolbarConfig struct {
 	Views []string `toml:"views"`
 }
 
+// UIThemeConfig controls workspace theme preset discovery via [ui.theme].
+type UIThemeConfig struct {
+	PresetsDir     string   `toml:"presets_dir"`     // relative path, default .kiwi/themes/
+	AllowedPresets []string `toml:"allowed_presets"` // when set, only these preset names appear in the UI
+}
+
+const DefaultThemePresetsDir = ".kiwi/themes/"
+
+// ResolvedPresetsDir returns a safe workspace-relative presets directory.
+func (t UIThemeConfig) ResolvedPresetsDir() string {
+	rel := strings.TrimSpace(t.PresetsDir)
+	if rel == "" {
+		return DefaultThemePresetsDir
+	}
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if filepath.IsAbs(rel) || strings.Contains(rel, "..") {
+		return DefaultThemePresetsDir
+	}
+	return rel
+}
+
 // UIConfig controls frontend behaviour. Toggled via [ui] in config.toml.
 type UIConfig struct {
 	ThemeLocked     bool              `toml:"theme_locked"`
+	Theme           UIThemeConfig     `toml:"theme"`
 	CustomCSS       string            `toml:"custom_css"`       // relative path, default .kiwi/custom.css
 	KeybindingsFile string            `toml:"keybindings_file"` // relative path, default .kiwi/keybindings.json
 	Keybindings     map[string]string `toml:"keybindings"`      // inline [ui.keybindings] overrides

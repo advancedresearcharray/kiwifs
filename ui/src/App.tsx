@@ -54,6 +54,13 @@ import { formatDocumentTitle } from "./lib/pageTitle";
 import { useUIConfigStore } from "./lib/uiConfigStore";
 import { Button } from "./components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -171,7 +178,7 @@ export default function App() {
     } catch { return 272; }
   });
   const resizing = useRef(false);
-  const { theme, toggleTheme, themeLocked } = useTheme({
+  const { theme, toggleTheme, preset, setPreset, presets, themeLocked } = useTheme({
     serverPrefs: prefsLoaded ? prefs : null,
     onPresetChange: (preset) => updatePreferences({ theme: preset }),
   });
@@ -733,6 +740,23 @@ const handleSpaceSwitch = useCallback(() => {
               }}
             />
             <HostToolbarActions />
+            {!themeLocked && presets.length > 0 && (
+              <Select value={preset} onValueChange={setPreset}>
+                <SelectTrigger
+                  className="h-8 w-[9rem] border-0 bg-transparent shadow-none focus:ring-0 text-xs"
+                  aria-label="Theme preset"
+                >
+                  <SelectValue placeholder="Theme" />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((p) => (
+                    <SelectItem key={p.name} value={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
