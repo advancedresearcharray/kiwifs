@@ -309,6 +309,125 @@ Metadata: https://169.254.169.254/latest/meta-data
 	}
 }
 
+func TestScan_ExternalLinkConcurrentLimit(t *testing.T) {
+	var (
+		inFlight atomic.Int32
+		maxSeen  atomic.Int32
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cur := inFlight.Add(1)
+		for {
+			prev := maxSeen.Load()
+			if cur <= prev || maxSeen.CompareAndSwap(prev, cur) {
+				break
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+		inFlight.Add(-1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	body := `---
+title: Page
+owner: alice
+status: verified
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---
+
+`
+	for i := 0; i < 6; i++ {
+		body += "Link: " + srv.URL + "/page" + string(rune('a'+i)) + "\n"
+	}
+
+	store, root := buildStore(t, map[string]string{"page.md": body})
+	sc := New(root, store, nil, 90, WithExternalLinks(ExternalLinkConfig{
+		Enabled:       true,
+		Timeout:       5 * time.Second,
+		CachePath:     filepath.Join(root, ".kiwi", "cache", "link-check.json"),
+		Client:        srv.Client(),
+		Ignore:        []string{"example.com"},
+		MaxConcurrent: 2,
+		RequestDelay:  0,
+	}))
+	if _, err := sc.Scan(context.Background()); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if got := maxSeen.Load(); got > 2 {
+		t.Fatalf("expected at most 2 concurrent probes, saw %d", got)
+	}
+}
+
+func TestDoLinkRequest_SetsUserAgent(t *testing.T) {
+	var gotUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	status, err := doLinkRequest(context.Background(), srv.Client(), srv.URL, http.MethodHead, nil)
+	if err != nil {
+		t.Fatalf("doLinkRequest: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if gotUA != defaultLinkUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", gotUA, defaultLinkUserAgent)
+	}
+}
+
+func TestScanResult_ExternalLinksJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	store, root := buildStore(t, map[string]string{
+		"page.md": `---
+title: Page
+owner: alice
+status: verified
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---
+
+Broken: ` + srv.URL + `/gone
+`,
+	})
+	sc := New(root, store, nil, 90, WithExternalLinks(ExternalLinkConfig{
+		Enabled:       true,
+		Timeout:       2 * time.Second,
+		CachePath:     filepath.Join(root, ".kiwi", "cache", "link-check.json"),
+		Client:        srv.Client(),
+		Ignore:        []string{"example.com"},
+		RequestDelay:  0,
+		MaxConcurrent: 1,
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	data, err := json.Marshal(res)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded struct {
+		ExternalLinks []ExternalLinkFinding `json:"external_links"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(decoded.ExternalLinks) != 1 {
+		t.Fatalf("external_links = %+v", decoded.ExternalLinks)
+	}
+	if decoded.ExternalLinks[0].Rule != externalLinkRuleName {
+		t.Fatalf("rule = %q", decoded.ExternalLinks[0].Rule)
+	}
+}
+
 func TestScan_ExternalLinkMaxChecksCap(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

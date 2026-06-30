@@ -27,20 +27,19 @@ links in `GET /api/kiwi/janitor` under `external_links`.
 ## Tests (hands-on verification 2026-06-30)
 
 ```text
-ok  github.com/kiwifs/kiwifs/internal/janitor  0.061s
-ok  github.com/kiwifs/kiwifs/internal/config   0.010s
-ok  github.com/kiwifs/kiwifs/cmd               0.585s
-ok  github.com/kiwifs/kiwifs/internal/api      10.540s
+ok  github.com/kiwifs/kiwifs/internal/janitor  0.228s  (20 external-link tests)
+ok  github.com/kiwifs/kiwifs/internal/config   0.023s
+ok  github.com/kiwifs/kiwifs/cmd               0.653s
+ok  github.com/kiwifs/kiwifs/internal/api      10.770s
+ok  github.com/kiwifs/kiwifs/internal/bootstrap 1.061s
 ```
 
-17 external-link regression tests pass (404/500, SSRF, cache, HEAD→GET fallback,
-frontmatter skip, whitelist, max-checks cap, unreachable host).
+20 external-link regression tests pass (404/500, SSRF, cache, HEAD→GET fallback,
+frontmatter skip, whitelist, max-checks cap, concurrent limit, User-Agent,
+JSON serialization, unreachable host).
 
-Added regression tests: frontmatter URL exclusion at scan level, cached broken
-links reported on subsequent scans without re-probing.
-
-Regression coverage includes: 404/500 flagging, SSRF blocks, whitelist, cache skip,
-HEAD→GET fallback, max-checks cap, unreachable hosts, config TOML parsing.
+Added regression tests: concurrent probe limit (max 2 in-flight), User-Agent
+header on outbound probes, ScanResult JSON `external_links` field shape.
 
 ## Outcome
 
