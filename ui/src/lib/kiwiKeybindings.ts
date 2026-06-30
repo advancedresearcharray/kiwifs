@@ -219,3 +219,33 @@ export function matchBoundAction(
   }
   return null;
 }
+
+/** True when the event target is an editable field (skip global shortcuts). */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") return false;
+  const el = target as HTMLElement;
+  if (typeof el.tagName !== "string") return false;
+  const tag = el.tagName.toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  if (el.isContentEditable) return true;
+  if (typeof el.closest === "function" && el.closest("[contenteditable='true'], .cm-content, [cmdk-input]")) {
+    return true;
+  }
+  return false;
+}
+
+/** Plain `?` (no modifiers) opens the shortcuts overlay outside editable targets. */
+export function shouldOpenShortcutsHelp(
+  e: Pick<KeyboardEvent, "key" | "shiftKey" | "ctrlKey" | "metaKey" | "altKey">,
+): boolean {
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  return e.key === "?" || (e.key === "/" && e.shiftKey);
+}
+
+export function isCustomBinding(
+  action: KeybindingAction,
+  bindings: Record<KeybindingAction, string>,
+  defaults: Record<KeybindingAction, string>,
+): boolean {
+  return bindings[action] !== defaults[action];
+}

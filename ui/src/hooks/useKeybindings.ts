@@ -16,8 +16,12 @@ export function useKeybindings() {
 
   const bindings = useMemo(() => mergeKeybindings(config), [config]);
   const conflicts = config?.conflicts ?? [];
+  const defaults = useMemo(
+    () => mergeKeybindings({ bindings: config?.defaults ?? {}, defaults: DEFAULT_KEYBINDINGS, conflicts: [] }),
+    [config?.defaults],
+  );
 
-  return { bindings, conflicts, defaults: config?.defaults ?? DEFAULT_KEYBINDINGS };
+  return { bindings, conflicts, defaults };
 }
 
 export type { KeybindingAction };
