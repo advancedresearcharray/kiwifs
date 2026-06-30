@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   addMonths,
   buildCalendarQuery,
+  buildCalendarQueryRange,
   buildMonthGrid,
+  dayAfter,
   detectDateFields,
   entryDotColor,
   groupByDate,
@@ -17,6 +19,16 @@ describe("calendarView", () => {
     expect(buildCalendarQuery("date", "2026-06")).toBe(
       'TABLE _path, date, tags, state, title WHERE striptime(date) >= DATE("2026-06-01") AND striptime(date) < DATE("2026-07-01")',
     );
+  });
+
+  it("builds arbitrary date-range queries for mobile week spans", () => {
+    expect(buildCalendarQueryRange("due", "2026-05-26", "2026-06-02")).toBe(
+      'TABLE _path, due, tags, state, title WHERE striptime(due) >= DATE("2026-05-26") AND striptime(due) < DATE("2026-06-02")',
+    );
+  });
+
+  it("computes exclusive end date for week queries", () => {
+    expect(dayAfter("2026-06-21")).toBe("2026-06-22");
   });
 
   it("computes month boundaries including year rollover", () => {

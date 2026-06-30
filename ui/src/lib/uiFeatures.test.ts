@@ -28,4 +28,10 @@ describe("uiFeatures", () => {
     expect(isViewRouteAllowed("/view/kanban", features)).toBe(false);
     expect(isViewRouteAllowed("/view/graph", features)).toBe(true);
   });
+
+  it("blocks /view/calendar when calendar feature is disabled", () => {
+    const features = resolveUIFeatures({ calendar: false });
+    expect(isViewRouteAllowed("/view/calendar", features)).toBe(false);
+    expect(isViewRouteAllowed("/view/calendar", resolveUIFeatures())).toBe(true);
+  });
 });
