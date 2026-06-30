@@ -14,6 +14,7 @@ describe("normalizeChord", () => {
     expect(normalizeChord("Ctrl+Shift+B")).toBe("mod+shift+b");
     expect(normalizeChord("Mod+K")).toBe("mod+k");
     expect(normalizeChord("Escape")).toBe("escape");
+    expect(normalizeChord("Mod+\\")).toBe("mod+\\");
   });
 });
 

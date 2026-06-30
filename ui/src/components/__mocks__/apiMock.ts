@@ -403,6 +403,7 @@ function createMockFetch(overrides: MockOverrides = {}) {
             undo: "mod+z",
             focus_tree_filter: "mod+alt+f",
             close_overlay: "escape",
+            toggle_split_view: "mod+\\",
           },
           defaults: {},
           conflicts: [],
