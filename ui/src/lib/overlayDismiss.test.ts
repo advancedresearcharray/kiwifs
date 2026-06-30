@@ -12,6 +12,7 @@ const closed: OverlayState = {
   canvasOpen: false,
   whiteboardOpen: false,
   timelineOpen: false,
+  calendarOpen: false,
   kanbanOpen: false,
 };
 
