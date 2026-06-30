@@ -11,11 +11,14 @@ const PanelGroupContext = React.createContext<PanelGroupContextValue | null>(nul
 
 type ResizablePanelGroupProps = React.HTMLAttributes<HTMLDivElement> & {
   direction?: "horizontal" | "vertical";
+  /** Initial panel sizes as percentages; restored from sessionStorage in split view. */
+  defaultLayout?: number[];
   onLayout?: (sizes: number[]) => void;
 };
 
 export function ResizablePanelGroup({
   direction = "horizontal",
+  defaultLayout,
   onLayout,
   className,
   children,
@@ -25,9 +28,12 @@ export function ResizablePanelGroup({
   const panelCount = childArray.filter(
     (child) => React.isValidElement(child) && (child.type as { displayName?: string }).displayName === "ResizablePanel",
   ).length;
-  const [sizes, setSizesState] = React.useState<number[]>(() =>
-    Array.from({ length: Math.max(panelCount, 2) }, () => 100 / Math.max(panelCount, 2)),
-  );
+  const [sizes, setSizesState] = React.useState<number[]>(() => {
+    if (defaultLayout?.length === panelCount && defaultLayout.every((n) => Number.isFinite(n) && n > 0)) {
+      return defaultLayout;
+    }
+    return Array.from({ length: Math.max(panelCount, 2) }, () => 100 / Math.max(panelCount, 2));
+  });
 
   const setSizes = React.useCallback(
     (next: number[]) => {

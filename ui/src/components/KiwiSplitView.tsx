@@ -139,6 +139,7 @@ export function KiwiSplitView({
       <ResizablePanelGroup
         direction="horizontal"
         className="flex-1 min-h-0"
+        defaultLayout={[sizes[0], sizes[1]]}
         onLayout={(next) => {
           if (next.length === 2) setSizes([next[0], next[1]]);
         }}
