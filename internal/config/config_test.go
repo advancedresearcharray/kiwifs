@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/kiwifs/kiwifs/internal/links"
 )
@@ -802,5 +803,77 @@ func TestLoadJanitorExecutionStalenessDisabledByDefault(t *testing.T) {
 	}
 	if cfg.Janitor.ExecutionStaleness.Enabled() {
 		t.Fatal("expected execution staleness disabled when section omitted")
+	}
+}
+
+func TestLoadJanitorExternalLinkCheck(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[janitor]
+external_link_check = true
+external_link_timeout = "7s"
+external_link_cache_ttl = "12h"
+external_link_ignore = ["localhost", "internal.corp"]
+external_link_allow = ["github.com", "docs.example.com"]
+external_link_max_checks = 50
+external_link_max_concurrent = 5
+external_link_request_delay = "250ms"
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.Janitor.ExternalLinksEnabled() {
+		t.Fatal("expected external link check enabled")
+	}
+	if cfg.Janitor.ExternalLinkTimeoutDuration() != 7*time.Second {
+		t.Fatalf("timeout = %v", cfg.Janitor.ExternalLinkTimeoutDuration())
+	}
+	if cfg.Janitor.ExternalLinkCacheTTLDuration() != 12*time.Hour {
+		t.Fatalf("cache ttl = %v", cfg.Janitor.ExternalLinkCacheTTLDuration())
+	}
+	if len(cfg.Janitor.ResolvedExternalLinkIgnore()) != 2 {
+		t.Fatalf("ignore = %v", cfg.Janitor.ExternalLinkIgnore)
+	}
+	if len(cfg.Janitor.ExternalLinkAllow) != 2 {
+		t.Fatalf("allow = %v", cfg.Janitor.ExternalLinkAllow)
+	}
+	if cfg.Janitor.ResolvedExternalLinkMaxChecks() != 50 {
+		t.Fatalf("max checks = %d", cfg.Janitor.ResolvedExternalLinkMaxChecks())
+	}
+	if cfg.Janitor.ResolvedExternalLinkMaxConcurrent() != 5 {
+		t.Fatalf("max concurrent = %d", cfg.Janitor.ResolvedExternalLinkMaxConcurrent())
+	}
+	if cfg.Janitor.ExternalLinkRequestDelayDuration() != 250*time.Millisecond {
+		t.Fatalf("request delay = %v", cfg.Janitor.ExternalLinkRequestDelayDuration())
+	}
+}
+
+func TestJanitorExternalLinkDefaults(t *testing.T) {
+	cfg := JanitorConfig{}
+	if cfg.ExternalLinksEnabled() {
+		t.Fatal("expected disabled by default")
+	}
+	if cfg.ExternalLinkTimeoutDuration() != 5*time.Second {
+		t.Fatalf("default timeout = %v", cfg.ExternalLinkTimeoutDuration())
+	}
+	if cfg.ExternalLinkCacheTTLDuration() != 24*time.Hour {
+		t.Fatalf("default cache ttl = %v", cfg.ExternalLinkCacheTTLDuration())
+	}
+	if cfg.ExternalLinkRequestDelayDuration() != 100*time.Millisecond {
+		t.Fatalf("default request delay = %v", cfg.ExternalLinkRequestDelayDuration())
+	}
+	if cfg.ResolvedExternalLinkMaxChecks() != 200 {
+		t.Fatalf("default max checks = %d", cfg.ResolvedExternalLinkMaxChecks())
+	}
+	if cfg.ResolvedExternalLinkMaxConcurrent() != 10 {
+		t.Fatalf("default max concurrent = %d", cfg.ResolvedExternalLinkMaxConcurrent())
+	}
+	ignore := cfg.ResolvedExternalLinkIgnore()
+	if len(ignore) != 3 || ignore[0] != "localhost" {
+		t.Fatalf("default ignore = %v", ignore)
 	}
 }

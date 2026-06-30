@@ -27,6 +27,19 @@ Reports:
 
   - expired-memory — memory past expires_at or ttl
   - execution-stale — runbook not executed recently or last run failed
+  - external-link-rot — external https URL returned 4xx/5xx or is unreachable
+
+External link rot detection is opt-in via .kiwi/config.toml:
+
+  [janitor]
+  external_link_check = true
+  external_link_timeout = "5s"
+  external_link_ignore = ["localhost", "127.0.0.1", "example.com"]
+  external_link_allow = ["docs.example.com"]  # optional whitelist
+  external_link_cache_ttl = "24h"
+  external_link_max_checks = 200
+  external_link_max_concurrent = 10
+  external_link_request_delay = "100ms"
 
 Runbook execution staleness is opt-in via .kiwi/config.toml:
 
