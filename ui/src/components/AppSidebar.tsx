@@ -59,6 +59,7 @@ type AppSidebarProps = {
   onTreeSortModeChange: Dispatch<SetStateAction<TreeSortMode>>;
   onActivePathChange: (path: string | null) => void;
   onTreeRefresh: (options?: { background?: boolean; reconcile?: boolean }) => void;
+  onOpenInSplit?: (path: string) => void;
 };
 
 export function AppSidebar({
@@ -87,6 +88,7 @@ export function AppSidebar({
   onTreeSortModeChange,
   onActivePathChange,
   onTreeRefresh,
+  onOpenInSplit,
 }: AppSidebarProps) {
   const publishedPages = usePublishedPagesStore((state) => state.pages);
   const showPublishedList = usePublishedPagesStore((state) => state.showList);
@@ -245,6 +247,7 @@ export function AppSidebar({
                     activePath={activePath}
                     revealRequest={treeRevealRequest}
                     onSelect={onNavigate}
+                    onOpenInSplit={onOpenInSplit}
                     refreshKey={refreshKey}
                     filterQuery={treeFilter}
                     sortMode={treeSortMode}
@@ -329,6 +332,7 @@ export function AppSidebar({
               activePath={activePath}
               revealRequest={treeRevealRequest}
               onSelect={onNavigate}
+              onOpenInSplit={onOpenInSplit}
               refreshKey={refreshKey}
               filterQuery={treeFilter}
               sortMode={treeSortMode}

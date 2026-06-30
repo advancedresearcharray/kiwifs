@@ -10,7 +10,7 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import matter from "gray-matter";
 import Zoom from "react-medium-image-zoom";
 import "react-medium-image-zoom/dist/styles.css";
-import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, NotebookPen, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Bug, Calendar, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleAlert, ClipboardList, Columns2, Crosshair, Edit, Eye, File, FileAxis3D, FileQuestion, Flame, Folder, HelpCircle, History as HistoryIcon, Info, Lightbulb, Link2, List, ListChecks, MessageSquareQuote, NotebookPen, Pin, Plus, Quote, ScrollText, ShieldAlert, Star, Tag, TriangleAlert, Type, User, X, XCircle, Zap } from "lucide-react";
 import { api, type TreeEntry } from "@kw/lib/api";
 import { dirOf, normalizePath, titleize } from "@kw/lib/paths";
 import { readingTime } from "@kw/lib/readingTime";
@@ -43,6 +43,12 @@ import { PageSkeleton } from "./PageSkeleton";
 import { trackRecent } from "./KiwiFavorites";
 import { Badge } from "@kw/components/ui/badge";
 import { Button } from "@kw/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@kw/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kw/components/ui/tooltip";
 import remarkEmoji from "remark-emoji";
 import remarkSupersub from "remark-supersub";
@@ -69,6 +75,12 @@ type Props = {
   onTagClick?: (tag: string) => void;
   refreshKey?: number;
   onPublishedChanged?: () => void;
+  /** When set, render content from git history instead of the live file. */
+  versionHash?: string | null;
+  onOpenInSplit?: (path: string) => void;
+  showClosePane?: boolean;
+  onClosePane?: () => void;
+  readOnly?: boolean;
 };
 
 type FrontmatterProperty = {
@@ -371,7 +383,29 @@ function classifyMedia(src: string): "image" | "video" | "audio" | "pdf" | "unkn
   return "unknown";
 }
 
-export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealInTree, onToggleStar, isStarred, onTogglePin, isPinned, onDeleted, onDuplicated, onMoved, onTagClick, refreshKey, onPublishedChanged }: Props) {
+export function KiwiPage({
+  path,
+  tree,
+  onNavigate,
+  onEdit,
+  onHistory,
+  onRevealInTree,
+  onToggleStar,
+  isStarred,
+  onTogglePin,
+  isPinned,
+  onDeleted,
+  onDuplicated,
+  onMoved,
+  onTagClick,
+  refreshKey,
+  onPublishedChanged,
+  versionHash = null,
+  onOpenInSplit,
+  showClosePane = false,
+  onClosePane,
+  readOnly = false,
+}: Props) {
   const treeEntry = useMemo(() => findEntry(tree, path), [tree, path]);
   const isDir = treeEntry?.isDir ?? false;
 
@@ -393,9 +427,11 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
     setContent(null);
     setError(null);
     setLastModified(null);
-    trackRecent(path);
-    api
-      .readFile(path)
+    if (!versionHash) trackRecent(path);
+    const load = versionHash
+      ? api.readVersion(path, versionHash).then((body) => ({ content: body, lastModified: null }))
+      : api.readFile(path).then((r) => ({ content: r.content, lastModified: r.lastModified }));
+    load
       .then((r) => {
         if (!cancelled) {
           setContent(r.content);
@@ -406,7 +442,7 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
         if (!cancelled) setError(String(e));
       });
     return () => { cancelled = true; };
-  }, [path, refreshKey, isDir]);
+  }, [path, refreshKey, isDir, versionHash]);
 
   useEffect(() => {
     if (isDir) return;
@@ -588,6 +624,16 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                 )}
               </div>
               <div className="kiwi-page-actions flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+                {showClosePane && onClosePane && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" onClick={onClosePane} className="h-8 w-8" aria-label="Close split pane">
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Close split view</TooltipContent>
+                  </Tooltip>
+                )}
                 {onRevealInTree && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -619,23 +665,35 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                     <TooltipContent side="bottom">{isStarred ? "Unstar" : "Star"}</TooltipContent>
                   </Tooltip>
                 )}
-                {onHistory && (
+                {onHistory && !readOnly && (
                   <Button variant="outline" size="sm" onClick={onHistory}>
                     <HistoryIcon className="h-3.5 w-3.5" /> <span className="hidden sm:inline">History</span>
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={onEdit}>
-                  <Edit className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
-                </Button>
-                <PublishButton path={path} onPublishedChanged={onPublishedChanged} />
-                <PageActions
-                  path={path}
-                  onDeleted={onDeleted}
-                  onDuplicated={onDuplicated}
-                  onMoved={onMoved}
-                />
+                {!readOnly && (
+                  <Button variant="outline" size="sm" onClick={onEdit}>
+                    <Edit className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
+                  </Button>
+                )}
+                {!readOnly && (
+                  <>
+                    <PublishButton path={path} onPublishedChanged={onPublishedChanged} />
+                    <PageActions
+                      path={path}
+                      onDeleted={onDeleted}
+                      onDuplicated={onDuplicated}
+                      onMoved={onMoved}
+                    />
+                  </>
+                )}
               </div>
             </div>
+
+            {versionHash && (
+              <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+                Viewing historical version <span className="font-mono">{versionHash.slice(0, 7)}</span> — read-only preview
+              </div>
+            )}
 
             {/* ── Metadata bar ── */}
             <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground flex-wrap">
@@ -762,25 +820,17 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                         const pagePath = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
                         const anchor = hashIdx >= 0 ? raw.slice(hashIdx) : "";
                         return (
-                          <a
+                          <WikiLinkAnchor
+                            pagePath={pagePath}
+                            anchor={anchor}
                             href={`#${raw}`}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              onNavigate(pagePath);
-                              if (anchor) {
-                                requestAnimationFrame(() => {
-                                  setTimeout(() => {
-                                    const el = document.getElementById(anchor.slice(1));
-                                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                  }, 100);
-                                });
-                              }
-                            }}
                             className="wiki-link"
-                            {...(rest as any)}
+                            onNavigate={onNavigate}
+                            onOpenInSplit={onOpenInSplit}
+                            rest={rest}
                           >
                             {children}
-                          </a>
+                          </WikiLinkAnchor>
                         );
                       }
                       if (h.startsWith("#kiwi-missing:")) {
@@ -827,24 +877,17 @@ export function KiwiPage({ path, tree, onNavigate, onEdit, onHistory, onRevealIn
                         const joined = dir ? `${dir}/${relPage}` : relPage;
                         const resolved = normalizePath(joined);
                         return (
-                          <a
+                          <WikiLinkAnchor
+                            pagePath={resolved}
+                            anchor={anchor ? `#${anchor}` : ""}
                             href={`/page/${resolved}${anchor ? `#${anchor}` : ""}`}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              onNavigate(resolved);
-                              if (anchor) {
-                                requestAnimationFrame(() => {
-                                  setTimeout(() => {
-                                    const el = document.getElementById(anchor);
-                                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                  }, 150);
-                                });
-                              }
-                            }}
-                            {...(rest as any)}
+                            className="wiki-link"
+                            onNavigate={onNavigate}
+                            onOpenInSplit={onOpenInSplit}
+                            rest={rest}
                           >
                             {children}
-                          </a>
+                          </WikiLinkAnchor>
                         );
                       }
 
@@ -1332,6 +1375,70 @@ function SemanticFrontmatterValue({
     <span className={isLong ? "block whitespace-pre-wrap break-words leading-relaxed" : "break-words"}>
       {text}
     </span>
+  );
+}
+
+/* ── Wiki link with optional split-view context menu ── */
+
+function WikiLinkAnchor({
+  pagePath,
+  anchor,
+  href,
+  className,
+  children,
+  onNavigate,
+  onOpenInSplit,
+  rest,
+}: {
+  pagePath: string;
+  anchor?: string;
+  href: string;
+  className: string;
+  children: React.ReactNode;
+  onNavigate: (path: string) => void;
+  onOpenInSplit?: (path: string) => void;
+  rest: Record<string, unknown>;
+}) {
+  const followLink = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onNavigate(pagePath);
+    if (anchor) {
+      const id = anchor.startsWith("#") ? anchor.slice(1) : anchor;
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const el = document.getElementById(id);
+          el?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 100);
+      });
+    }
+  };
+
+  const link = (
+    <a href={href} onClick={followLink} className={className} {...(rest as any)}>
+      {children}
+    </a>
+  );
+
+  if (!onOpenInSplit) return link;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{link}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={followLink}>
+          <File className="h-3.5 w-3.5" />
+          Open
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => {
+            onOpenInSplit(pagePath);
+          }}
+        >
+          <Columns2 className="h-3.5 w-3.5" />
+          Open in Split View
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
