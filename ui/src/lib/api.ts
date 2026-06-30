@@ -74,6 +74,17 @@ export type GraphNode = { path: string; tags?: string[] };
 export type GraphEdge = { source: string; target: string; relation?: string };
 export type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] };
 
+export type PeekResponse = {
+  path: string;
+  title: string;
+  frontmatter: unknown;
+  snippet: string;
+  links_out: string[];
+  links_in: string[];
+  word_count: number;
+  headings: string[];
+};
+
 export type CommentAnchor = {
   quote: string;
   prefix?: string;
@@ -503,6 +514,11 @@ export const api = {
 
   async graph(): Promise<GraphResponse> {
     return request(`${kiwiBase()}/graph`);
+  },
+
+  async peek(path: string): Promise<PeekResponse> {
+    const qs = new URLSearchParams({ path });
+    return request(`${kiwiBase()}/peek?${qs}`);
   },
 
   async listTemplates(): Promise<{ templates: { name: string; path: string }[] }> {
