@@ -19,7 +19,7 @@ import {
   type WikiLinkPeekData,
   type WikiLinkPeekResult,
 } from "@kw/lib/wikiLinkPeek";
-import { parseWikiLinkHref } from "@kw/lib/wikiLinkAnchor";
+import { canOpenHoverPreview, parseWikiLinkHref } from "@kw/lib/wikiLinkAnchor";
 
 function scrollToAnchor(anchor: string, delayMs = 100) {
   requestAnimationFrame(() => {
@@ -230,6 +230,19 @@ export function WikiLinkPreview({
         : pagePath.split("/").pop()?.replace(/\.md$/, "") ?? pagePath;
 
   const previewResult: WikiLinkPeekResult | null = result;
+
+  if (!canOpenHoverPreview()) {
+    return (
+      <a
+        href={missing ? "#" : anchor ? `#${pagePath}${anchor}` : `#${pagePath}`}
+        onClick={handleClick}
+        title={title}
+        className={className}
+      >
+        {children}
+      </a>
+    );
+  }
 
   return (
     <HoverCard open={open} openDelay={300} closeDelay={100} onOpenChange={handleOpenChange}>

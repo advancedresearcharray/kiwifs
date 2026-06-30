@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { parseWikiLinkHref } from "./wikiLinkAnchor";
+import { canOpenHoverPreview, parseWikiLinkHref } from "./wikiLinkAnchor";
+
+describe("canOpenHoverPreview", () => {
+  it("allows preview on fine pointer with hover", () => {
+    const matchMedia = (query: string) =>
+      ({ matches: query === "(hover: hover) and (pointer: fine)" }) as MediaQueryList;
+    expect(canOpenHoverPreview(matchMedia)).toBe(true);
+  });
+
+  it("disables preview on coarse pointer devices", () => {
+    const matchMedia = () => ({ matches: false }) as MediaQueryList;
+    expect(canOpenHoverPreview(matchMedia)).toBe(false);
+  });
+});
 
 describe("parseWikiLinkHref", () => {
   it("returns other for same-page hash links", () => {
