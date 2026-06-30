@@ -1,14 +1,16 @@
 import { Plugin, PluginKey } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import {
+  assetUrlToMarkdownRef,
   extractImagesFromDataTransfer,
   hasImageInDataTransfer,
   isOsImageDrag,
-  renameFileForPaste,
 } from "./editorImagePaste";
 
 export type ImagePastePluginOptions = {
+  /** Should rename via renameFileForPaste before upload (e.g. uploadAssetForEditor). */
   uploadImage: (file: File) => Promise<string>;
+  pagePath: string;
   onError: (message: string) => void;
   onUploaded?: () => void;
 };
@@ -21,10 +23,11 @@ async function uploadAndInsertImage(
   pos: number,
   opts: ImagePastePluginOptions,
 ): Promise<void> {
-  const renamed = renameFileForPaste(file);
   try {
-    const url = await opts.uploadImage(renamed);
-    const imageNode = view.state.schema.nodes.image?.create({ src: url, alt: renamed.name });
+    const rawUrl = await opts.uploadImage(file);
+    const ref = assetUrlToMarkdownRef(rawUrl, opts.pagePath);
+    const alt = ref.includes("/") ? ref.slice(ref.lastIndexOf("/") + 1) : ref;
+    const imageNode = view.state.schema.nodes.image?.create({ src: rawUrl, alt });
     if (!imageNode) {
       opts.onError("Editor does not support image nodes");
       return;
