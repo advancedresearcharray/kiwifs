@@ -28,6 +28,7 @@ import {
 } from "@kw/lib/treeClipboard";
 import {
   ChevronRight,
+  Columns2,
   Copy,
   File,
   FileAxis3D,
@@ -73,6 +74,7 @@ type Props = {
   activePath: string | null;
   revealRequest?: TreeRevealRequest | null;
   onSelect: (path: string) => void;
+  onOpenInSplit?: (path: string) => void;
   refreshKey?: number;
   onCreateChild?: (folder: string) => void;
   onDeleted?: () => void;
@@ -202,6 +204,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     activePath,
     revealRequest,
     onSelect,
+    onOpenInSplit,
     refreshKey,
     onCreateChild,
     onDeleted,
@@ -858,6 +861,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
             activePath={activePath}
             revealRequest={revealRequest}
             onSelect={onSelect}
+            onOpenInSplit={onOpenInSplit}
             onCreateChild={onCreateChild}
             openDupDialog={openDupDialog}
             onMoved={onMoved}
@@ -886,6 +890,7 @@ type TreeNodeProps = NodeRendererProps<FlatNode> & {
   activePath: string | null;
   revealRequest?: TreeRevealRequest | null;
   onSelect: (path: string) => void;
+  onOpenInSplit?: (path: string) => void;
   onCreateChild?: (folder: string) => void;
   openDupDialog: (srcPath: string) => void;
   onMoved?: (newPath: string, options?: { refresh?: boolean }) => void;
@@ -927,6 +932,7 @@ function TreeNode({
   activePath,
   revealRequest,
   onSelect,
+  onOpenInSplit,
   onCreateChild,
   openDupDialog,
   onMoved,
@@ -1520,6 +1526,12 @@ function TreeNode({
           <File className="h-3.5 w-3.5" />
           Open
         </ContextMenuItem>
+        {onOpenInSplit && (
+          <ContextMenuItem onClick={() => onOpenInSplit(path)}>
+            <Columns2 className="h-3.5 w-3.5" />
+            Open in Split View
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         {isPublished ? (
           <>
