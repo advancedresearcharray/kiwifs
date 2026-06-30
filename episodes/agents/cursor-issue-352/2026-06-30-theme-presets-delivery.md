@@ -106,3 +106,19 @@ cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.t
 ```
 
 Ready for fleet publish (push + PR closing #352). No local diff beyond this episodic update.
+
+## Hands-on takeover v3 (2026-06-30)
+
+Fleet delivery failed (`not_committed`, `tests_not_passing`) because `internal/exporter/mkdocs.go` had been accidentally truncated to an empty file (uncommitted). Restored via `git restore internal/exporter/mkdocs.go`.
+
+All theme-preset regression tests green:
+
+```
+go test ./internal/themepresets/... -count=1 -v          → 7 passed
+go test ./internal/config/... -run TestUIConfigThemePresets → PASS
+go test ./internal/api/... -run 'GetThemePresets|UIConfig_Theme' -count=1 -v → 3 passed
+go test ./internal/api/... ./internal/exporter/... -count=1 → PASS
+cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.ts → 9 passed
+```
+
+Feature code unchanged; branch pushed to fork. PR #58 open with CI green.
