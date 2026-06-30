@@ -89,3 +89,20 @@ go test ./internal/api/... -run 'GetThemePresets|UIConfig_Theme' → 3 passed
 go test ./internal/config/... -run TestUIConfigThemePresets → PASS
 cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.ts → 9 passed
 ```
+
+## Autonomous verification (2026-06-30, cursor fleet run)
+
+Re-verified complete implementation on `feat/issue-352-theme-presets-config-clean` (HEAD `d698fb8`):
+
+- Kiwi MCP gateway and depot (`192.168.167.240:3333`) unreachable; used local `pages/fixes/kiwifs-kiwifs/issue-352-theme-presets-config.md`.
+- All issue #352 acceptance criteria satisfied (no code changes required this run).
+
+```
+go test ./internal/themepresets/... -count=1 -v          → 7 passed
+go test ./internal/config/... -run TestUIConfigThemePresets → PASS
+go test ./internal/api/... -run 'GetThemePresets|UIConfig_Theme' → 3 passed
+go test ./internal/api/... -count=1                      → PASS
+cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.ts → 9 passed
+```
+
+Ready for fleet publish (push + PR closing #352). No local diff beyond this episodic update.
