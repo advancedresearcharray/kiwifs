@@ -451,9 +451,21 @@ func (h *Handlers) Janitor(c echo.Context) error {
 	}
 
 	var execOpts []janitor.Option
-	if h.cfg != nil && h.cfg.Janitor.ExecutionStaleness.Enabled() {
-		es := h.cfg.Janitor.ExecutionStaleness
-		execOpts = janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)
+	if h.cfg != nil {
+		if h.cfg.Janitor.ExecutionStaleness.Enabled() {
+			es := h.cfg.Janitor.ExecutionStaleness
+			execOpts = append(execOpts, janitor.OptionsFromExecutionStaleness(es.Directory, es.DateField, es.MaxAgeDays, es.FlagValues)...)
+		}
+		if h.cfg.Janitor.ExternalLinksEnabled() {
+			j := h.cfg.Janitor
+			execOpts = append(execOpts, janitor.OptionsFromExternalLinks(
+				true,
+				j.ExternalLinkTimeoutDuration(),
+				j.ExternalLinkCacheTTLDuration(),
+				j.ResolvedExternalLinkIgnore(),
+				h.root,
+			)...)
+		}
 	}
 	scanner := janitor.New(h.root, h.store, h.searcher, staleDays, execOpts...)
 	result, err := scanner.Scan(c.Request().Context())
