@@ -27,8 +27,12 @@ Implement inline page preview on `[[wiki-link]]` hover for kiwifs/kiwifs#421 on 
 
 ```
 cd ui && npm test -- src/lib/wikiLinkPeek.test.ts src/lib/wikiLinkAnchor.test.ts
-# 15 passed (2026-06-30)
+# 15 passed (2026-06-30 hands-on takeover)
 ```
+
+## Hands-on takeover (2026-06-30)
+
+Verified branch diff vs `main` (11 files, +1057/-44), re-ran 15 unit tests green, fixed unused `loading` state in `WikiLinkPreview.tsx` (TS6133), committed, pushed, opened PR.
 
 ## Notes
 

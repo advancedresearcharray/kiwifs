@@ -102,12 +102,10 @@ function PreviewSkeleton() {
 
 function PreviewBody({
   result,
-  loading,
   missing,
   targetPath,
 }: {
   result: WikiLinkPeekResult | null;
-  loading: boolean;
   missing?: boolean;
   targetPath: string;
 }) {
@@ -171,7 +169,6 @@ export function WikiLinkPreview({
 }: WikiLinkPreviewProps) {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<WikiLinkPeekResult | null>(null);
-  const [loading, setLoading] = useState(false);
   const pointerInside = useRef(false);
   const fetchGeneration = useRef(0);
 
@@ -183,15 +180,13 @@ export function WikiLinkPreview({
     const cached = getCachedWikiLinkPeek(pagePath);
     if (cached) {
       setResult(cached);
-      setLoading(false);
       return;
     }
+    setResult(null);
     const generation = ++fetchGeneration.current;
-    setLoading(true);
     const peek = await fetchWikiLinkPeek(pagePath);
     if (generation !== fetchGeneration.current) return;
     setResult(peek);
-    setLoading(false);
   }, [missing, pagePath]);
 
   const handleOpenChange = useCallback(
@@ -199,7 +194,6 @@ export function WikiLinkPreview({
       if (!nextOpen) {
         setOpen(false);
         fetchGeneration.current += 1;
-        setLoading(false);
         return;
       }
       // Radix opens on keyboard focus too; only allow pointer-driven opens.
@@ -265,7 +259,6 @@ export function WikiLinkPreview({
           </CardHeader>
           <PreviewBody
             result={previewResult}
-            loading={loading}
             missing={missing}
             targetPath={pagePath}
           />
