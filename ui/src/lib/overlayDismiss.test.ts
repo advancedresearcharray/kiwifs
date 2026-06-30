@@ -13,6 +13,7 @@ const closed: OverlayState = {
   whiteboardOpen: false,
   timelineOpen: false,
   kanbanOpen: false,
+  calendarOpen: false,
 };
 
 describe("resolveOverlayDismiss", () => {

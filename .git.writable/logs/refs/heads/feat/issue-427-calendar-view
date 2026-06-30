@@ -1,0 +1,16 @@
+7e2864042c04d1040930201ec27a5b11382443fc 51d68ebe3706209a071cb6e111151ba0e4d7f255 advancedresearcharray <advancedresearcharray@github.com> 1782779712 +0000	branch: Reset to origin/main
+51d68ebe3706209a071cb6e111151ba0e4d7f255 f5ee2bfecf96a21accccfe1ed22127e2faa3d5ec advancedresearcharray <advancedresearcharray@github.com> 1782779717 +0000	cherry-pick: feat(ui): calendar view for frontmatter dates (#427)
+f5ee2bfecf96a21accccfe1ed22127e2faa3d5ec 51d68ebe3706209a071cb6e111151ba0e4d7f255 advancedresearcharray <advancedresearcharray@github.com> 1782779753 +0000	reset: moving to origin/main
+51d68ebe3706209a071cb6e111151ba0e4d7f255 65d10cc976c1f27a46243c8823b08fbd41d32fc2 advancedresearcharray <advancedresearcharray@github.com> 1782779756 +0000	commit: feat(ui): calendar view for frontmatter dates
+65d10cc976c1f27a46243c8823b08fbd41d32fc2 cebea8eee3d55e297a3234405093a84e2f71d86b advancedresearcharray <advancedresearcharray@github.com> 1782779779 +0000	commit (amend): feat(ui): calendar view for frontmatter dates
+cebea8eee3d55e297a3234405093a84e2f71d86b e711bf971927ae70bcddd78dc1712e521736cdb9 Test User <test@example.com> 1782779801 +0000	commit: add feed page
+e711bf971927ae70bcddd78dc1712e521736cdb9 cebea8eee3d55e297a3234405093a84e2f71d86b Test User <test@example.com> 1782779840 +0000	reset: moving to cebea8e
+cebea8eee3d55e297a3234405093a84e2f71d86b 7a759d2746e556ef0c62b247abd09f3baf9a67ce Test User <test@example.com> 1782779840 +0000	commit (amend): feat(ui): calendar view for frontmatter dates
+7a759d2746e556ef0c62b247abd09f3baf9a67ce 4dd3ea47335600bbb74751bfc6675f55d219d859 Test User <test@example.com> 1782779862 +0000	commit (amend): feat(ui): calendar view for frontmatter dates
+4dd3ea47335600bbb74751bfc6675f55d219d859 88d342d9acb6b36b087a93fb4aa9785422e31b6d Test User <test@example.com> 1782779867 +0000	reset: moving to 88d342d9acb6b36b087a93fb4aa9785422e31b6d
+88d342d9acb6b36b087a93fb4aa9785422e31b6d a2be03c925c9b3a7557f29005fc552bc6e57bd35 Test User <test@example.com> 1782779945 +0000	reset: moving to a2be03c925c9b3a7557f29005fc552bc6e57bd35
+a2be03c925c9b3a7557f29005fc552bc6e57bd35 13240e4ffdb6337b77f0bd22498318dcaf9e44e1 Test User <test@example.com> 1782780043 +0000	commit: fix(ui): load cross-month week range in mobile calendar view
+13240e4ffdb6337b77f0bd22498318dcaf9e44e1 f66f2cddc6fbca6b525eaf8ce51e450c9a5e65dc Test User <test@example.com> 1782780054 +0000	commit: docs(episode): hands-on delivery log for issue #427 calendar view
+f66f2cddc6fbca6b525eaf8ce51e450c9a5e65dc f0939d3851a97bf0ab5326d14c4f174d0a79be75 Test User <test@example.com> 1782780054 +0000	filter-branch: rewrite
+f0939d3851a97bf0ab5326d14c4f174d0a79be75 e7868ed4e318da14b3b37fdc666f979f4f462067 Test User <test@example.com> 1782788659 +0000	commit: fix(ui): harden calendar DQL with striptime and truncation banner
+e7868ed4e318da14b3b37fdc666f979f4f462067 0bea90c7537ea4c9ea2323863ec6d0eacdbaaf43 Test <test@test.com> 1782788795 +0000	commit: init

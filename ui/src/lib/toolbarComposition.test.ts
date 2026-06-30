@@ -69,4 +69,13 @@ describe("filterToolbarViewsByFeatures", () => {
       ),
     ).toEqual(["graph"]);
   });
+
+  it("hides calendar toolbar button when calendar feature is disabled", () => {
+    expect(
+      filterToolbarViewsByFeatures(
+        ["graph", "calendar", "kanban"],
+        { ...DEFAULT_UI_FEATURES, calendar: false },
+      ),
+    ).toEqual(["graph", "kanban"]);
+  });
 });
