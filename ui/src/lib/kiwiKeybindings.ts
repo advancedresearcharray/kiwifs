@@ -129,6 +129,23 @@ export function eventMatchesChord(e: KeyboardEvent, chord: string): boolean {
   return eventKey === parsed.key;
 }
 
+const KEYBOARD_SHORTCUT_IGNORE_SELECTOR =
+  "input, textarea, select, [contenteditable='true'], [contenteditable=''], .cm-content, .cm-editor, [cmdk-input]";
+
+/** True when global shortcut handlers should ignore the event target (inputs, editors). */
+export function isKeyboardShortcutTargetIgnored(target: EventTarget | null): boolean {
+  if (!target || typeof (target as HTMLElement).closest !== "function") return false;
+  return (target as HTMLElement).closest(KEYBOARD_SHORTCUT_IGNORE_SELECTOR) !== null;
+}
+
+/** Bare `?` opens shortcuts help when not typing in an input or editor. */
+export function shouldTriggerBareShortcutsHelp(e: Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey" | "target">): boolean {
+  if (isKeyboardShortcutTargetIgnored(e.target)) return false;
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  const eventKey = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  return eventKey === "?" || (eventKey === "/" && e.shiftKey);
+}
+
 export function formatChordDisplay(chord: string): string {
   const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
   const parsed = parseChord(chord);
