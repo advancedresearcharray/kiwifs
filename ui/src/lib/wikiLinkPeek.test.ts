@@ -140,6 +140,40 @@ describe("wikiLinkPeek", () => {
       expect(result).toEqual({ status: "not_found" });
       expect(getCachedWikiLinkPeek("pages/missing.md")).toEqual({ status: "not_found" });
     });
+
+    it("does not cache transient errors so hover can retry", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("network down"))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              path: "pages/flaky.md",
+              title: "Flaky",
+              frontmatter: {},
+              snippet: "Recovered.",
+              links_out: [],
+              links_in: [],
+              word_count: 1,
+              headings: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      setBaseOverride("/api/kiwi");
+
+      const first = await fetchWikiLinkPeek("pages/flaky.md");
+      expect(first).toEqual({ status: "error", message: "network down" });
+      expect(getCachedWikiLinkPeek("pages/flaky.md")).toBeUndefined();
+
+      const second = await fetchWikiLinkPeek("pages/flaky.md");
+      expect(second.status).toBe("ok");
+      if (second.status === "ok") {
+        expect(second.data.snippet).toBe("Recovered.");
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
   });
 });
 
