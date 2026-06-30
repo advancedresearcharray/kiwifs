@@ -13,6 +13,49 @@ import (
 	"time"
 )
 
+func TestScan_SkipsFrontmatterURLs(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	store, root := buildStore(t, map[string]string{
+		"page.md": `---
+title: Page
+owner: alice
+status: verified
+reviewed: 2030-01-01
+next-review: 2040-01-01
+source: ` + srv.URL + `/only-in-frontmatter
+---
+
+Body without external links.
+`,
+	})
+
+	sc := New(root, store, nil, 90, WithExternalLinks(ExternalLinkConfig{
+		Enabled:       true,
+		Timeout:       2 * time.Second,
+		CachePath:     filepath.Join(root, ".kiwi", "cache", "link-check.json"),
+		Client:        srv.Client(),
+		Ignore:        []string{"example.com"},
+		RequestDelay:  0,
+		MaxConcurrent: 1,
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("frontmatter URL must not be probed, hits=%d", hits.Load())
+	}
+	if len(issuesByKind(res.Issues)[IssueExternalLinkRot]) != 0 || len(res.ExternalLinks) != 0 {
+		t.Fatalf("expected no external link findings, got issues=%+v links=%+v", res.Issues, res.ExternalLinks)
+	}
+}
+
 func TestExtractExternalURLs_SkipsCodeBlocks(t *testing.T) {
 	body := `
 See https://good.example.com/page for docs.
@@ -346,11 +389,18 @@ Broken link: ` + srv.URL + `/gone
 		t.Fatalf("expected 1 probe on first scan, got %d", firstHits)
 	}
 
-	if _, err := sc.Scan(context.Background()); err != nil {
+	res2, err := sc.Scan(context.Background())
+	if err != nil {
 		t.Fatalf("second scan: %v", err)
 	}
 	if hits.Load() != firstHits {
 		t.Fatalf("cache should skip second probe, hits=%d", hits.Load())
+	}
+	if len(issuesByKind(res2.Issues)[IssueExternalLinkRot]) != 1 {
+		t.Fatalf("cached broken link should still be reported, got %+v", res2.Issues)
+	}
+	if len(res2.ExternalLinks) != 1 || res2.ExternalLinks[0].Status != 404 {
+		t.Fatalf("expected cached external_links entry, got %+v", res2.ExternalLinks)
 	}
 
 	data, err := os.ReadFile(cachePath)
