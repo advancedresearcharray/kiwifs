@@ -32,7 +32,15 @@ cd ui && npm test -- src/lib/wikiLinkPeek.test.ts src/lib/wikiLinkAnchor.test.ts
 
 ## Hands-on takeover (2026-06-30)
 
-Verified branch diff vs `main` (11 files, +1057/-44), re-ran 15 unit tests green, fixed unused `loading` state in `WikiLinkPreview.tsx` (TS6133), committed, pushed, opened PR.
+Verified branch diff vs `main` (11 files, +1054/-44), re-ran 15 unit tests green, fixed unused `loading` state in `WikiLinkPreview.tsx` (TS6133), committed, pushed, opened PR.
+
+## Hands-on verification (2026-06-30, fleet takeover)
+
+- Branch: `feat/issue-421-wiki-link-hover-preview-v3` @ `a0ec5ea` (3 commits vs `main`)
+- PR: https://github.com/advancedresearcharray/kiwifs/pull/57
+- Tests: `cd ui && npm test` — 204 passed (35 files); wiki-link suite 15 passed
+- Typecheck: `cd ui && npx tsc --noEmit` — clean
+- Kiwi depot at `192.168.167.240:3333` unreachable; fix doc present locally
 
 ## Notes
 
