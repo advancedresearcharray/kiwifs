@@ -6,7 +6,6 @@ import {
   hasImageInDataTransfer,
   isOsImageDrag,
   markdownImageRef,
-  renameFileForPaste,
   uploadingPlaceholder,
 } from "./editorImagePaste";
 
@@ -45,10 +44,10 @@ export async function insertUploadedImage(
   opts: EditorImagePasteOptions,
 ): Promise<void> {
   try {
-    const renamed = renameFileForPaste(file);
-    const rawUrl = await opts.uploadImage(renamed);
+    const rawUrl = await opts.uploadImage(file);
     const ref = assetUrlToMarkdownRef(rawUrl, opts.pagePath);
-    const replacement = markdownImageRef(renamed.name, ref);
+    const alt = ref.includes("/") ? ref.slice(ref.lastIndexOf("/") + 1) : ref;
+    const replacement = markdownImageRef(alt, ref);
     replacePlaceholderInView(view, placeholder, replacement);
   } catch (e) {
     removePlaceholderFromView(view, placeholder);
