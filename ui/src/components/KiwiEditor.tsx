@@ -34,6 +34,8 @@ import { formatDistanceToNow } from "date-fns";
 import { MarkdownSourceEditor } from "./editor/MarkdownSourceEditor";
 import { blockNoteSlashItems, loadSlashCommandTemplate } from "@kw/lib/editorSlashCommands";
 import { useEditorSlashCommands } from "../hooks/useEditorSlashCommands";
+import { EditorImageDropOverlay } from "./EditorImageDropOverlay";
+import { hasImageInDataTransfer, isOsImageDrag, renameFileForPaste } from "@kw/lib/editorImagePaste";
 import {
   Dialog,
   DialogContent,
@@ -427,6 +429,11 @@ function EditorInner({
   const customSlashCommands = useEditorSlashCommands();
   const [slashCommandError, setSlashCommandError] = useState<string | null>(null);
   const slashCommandErrorTimer = useRef<number | null>(null);
+  const [imagePasteError, setImagePasteError] = useState<string | null>(null);
+  const imagePasteErrorTimer = useRef<number | null>(null);
+  const [imageDropActive, setImageDropActive] = useState(false);
+  const imageDropDepthRef = useRef(0);
+  const editorRef = useRef<BlockNoteEditor | null>(null);
   const onSlashTemplateError = useCallback((message: string) => {
     setSlashCommandError(message);
     if (slashCommandErrorTimer.current !== null) {
@@ -437,12 +444,25 @@ function EditorInner({
       slashCommandErrorTimer.current = null;
     }, 6000);
   }, []);
+  const onImagePasteError = useCallback((message: string) => {
+    setImagePasteError(message);
+    if (imagePasteErrorTimer.current !== null) {
+      window.clearTimeout(imagePasteErrorTimer.current);
+    }
+    imagePasteErrorTimer.current = window.setTimeout(() => {
+      setImagePasteError(null);
+      imagePasteErrorTimer.current = null;
+    }, 6000);
+  }, []);
   const loadSlashTemplate = useCallback((templatePath: string) => loadSlashCommandTemplate(templatePath), []);
 
   useEffect(() => {
     return () => {
       if (slashCommandErrorTimer.current !== null) {
         window.clearTimeout(slashCommandErrorTimer.current);
+      }
+      if (imagePasteErrorTimer.current !== null) {
+        window.clearTimeout(imagePasteErrorTimer.current);
       }
     };
   }, []);
@@ -480,12 +500,33 @@ function EditorInner({
     return () => { cancelled = true; };
   }, [path]);
 
-  const uploadFile = useCallback(
+  const uploadAssetForEditor = useCallback(
     async (file: File) => {
       const targetDir = dirOf(path);
-      return api.uploadAsset(file, targetDir);
+      return api.uploadAsset(renameFileForPaste(file), targetDir);
     },
     [path],
+  );
+
+  const uploadFile = useCallback(
+    async (file: File, blockId?: string) => {
+      try {
+        return await uploadAssetForEditor(file);
+      } catch (e) {
+        const ed = editorRef.current;
+        if (blockId && ed) {
+          try {
+            const block = ed.getBlock(blockId);
+            if (block) ed.removeBlocks([block]);
+          } catch {
+            // block may already be gone
+          }
+        }
+        onImagePasteError(e instanceof Error ? e.message : String(e));
+        throw e;
+      }
+    },
+    [uploadAssetForEditor, onImagePasteError],
   );
 
   const editorOptions = useMemo(
@@ -498,6 +539,10 @@ function EditorInner({
     [uploadFile],
   );
   const editor = useCreateBlockNote(editorOptions);
+
+  useEffect(() => {
+    editorRef.current = editor ?? null;
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -742,6 +787,46 @@ function EditorInner({
     [markDirty],
   );
 
+  const resetImageDrop = useCallback(() => {
+    imageDropDepthRef.current = 0;
+    setImageDropActive(false);
+  }, []);
+
+  const handleEditorDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isOsImageDrag(e) || !hasImageInDataTransfer(e.dataTransfer)) return;
+    e.preventDefault();
+    imageDropDepthRef.current += 1;
+    setImageDropActive(true);
+  }, []);
+
+  const handleEditorDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isOsImageDrag(e)) return;
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    imageDropDepthRef.current = Math.max(0, imageDropDepthRef.current - 1);
+    if (imageDropDepthRef.current === 0) setImageDropActive(false);
+  }, []);
+
+  const handleEditorDragOver = useCallback((e: React.DragEvent) => {
+    if (!isOsImageDrag(e) || !hasImageInDataTransfer(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  useEffect(() => {
+    const onDragEnd = () => resetImageDrop();
+    window.addEventListener("dragend", onDragEnd);
+    return () => window.removeEventListener("dragend", onDragEnd);
+  }, [resetImageDrop]);
+
+  const sourceImagePaste = useMemo(
+    () => ({
+      pagePath: path,
+      uploadImage: uploadAssetForEditor,
+      onError: onImagePasteError,
+    }),
+    [path, uploadAssetForEditor, onImagePasteError],
+  );
+
   const canSave =
     saveStatus !== "clean" &&
     !saving &&
@@ -839,7 +924,14 @@ function EditorInner({
             </div>
           )}
 
-          <div className="max-w-3xl min-h-[50vh]">
+          <div
+            className="max-w-3xl min-h-[50vh] relative"
+            onDragEnter={handleEditorDragEnter}
+            onDragLeave={handleEditorDragLeave}
+            onDragOver={handleEditorDragOver}
+            onDrop={resetImageDrop}
+          >
+            <EditorImageDropOverlay active={imageDropActive} />
             {editorMode === "source" ? (
               <MarkdownSourceEditor
                 value={sourceText}
@@ -851,6 +943,7 @@ function EditorInner({
                 customSlashCommands={customSlashCommands}
                 loadSlashTemplate={loadSlashTemplate}
                 onSlashTemplateError={onSlashTemplateError}
+                imagePaste={sourceImagePaste}
               />
             ) : visualParseError ? (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
@@ -968,6 +1061,25 @@ function EditorInner({
               className="text-destructive/80 hover:text-destructive"
               aria-label="Dismiss"
               onClick={() => setSlashCommandError(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      {imagePasteError && (
+        <div
+          role="alert"
+          className="fixed bottom-4 left-4 z-50 max-w-sm rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-lg"
+        >
+          <div className="flex items-start gap-2">
+            <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
+            <p className="flex-1">{imagePasteError}</p>
+            <button
+              type="button"
+              className="text-destructive/80 hover:text-destructive"
+              aria-label="Dismiss"
+              onClick={() => setImagePasteError(null)}
             >
               <X className="h-4 w-4" />
             </button>
