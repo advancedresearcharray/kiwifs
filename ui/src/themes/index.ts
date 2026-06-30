@@ -23,7 +23,7 @@ export function findPreset(name: string, list: ThemePreset[] = presets): ThemePr
   return list.find((p) => p.name.toLowerCase() === name.toLowerCase());
 }
 
-/** Merge built-in presets with workspace-defined presets (workspace wins on name clash). */
+/** Merge built-in presets with workspace-defined presets (built-in wins on name clash). */
 export function mergePresets(builtin: ThemePreset[], workspace: ThemePreset[]): ThemePreset[] {
   const seen = new Set(builtin.map((p) => p.name.toLowerCase()));
   const merged = [...builtin];

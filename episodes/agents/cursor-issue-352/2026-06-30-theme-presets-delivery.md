@@ -26,9 +26,20 @@ go test ./internal/api/... -run 'ThemePresets|UIConfig_Theme' → 2 passed
 cd ui && npm test -- --run src/themes/index.test.ts      → 4 passed
 ```
 
+## Verification (2026-06-30, cursor autonomous run)
+
+- Kiwi depot search attempted (`192.168.167.240:3333`) — unreachable; used local `pages/fixes/kiwifs-kiwifs/issue-352-theme-presets-config.md`.
+- All acceptance criteria verified on `feat/issue-352-theme-presets-config-clean`:
+  - Workspace JSON presets load from configurable `presets_dir` (default `.kiwi/themes/`)
+  - Presets merge with built-ins; built-in names take precedence on clash
+  - `allowed_presets` filters header selector and theme editor
+  - Invalid JSON reported in API `errors` and shown in `KiwiThemeEditor`
+  - Default behavior unchanged when no `[ui.theme]` config
+- Fixed misleading JSDoc on `mergePresets` (built-in wins, not workspace).
+
 ## Deliverable
 
 - Branch: `feat/issue-352-theme-presets-config-clean`
-- Commit: `553ef59`
+- Feature commit: `553ef59` · Docs: `587e46c`
 - Closes #352
 - Fleet agent to push and open PR (local only per fleet policy)
