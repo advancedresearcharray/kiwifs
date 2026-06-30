@@ -488,3 +488,43 @@ func TestOptionsFromExternalLinks_InvalidRootReturnsNil(t *testing.T) {
 		t.Fatalf("expected nil opts for invalid root, got %v", opts)
 	}
 }
+
+func TestScan_FlagsUnreachableExternalLink(t *testing.T) {
+	store, root := buildStore(t, map[string]string{
+		"page.md": `---
+title: Page
+owner: alice
+status: verified
+reviewed: 2030-01-01
+next-review: 2040-01-01
+---
+
+Dead link: http://127.0.0.1:1/unreachable-no-server
+`,
+	})
+
+	// Inject client so SSRF guard is bypassed; port 1 should refuse connection.
+	sc := New(root, store, nil, 90, WithExternalLinks(ExternalLinkConfig{
+		Enabled:       true,
+		Timeout:       500 * time.Millisecond,
+		CachePath:     filepath.Join(root, ".kiwi", "cache", "link-check.json"),
+		Client:        &http.Client{Timeout: 500 * time.Millisecond},
+		Ignore:        []string{"example.com"},
+		RequestDelay:  0,
+		MaxConcurrent: 1,
+	}))
+	res, err := sc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	issues := issuesByKind(res.Issues)[IssueExternalLinkRot]
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 unreachable external-link-rot issue, got %+v", res.Issues)
+	}
+	if !strings.Contains(issues[0].Message, "unreachable") {
+		t.Fatalf("message should mention unreachable: %q", issues[0].Message)
+	}
+	if len(res.ExternalLinks) != 1 || res.ExternalLinks[0].Status != 0 {
+		t.Fatalf("expected status 0 finding, got %+v", res.ExternalLinks)
+	}
+}
