@@ -74,11 +74,12 @@ describe("splitView", () => {
     expect(state.enabled).toBe(false);
   });
 
-  it("clears secondary pane content", () => {
+  it("closes split view from the secondary pane", () => {
     const state = openVersionInSplit(createSplitViewState(), { path: "a.md", hash: "deadbeef" });
     const cleared = closeSecondaryPane(state);
-    expect(cleared.enabled).toBe(true);
+    expect(cleared.enabled).toBe(false);
     expect(splitViewHasSecondary(cleared)).toBe(false);
+    expect(cleared.sizes).toEqual(state.sizes);
   });
 
   it("clamps resize percentages", () => {

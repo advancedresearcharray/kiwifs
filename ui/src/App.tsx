@@ -100,6 +100,7 @@ export default function App() {
   const [newFolder, setNewFolder] = useState<string | undefined>();
   const [graphOpen, setGraphOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [dataOpen, setDataOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [basesOpen, setBasesOpen] = useState(false);
@@ -165,6 +166,11 @@ export default function App() {
     }
     if (!activePath) {
       setActivePath(path);
+      setSplitView((prev) => ({ ...createSplitViewState({ sizes: prev.sizes }), enabled: true }));
+      return;
+    }
+    if (activePath === path) {
+      setSplitView((prev) => ({ ...createSplitViewState({ sizes: prev.sizes }), enabled: true }));
       return;
     }
     setSplitView((prev) => openPathInSplit(prev, path));
@@ -929,10 +935,13 @@ const handleSpaceSwitch = useCallback(() => {
                 }}
                 onClose={() => setGraphOpen(false)}
               />
-            ) : historyOpen && activePath ? (
+            ) : historyOpen && (historyPath ?? activePath) ? (
               <KiwiHistory
-                path={activePath}
-                onClose={() => setHistoryOpen(false)}
+                path={historyPath ?? activePath!}
+                onClose={() => {
+                  setHistoryOpen(false);
+                  setHistoryPath(null);
+                }}
                 onRestored={() => setRefreshKey((k) => k + 1)}
                 onCompareWithCurrent={handleCompareWithCurrent}
               />
@@ -965,7 +974,10 @@ const handleSpaceSwitch = useCallback(() => {
                 onCloseSecondary={handleCloseSecondaryPane}
                 leftPane={{
                   onEdit: () => setEditing(true),
-                  onHistory: () => setHistoryOpen(true),
+                  onHistory: () => {
+                    setHistoryPath(activePath);
+                    setHistoryOpen(true);
+                  },
                   onRevealInTree: revealActivePageInTree,
                   onToggleStar: () => toggleStar(activePath),
                   isStarred: isStarred(activePath),
@@ -995,7 +1007,11 @@ const handleSpaceSwitch = useCallback(() => {
                     setActivePath(target);
                     setEditing(true);
                   },
-                  onHistory: () => setHistoryOpen(true),
+                  onHistory: () => {
+                    const target = splitView.rightPath ?? splitView.rightVersion?.path ?? activePath;
+                    setHistoryPath(target);
+                    setHistoryOpen(true);
+                  },
                   onToggleStar: splitView.rightPath
                     ? () => toggleStar(splitView.rightPath!)
                     : undefined,
@@ -1004,6 +1020,26 @@ const handleSpaceSwitch = useCallback(() => {
                     ? () => togglePin(splitView.rightPath!)
                     : undefined,
                   isPinned: splitView.rightPath ? isPinned(splitView.rightPath) : false,
+                  onDeleted: () => {
+                    setSplitView((prev) => closeSecondaryPane(prev));
+                    setRefreshKey((k) => k + 1);
+                  },
+                  onDuplicated: (p) => {
+                    setSplitView((prev) => ({
+                      ...prev,
+                      rightPath: p,
+                      rightVersion: null,
+                    }));
+                    setRefreshKey((k) => k + 1);
+                  },
+                  onMoved: (p) => {
+                    setSplitView((prev) => ({
+                      ...prev,
+                      rightPath: p,
+                      rightVersion: null,
+                    }));
+                    setRefreshKey((k) => k + 1);
+                  },
                   onTagClick: (tag) => {
                     setSearchQuery(`tag:${tag}`);
                     setSearchOpen(true);
@@ -1018,7 +1054,10 @@ const handleSpaceSwitch = useCallback(() => {
                 onNavigate={navigate}
                 onOpenInSplitView={handleOpenInSplitView}
                 onEdit={() => setEditing(true)}
-                onHistory={() => setHistoryOpen(true)}
+                onHistory={() => {
+                  setHistoryPath(activePath);
+                  setHistoryOpen(true);
+                }}
                 onRevealInTree={revealActivePageInTree}
                 onToggleStar={() => toggleStar(activePath)}
                 isStarred={isStarred(activePath)}
