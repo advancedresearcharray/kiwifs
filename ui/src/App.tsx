@@ -64,6 +64,8 @@ import { useTheme } from "./hooks/useTheme";
 import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
+import { SplitPageView, type SplitPageViewHandle } from "./components/SplitPageView";
+import { SplitViewProvider, useSplitView } from "./contexts/SplitViewContext";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -78,6 +80,14 @@ function getInitialActivePath(): string | null {
 }
 
 export default function App() {
+  return (
+    <SplitViewProvider>
+      <AppMain />
+    </SplitViewProvider>
+  );
+}
+
+function AppMain() {
   const [tree, setTree] = useState<TreeEntry | null>(null);
   const [activePath, setActivePath] = useState<string | null>(getInitialActivePath);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -179,10 +189,12 @@ export default function App() {
   const { recent, recordVisit } = useRecentPages(currentSpace);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
-  const { bindings, conflicts } = useKeybindings();
+  const { bindings } = useKeybindings();
+  const splitView = useSplitView();
   const { config: uiConfig, loaded: uiConfigLoaded } = useUIConfig();
   const resolvedStartPage = resolveStartPage(uiConfig.startPage);
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
+  const splitPageRef = useRef<SplitPageViewHandle>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
   const treeReconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,8 +232,24 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (isMobile && splitView.isSplit) {
+      splitView.closeSplit();
+    }
+  }, [isMobile, splitView]);
+
+  useEffect(() => {
+    if (!splitView.isSplit || !splitView.state.left?.path || activePath) return;
+    setActivePath(splitView.state.left.path);
+    recordVisit(splitView.state.left.path);
+  }, [splitView.isSplit, splitView.state.left?.path, activePath, recordVisit]);
+
+  useEffect(() => {
     dispatchPageChanged(activePath);
   }, [activePath]);
+
+  useEffect(() => {
+    if (activePath) splitView.syncPrimaryPath(activePath);
+  }, [activePath, splitView]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -312,6 +340,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+
       const action = matchBoundAction(e, bindings);
       if (!action) return;
 
@@ -330,15 +359,31 @@ export default function App() {
           const { activePath, graphOpen, historyOpen, dataOpen } = state;
           if (!activePath || graphOpen || historyOpen || dataOpen) return;
           e.preventDefault();
-          setEditing((v) => !v);
+          if (splitView.isSplit) {
+            splitPageRef.current?.toggleLeftEdit();
+          } else {
+            setEditing((v) => !v);
+          }
           break;
         }
         case "save":
+          if (splitView.isSplit) {
+            if (!splitPageRef.current?.isLeftEditing()) return;
+            e.preventDefault();
+            splitPageRef.current.saveLeft().catch(() => {});
+            break;
+          }
           if (!state.editing) return;
           e.preventDefault();
           editorRef.current?.save().catch(() => {});
           break;
         case "toggle_mode":
+          if (splitView.isSplit) {
+            if (!splitPageRef.current?.isLeftEditing()) return;
+            e.preventDefault();
+            splitPageRef.current.toggleLeftMode();
+            break;
+          }
           if (!state.editing) return;
           e.preventDefault();
           editorRef.current?.toggleMode?.();
@@ -393,6 +438,10 @@ export default function App() {
           treeFilterRef.current?.focus();
           treeFilterRef.current?.select();
           break;
+        case "toggle_split_view":
+          e.preventDefault();
+          splitView.toggleSplit(state.activePath);
+          break;
         case "close_overlay": {
           const overlay = resolveOverlayDismiss(stateRef.current);
           if (!overlay) return;
@@ -438,9 +487,10 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar]);
+  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar, splitView]);
 
-const handleSpaceSwitch = useCallback(() => {
+  const handleSpaceSwitch = useCallback(() => {
+    splitView.closeSplit();
     setActivePath(null);
     setEditing(false);
     setGraphOpen(false);
@@ -452,7 +502,7 @@ const handleSpaceSwitch = useCallback(() => {
     setKanbanOpen(false);
     setSpaceKey((k) => k + 1);
     setRefreshKey((k) => k + 1);
-  }, []);
+  }, [splitView]);
 
   useEffect(() => {
     const es = new EventSource(sseUrl());
@@ -652,6 +702,18 @@ const handleSpaceSwitch = useCallback(() => {
   const showWelcomeStart = atStartPage && resolvedStartPage.mode === "welcome";
   const showRecentStart = atStartPage && resolvedStartPage.mode === "recent";
 
+  const openInSplit = useCallback(
+    (path: string) => {
+      const primary = activePath ?? path;
+      if (!activePath) {
+        setActivePath(path);
+        recordVisit(path);
+      }
+      splitView.openInSplit(path, primary);
+    },
+    [splitView, activePath, recordVisit],
+  );
+
   return (
     <TooltipProvider delayDuration={250}>
       <KanbanDragProvider>
@@ -771,6 +833,7 @@ const handleSpaceSwitch = useCallback(() => {
             recent={recent}
             onSpaceSwitch={handleSpaceSwitch}
             onNavigate={navigate}
+            onOpenInSplit={openInSplit}
             onToggleStar={toggleStar}
             onTogglePin={togglePin}
             onCreatePage={(folder) => {
@@ -857,6 +920,51 @@ const handleSpaceSwitch = useCallback(() => {
                 path={activePath}
                 onClose={() => setHistoryOpen(false)}
                 onRestored={() => setRefreshKey((k) => k + 1)}
+                onCompareWithCurrent={(path, versionHash) => {
+                  splitView.compareVersion(path, versionHash);
+                  setHistoryOpen(false);
+                }}
+              />
+            ) : splitView.isSplit && (activePath ?? splitView.state.left?.path) ? (
+              <SplitPageView
+                ref={splitPageRef}
+                tree={tree}
+                refreshKey={refreshKey}
+                onNavigatePrimary={navigate}
+                editorRef={editorRef}
+                editorModePref={prefs.default_view}
+                onEditorModeChange={(mode) =>
+                  updatePreferences({ default_view: mode === "source" ? "source" : "editor" })
+                }
+                onSaved={() => setRefreshKey((k) => k + 1)}
+                onRevealInTree={revealActivePageInTree}
+                onToggleStar={toggleStar}
+                isStarred={isStarred}
+                onTogglePin={togglePin}
+                isPinned={isPinned}
+                onDeleted={() => {
+                  splitView.closeSplit();
+                  setActivePath(null);
+                  setRefreshKey((k) => k + 1);
+                }}
+                onDuplicated={(p) => {
+                  setRefreshKey((k) => k + 1);
+                  navigate(p);
+                }}
+                onMoved={(p) => {
+                  setRefreshKey((k) => k + 1);
+                  navigate(p);
+                }}
+                onTagClick={(tag) => {
+                  setSearchQuery(`tag:${tag}`);
+                  setSearchOpen(true);
+                }}
+                onPublishedChanged={refreshPublishedPages}
+                onHistory={(p) => {
+                  setActivePath(p);
+                  setHistoryOpen(true);
+                }}
+                onOpenInSplit={openInSplit}
               />
             ) : editing && activePath ? (
               <KiwiEditor
@@ -904,6 +1012,7 @@ const handleSpaceSwitch = useCallback(() => {
                 }}
                 refreshKey={refreshKey}
                 onPublishedChanged={refreshPublishedPages}
+                onOpenInSplit={openInSplit}
               />
             ) : treeLoading || !uiConfigLoaded ? (
               <div className="flex h-full items-center justify-center">
@@ -963,9 +1072,15 @@ const handleSpaceSwitch = useCallback(() => {
       <KeyboardShortcuts
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
-        bindings={bindings}
-        conflicts={conflicts}
       />
+      {splitView.mobileBlocked && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="rounded-lg border border-border bg-card p-6 max-w-sm text-center shadow-lg">
+            <p className="text-sm text-foreground mb-4">Split view is not available on mobile.</p>
+            <Button onClick={splitView.dismissMobileBlocked}>OK</Button>
+          </div>
+        </div>
+      )}
     </TooltipProvider>
   );
 }
