@@ -14,6 +14,7 @@ describe("normalizeChord", () => {
     expect(normalizeChord("Ctrl+Shift+B")).toBe("mod+shift+b");
     expect(normalizeChord("Mod+K")).toBe("mod+k");
     expect(normalizeChord("Escape")).toBe("escape");
+    expect(normalizeChord("Mod+\\")).toBe("mod+\\");
   });
 });
 
@@ -46,6 +47,17 @@ describe("eventMatchesChord", () => {
     } as KeyboardEvent;
     expect(eventMatchesChord(slash, "Mod+/")).toBe(true);
     expect(eventMatchesChord(question, "Mod+/")).toBe(true);
+  });
+
+  it("matches mod+backslash for split view toggle", () => {
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(eventMatchesChord(e, "mod+\\")).toBe(true);
   });
 });
 
@@ -81,6 +93,18 @@ describe("matchBoundAction", () => {
       altKey: false,
     } as KeyboardEvent;
     expect(matchBoundAction(e, bindings)).toBe("graph");
+  });
+
+  it("matches toggle_split default binding", () => {
+    const bindings = mergeKeybindings(null);
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(matchBoundAction(e, bindings)).toBe("toggle_split");
   });
 });
 

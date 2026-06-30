@@ -16,7 +16,7 @@ func TestNormalizeChord(t *testing.T) {
 		{"Ctrl+Alt+F", "alt+mod+f"},
 		{"Escape", "escape"},
 		{"Ctrl+/", "mod+/"},
-		{"Mod+?", "mod+?"},
+		{"Mod+\\", "mod+\\"},
 	}
 	for _, tc := range tests {
 		got, err := NormalizeChord(tc.in)
@@ -37,6 +37,9 @@ func TestResolveDefaultsWhenMissing(t *testing.T) {
 	}
 	if res.Bindings["search"] != "mod+k" {
 		t.Fatalf("search = %q, want mod+k", res.Bindings["search"])
+	}
+	if res.Bindings["toggle_split"] != `mod+\` {
+		t.Fatalf("toggle_split = %q, want mod+\\", res.Bindings["toggle_split"])
 	}
 	if len(res.Conflicts) != 0 {
 		t.Fatalf("expected no conflicts, got %+v", res.Conflicts)

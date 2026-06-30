@@ -25,6 +25,7 @@ var knownActions = map[string]struct{}{
 	"undo":               {},
 	"focus_tree_filter":  {},
 	"close_overlay":      {},
+	"toggle_split":       {},
 }
 
 // DefaultBindings are used when no config overrides are present.
@@ -43,6 +44,7 @@ var DefaultBindings = map[string]string{
 	"undo":              "Mod+Z",
 	"focus_tree_filter": "Mod+Alt+F",
 	"close_overlay":     "Escape",
+	"toggle_split":      "Mod+\\",
 }
 
 // Conflict describes two or more actions bound to the same chord.
@@ -125,6 +127,8 @@ func normalizeKey(key string) string {
 		return "escape"
 	case "slash", "/":
 		return "/"
+	case "backslash", `\`:
+		return `\`
 	case "question", "?":
 		return "?"
 	default:

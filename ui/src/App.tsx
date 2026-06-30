@@ -64,6 +64,8 @@ import { useTheme } from "./hooks/useTheme";
 import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
+import { SplitViewProvider, useSplitView } from "./contexts/SplitViewProvider";
+import { KiwiSplitView, SplitViewMobileNotice } from "./components/KiwiSplitView";
 
 function getInitialActivePath(): string | null {
   if (typeof window === "undefined") return null;
@@ -78,6 +80,31 @@ function getInitialActivePath(): string | null {
 }
 
 export default function App() {
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  return (
+    <SplitViewProvider isMobile={isMobile}>
+      <AppShell isMobile={isMobile} />
+    </SplitViewProvider>
+  );
+}
+
+function AppShell({ isMobile }: { isMobile: boolean }) {
+  const {
+    split,
+    toggleSplit,
+    openInSplit,
+    compareWithCurrent,
+    navigatePane,
+    mobileBlocked,
+    clearMobileBlocked,
+  } = useSplitView();
   const [tree, setTree] = useState<TreeEntry | null>(null);
   const [activePath, setActivePath] = useState<string | null>(getInitialActivePath);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -123,14 +150,6 @@ export default function App() {
     setDataOpen(false);
     setGraphOpen(false);
     setHistoryOpen(false);
-  }, []);
-
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
   }, []);
 
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -298,6 +317,12 @@ export default function App() {
   }, [refreshKey, spaceKey, refreshPublishedPages]);
 
   useEffect(() => {
+    if (split.enabled && split.leftPath) {
+      setActivePath((prev) => prev ?? split.leftPath);
+    }
+  }, [split.enabled, split.leftPath]);
+
+  useEffect(() => {
     if (!tree || !uiConfigLoaded || activePath) return;
     if (!shouldApplyStartPage(activePath, hasDeepLinkPath())) return;
     if (resolvedStartPage.mode === "dashboard") {
@@ -375,6 +400,10 @@ export default function App() {
           setKanbanOpen(next);
           break;
         }
+        case "toggle_split":
+          e.preventDefault();
+          toggleSplit(state.activePath);
+          break;
         case "shortcuts_help":
           e.preventDefault();
           setShortcutsOpen((v) => !v);
@@ -438,7 +467,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar]);
+  }, [bindings, closeAllViews, sidebarOpen, toggleSidebar, toggleSplit]);
 
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
@@ -628,6 +657,9 @@ const handleSpaceSwitch = useCallback(() => {
     }
     setActivePath(path);
     setEditing(false);
+    if (split.enabled) {
+      navigatePane("left", path);
+    }
     setGraphOpen(false);
     setHistoryOpen(false);
     setDataOpen(false);
@@ -781,6 +813,7 @@ const handleSpaceSwitch = useCallback(() => {
             onTreeSortModeChange={setTreeSortMode}
             onActivePathChange={setActivePath}
             onTreeRefresh={refreshTree}
+            onOpenInSplit={(path) => openInSplit(activePath, path)}
           />
 
           {/* Sidebar resize handle (desktop only) */}
@@ -810,7 +843,8 @@ const handleSpaceSwitch = useCallback(() => {
           )}
 
           {/* Main content area */}
-          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+          <main className={`flex-1 relative ${basesOpen || canvasOpen || whiteboardOpen || timelineOpen || kanbanOpen || dataOpen || graphOpen || split.enabled ? "overflow-hidden" : "overflow-auto kiwi-scroll"}`}>
+            <SplitViewMobileNotice open={mobileBlocked} onClose={clearMobileBlocked} />
             {basesOpen ? (
               <KiwiBases
                 onClose={() => setBasesOpen(false)}
@@ -857,13 +891,17 @@ const handleSpaceSwitch = useCallback(() => {
                 path={activePath}
                 onClose={() => setHistoryOpen(false)}
                 onRestored={() => setRefreshKey((k) => k + 1)}
+                onCompareWithCurrent={(versionHash) => {
+                  compareWithCurrent(activePath, versionHash);
+                  setHistoryOpen(false);
+                }}
               />
-            ) : editing && activePath ? (
+            ) : editing && activePath && !split.enabled ? (
               <KiwiEditor
                 path={activePath}
                 tree={tree}
                 saveRef={editorRef}
-                editorModePref={prefs.default_view}
+                editorModePref={prefs.default_view ?? "editor"}
                 onEditorModeChange={(mode) =>
                   updatePreferences({ default_view: mode === "source" ? "source" : "editor" })
                 }
@@ -873,6 +911,55 @@ const handleSpaceSwitch = useCallback(() => {
                   setEditing(false);
                   setRefreshKey((k) => k + 1);
                 }}
+              />
+            ) : activePath && split.enabled ? (
+              <KiwiSplitView
+                tree={tree}
+                refreshKey={refreshKey}
+                leftPath={split.leftPath}
+                rightPath={split.rightPath}
+                rightVersionHash={split.rightVersionHash}
+                sizes={split.sizes}
+                onLeftNavigate={(p) => {
+                  navigatePane("left", p);
+                  setActivePath(p);
+                }}
+                onRightNavigate={(p) => navigatePane("right", p)}
+                onSyncActivePath={setActivePath}
+                onHistory={(p) => {
+                  setActivePath(p);
+                  setHistoryOpen(true);
+                }}
+                onRevealInTree={(p) => {
+                  setActivePath(p);
+                  revealActivePageInTree();
+                }}
+                onToggleStar={toggleStar}
+                isStarred={isStarred}
+                onTogglePin={togglePin}
+                isPinned={isPinned}
+                onDeleted={() => {
+                  setActivePath(null);
+                  setRefreshKey((k) => k + 1);
+                }}
+                onDuplicated={(p) => {
+                  setRefreshKey((k) => k + 1);
+                  navigate(p);
+                }}
+                onMoved={(p) => {
+                  setRefreshKey((k) => k + 1);
+                  navigate(p);
+                }}
+                onTagClick={(tag) => {
+                  setSearchQuery(`tag:${tag}`);
+                  setSearchOpen(true);
+                }}
+                onPublishedChanged={refreshPublishedPages}
+                onTreeRefresh={() => setRefreshKey((k) => k + 1)}
+                editorModePref={prefs.default_view ?? "editor"}
+                onEditorModeChange={(mode) =>
+                  updatePreferences({ default_view: mode === "source" ? "source" : "editor" })
+                }
               />
             ) : activePath ? (
               <KiwiPage
@@ -904,6 +991,7 @@ const handleSpaceSwitch = useCallback(() => {
                 }}
                 refreshKey={refreshKey}
                 onPublishedChanged={refreshPublishedPages}
+                onOpenInSplit={(p) => openInSplit(activePath, p)}
               />
             ) : treeLoading || !uiConfigLoaded ? (
               <div className="flex h-full items-center justify-center">

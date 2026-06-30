@@ -19,7 +19,8 @@ export type KeybindingAction =
   | "shortcuts_help"
   | "undo"
   | "focus_tree_filter"
-  | "close_overlay";
+  | "close_overlay"
+  | "toggle_split";
 
 export type ParsedChord = {
   mod: boolean;
@@ -54,6 +55,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   undo: "mod+z",
   focus_tree_filter: "mod+alt+f",
   close_overlay: "escape",
+  toggle_split: "mod+\\",
 };
 
 export function normalizeChord(chord: string): string {
@@ -85,6 +87,10 @@ export function normalizeChord(chord: string): string {
         break;
       case "slash":
         key = "/";
+        break;
+      case "backslash":
+      case "\\":
+        key = "\\";
         break;
       case "question":
         key = "?";
@@ -126,6 +132,9 @@ export function eventMatchesChord(e: KeyboardEvent, chord: string): boolean {
     return eventKey === "/" || eventKey === "slash" || eventKey === "?";
   }
   if (parsed.key === "?") return eventKey === "?" || (e.shiftKey && eventKey === "/");
+  if (parsed.key === "\\") {
+    return eventKey === "\\" || eventKey === "backslash";
+  }
   return eventKey === parsed.key;
 }
 
@@ -141,6 +150,7 @@ export function formatChordDisplay(chord: string): string {
   if (parsed.key === "/") keyLabel = "/";
   if (parsed.key === "?") keyLabel = "?";
   if (parsed.key === "escape") keyLabel = "Esc";
+  if (parsed.key === "\\") keyLabel = "\\";
 
   if (isMac && parsed.mod && !parsed.shift && !parsed.alt) {
     return `${parts[0]}${keyLabel}`;
@@ -176,6 +186,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { action: "new_page", label: "New page" },
       { action: "toggle_editor", label: "Toggle editor" },
       { action: "toggle_sidebar", label: "Toggle sidebar" },
+      { action: "toggle_split", label: "Toggle split view" },
       { action: "shortcuts_help", label: "Keyboard shortcuts" },
     ],
   },
