@@ -18,13 +18,15 @@ describe("uiFeatures", () => {
 
   it("maps view routes to feature keys", () => {
     expect(viewFeatureFromPathname("/view/kanban")).toBe("kanban");
+    expect(viewFeatureFromPathname("/view/calendar")).toBe("calendar");
     expect(viewFeatureFromPathname("/view/data")).toBe("data_sources");
     expect(viewFeatureFromPathname("/page/foo.md")).toBeNull();
   });
 
   it("blocks disabled view routes", () => {
-    const features = resolveUIFeatures({ kanban: false });
+    const features = resolveUIFeatures({ kanban: false, calendar: false });
     expect(isViewRouteAllowed("/view/kanban", features)).toBe(false);
+    expect(isViewRouteAllowed("/view/calendar", features)).toBe(false);
     expect(isViewRouteAllowed("/view/graph", features)).toBe(true);
   });
 });

@@ -4,9 +4,11 @@ import {
   buildChordIndex,
   eventMatchesChord,
   formatChordDisplay,
+  isKeyboardShortcutTargetIgnored,
   matchBoundAction,
   mergeKeybindings,
   normalizeChord,
+  shouldTriggerBareShortcutsHelp,
 } from "./kiwiKeybindings";
 
 describe("normalizeChord", () => {
@@ -99,5 +101,73 @@ describe("buildChordIndex", () => {
 describe("formatChordDisplay", () => {
   it("formats mod shortcuts for display", () => {
     expect(formatChordDisplay("mod+k")).toMatch(/K/i);
+  });
+});
+
+describe("isKeyboardShortcutTargetIgnored", () => {
+  function mockTarget(match: boolean): EventTarget {
+    return {
+      closest: () => (match ? {} : null),
+    } as unknown as EventTarget;
+  }
+
+  it("ignores native text inputs", () => {
+    expect(isKeyboardShortcutTargetIgnored(mockTarget(true))).toBe(true);
+  });
+
+  it("ignores CodeMirror editor surfaces", () => {
+    expect(isKeyboardShortcutTargetIgnored(mockTarget(true))).toBe(true);
+  });
+
+  it("allows shortcuts from non-editable targets", () => {
+    expect(isKeyboardShortcutTargetIgnored(mockTarget(false))).toBe(false);
+  });
+
+  it("allows shortcuts when target lacks closest", () => {
+    expect(isKeyboardShortcutTargetIgnored({} as EventTarget)).toBe(false);
+  });
+});
+
+describe("shouldTriggerBareShortcutsHelp", () => {
+  function mockTarget(ignored: boolean): EventTarget {
+    return {
+      closest: () => (ignored ? {} : null),
+    } as unknown as EventTarget;
+  }
+
+  it("opens on bare question mark outside inputs", () => {
+    const e = {
+      key: "?",
+      shiftKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      target: mockTarget(false),
+    } as KeyboardEvent;
+    expect(shouldTriggerBareShortcutsHelp(e)).toBe(true);
+  });
+
+  it("does not open when typing in an input", () => {
+    const e = {
+      key: "?",
+      shiftKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      target: mockTarget(true),
+    } as KeyboardEvent;
+    expect(shouldTriggerBareShortcutsHelp(e)).toBe(false);
+  });
+
+  it("does not open when mod is held (handled by shortcuts_help binding)", () => {
+    const e = {
+      key: "?",
+      shiftKey: true,
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      target: mockTarget(false),
+    } as KeyboardEvent;
+    expect(shouldTriggerBareShortcutsHelp(e)).toBe(false);
   });
 });
