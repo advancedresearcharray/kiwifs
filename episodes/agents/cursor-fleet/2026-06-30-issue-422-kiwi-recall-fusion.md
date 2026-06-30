@@ -73,3 +73,20 @@ go vet ./internal/search/... ./internal/api/... ./internal/mcpserver/... → ok
 go test ./internal/search/... ./internal/api/... ./internal/mcpserver/... -count=1  → ok (38s search, 17s api, 16s mcpserver)
 go vet ./internal/search/... ./internal/api/... ./internal/mcpserver/...            → ok
 ```
+
+## Hands-on takeover (2026-06-30)
+
+Fleet delivery check failed (`no_committed_diff`, `peer_review_not_passed`) due to unrelated template commit `3eaf944` on branch.
+
+1. Reset branch to scoped commit `c52affa` (13 files, +1373 lines — recall feature only).
+2. Re-ran full recall test suite and `go vet` — all green.
+3. Pushed `feat/issue-422-kiwi-recall-fusion` to `fork`.
+4. Opened PR https://github.com/advancedresearcharray/kiwifs/pull/55 (upstream `kiwifs/kiwifs` restricts PR creation to collaborators).
+5. Kiwi cluster depot (`192.168.167.240:3333`) unreachable; fix doc at `pages/fixes/kiwifs-kiwifs/issue-422-kiwi-recall-fusion.md`.
+
+### Test results (takeover)
+
+```
+go test ./internal/search/... ./internal/api/... ./internal/mcpserver/... -count=1  → ok (39s search, 17s api, 17s mcpserver)
+go vet ./internal/search/... ./internal/api/... ./internal/mcpserver/...            → ok
+```
