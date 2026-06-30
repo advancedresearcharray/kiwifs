@@ -17,22 +17,28 @@ import (
 )
 
 const (
-	IssueExternalLinkRot     = "external-link-rot"
-	externalLinkRuleName     = "external-link-rot"
-	defaultLinkCheckTimeout  = 5 * time.Second
-	defaultLinkCacheTTL      = 24 * time.Hour
-	defaultLinkUserAgent     = "KiwiFS-LinkChecker/1.0"
-	maxLinkRedirects         = 3
-	maxConcurrentLinkChecks  = 10
-	linkCheckRequestDelay    = 100 * time.Millisecond
-	linkCheckCacheVersion    = 1
+	IssueExternalLinkRot        = "external-link-rot"
+	externalLinkRuleName        = "external-link-rot"
+	defaultLinkCheckTimeout     = 5 * time.Second
+	defaultLinkCacheTTL         = 24 * time.Hour
+	defaultLinkUserAgent        = "KiwiFS-LinkChecker/1.0"
+	maxLinkRedirects            = 3
+	defaultMaxConcurrentChecks  = 10
+	defaultLinkCheckRequestDelay = 100 * time.Millisecond
+	defaultMaxChecksPerScan     = 200
+	linkCheckCacheVersion       = 1
+	dnsLookupTimeout            = 2 * time.Second
 )
 
 var (
-	externalURLRe  = regexp.MustCompile(`https?://[^\s\)\]\"'<>]+`)
-	fencedCodeRe   = regexp.MustCompile("(?s)```.*?```")
-	inlineCodeRe   = regexp.MustCompile("`[^`]+`")
-	defaultIgnore  = []string{"localhost", "127.0.0.1", "example.com"}
+	externalURLRe = regexp.MustCompile(`https?://[^\s\)\]\"'<>]+`)
+	fencedCodeRe  = regexp.MustCompile("(?s)```.*?```")
+	inlineCodeRe  = regexp.MustCompile("`[^`]+`")
+	defaultIgnore = []string{"localhost", "127.0.0.1", "example.com"}
+	blockedHosts  = []string{
+		"metadata.google.internal",
+		"metadata.goog",
+	}
 )
 
 // ExternalLinkFinding is one broken or errored external URL in a markdown page.
@@ -45,12 +51,16 @@ type ExternalLinkFinding struct {
 
 // ExternalLinkConfig controls HTTP link rot checks during janitor scans.
 type ExternalLinkConfig struct {
-	Enabled   bool
-	Timeout   time.Duration
-	Ignore    []string
-	CacheTTL  time.Duration
-	CachePath string
-	Client    *http.Client // nil → default client (tests inject httptest transport)
+	Enabled       bool
+	Timeout       time.Duration
+	Ignore        []string
+	Allow         []string // optional whitelist; when set, only matching hosts are probed
+	CacheTTL      time.Duration
+	CachePath     string
+	MaxChecks     int
+	MaxConcurrent int
+	RequestDelay  time.Duration
+	Client        *http.Client // nil → default client (tests inject httptest transport)
 }
 
 func (c ExternalLinkConfig) enabled() bool {
@@ -78,15 +88,51 @@ func (c ExternalLinkConfig) ignoreHosts() []string {
 	return defaultIgnore
 }
 
-// ExternalLinkConfigFrom builds checker settings from janitor scan options.
-func ExternalLinkConfigFrom(enabled bool, timeout, cacheTTL time.Duration, ignore []string, root string) ExternalLinkConfig {
-	return ExternalLinkConfig{
-		Enabled:   enabled,
-		Timeout:   timeout,
-		Ignore:    ignore,
-		CacheTTL:  cacheTTL,
-		CachePath: filepath.Join(root, ".kiwi", "cache", "link-check.json"),
+func (c ExternalLinkConfig) maxChecks() int {
+	if c.MaxChecks > 0 {
+		return c.MaxChecks
 	}
+	return defaultMaxChecksPerScan
+}
+
+func (c ExternalLinkConfig) maxConcurrent() int {
+	if c.MaxConcurrent > 0 {
+		return c.MaxConcurrent
+	}
+	return defaultMaxConcurrentChecks
+}
+
+func (c ExternalLinkConfig) requestDelay() time.Duration {
+	if c.RequestDelay >= 0 {
+		return c.RequestDelay
+	}
+	return defaultLinkCheckRequestDelay
+}
+
+// ExternalLinkConfigFrom builds checker settings from janitor scan options.
+// root is validated and used only for the on-disk cache path under .kiwi/cache/.
+func ExternalLinkConfigFrom(
+	enabled bool,
+	timeout, cacheTTL, requestDelay time.Duration,
+	ignore, allow []string,
+	maxChecks, maxConcurrent int,
+	root string,
+) (ExternalLinkConfig, error) {
+	cachePath, err := linkCheckCachePath(root)
+	if err != nil {
+		return ExternalLinkConfig{}, err
+	}
+	return ExternalLinkConfig{
+		Enabled:       enabled,
+		Timeout:       timeout,
+		Ignore:        ignore,
+		Allow:         allow,
+		CacheTTL:      cacheTTL,
+		CachePath:     cachePath,
+		MaxChecks:     maxChecks,
+		MaxConcurrent: maxConcurrent,
+		RequestDelay:  requestDelay,
+	}, nil
 }
 
 // WithExternalLinks enables external URL rot detection on the scanner.
@@ -100,11 +146,21 @@ func WithExternalLinks(cfg ExternalLinkConfig) Option {
 }
 
 // OptionsFromExternalLinks returns nil when external link checks are disabled.
-func OptionsFromExternalLinks(enabled bool, timeout, cacheTTL time.Duration, ignore []string, root string) []Option {
+func OptionsFromExternalLinks(
+	enabled bool,
+	timeout, cacheTTL, requestDelay time.Duration,
+	ignore, allow []string,
+	maxChecks, maxConcurrent int,
+	root string,
+) []Option {
 	if !enabled {
 		return nil
 	}
-	return []Option{WithExternalLinks(ExternalLinkConfigFrom(enabled, timeout, cacheTTL, ignore, root))}
+	cfg, err := ExternalLinkConfigFrom(enabled, timeout, cacheTTL, requestDelay, ignore, allow, maxChecks, maxConcurrent, root)
+	if err != nil {
+		return nil
+	}
+	return []Option{WithExternalLinks(cfg)}
 }
 
 type linkCacheEntry struct {
@@ -115,6 +171,39 @@ type linkCacheEntry struct {
 type linkCacheFile struct {
 	Version int                       `json:"version"`
 	Entries map[string]linkCacheEntry `json:"entries"`
+}
+
+// validateWorkspaceRoot returns a clean absolute path to an existing directory.
+func validateWorkspaceRoot(root string) (string, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return "", fmt.Errorf("empty workspace root")
+	}
+	abs, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return "", fmt.Errorf("workspace root: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("workspace root: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workspace root is not a directory: %s", abs)
+	}
+	return abs, nil
+}
+
+func linkCheckCachePath(root string) (string, error) {
+	validated, err := validateWorkspaceRoot(root)
+	if err != nil {
+		return "", err
+	}
+	cachePath := filepath.Join(validated, ".kiwi", "cache", "link-check.json")
+	rel, err := filepath.Rel(validated, cachePath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("link check cache path outside workspace root")
+	}
+	return cachePath, nil
 }
 
 func extractExternalURLs(body string) []string {
@@ -134,6 +223,24 @@ func extractExternalURLs(body string) []string {
 	return urls
 }
 
+func hostMatchesPattern(host, pattern string) bool {
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+	if pattern == "" {
+		return false
+	}
+	host = strings.ToLower(host)
+	return host == pattern || strings.HasSuffix(host, "."+pattern)
+}
+
+func hostMatchesList(host string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if hostMatchesPattern(host, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 func hostIgnored(rawURL string, ignore []string) bool {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -143,16 +250,70 @@ func hostIgnored(rawURL string, ignore []string) bool {
 	if host == "" {
 		return true
 	}
-	for _, pattern := range ignore {
-		pattern = strings.ToLower(strings.TrimSpace(pattern))
-		if pattern == "" {
-			continue
-		}
-		if host == pattern || strings.HasSuffix(host, "."+pattern) {
+	return hostMatchesList(host, ignore)
+}
+
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+}
+
+func isBlockedHostname(host string) bool {
+	host = strings.ToLower(host)
+	for _, blocked := range blockedHosts {
+		if hostMatchesPattern(host, blocked) {
 			return true
 		}
 	}
 	return false
+}
+
+func hostnameResolvesToBlocked(host string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return false
+	}
+	for _, ip := range ips {
+		if isBlockedIP(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// urlAllowedForProbe applies scheme, ignore/allow lists, and SSRF guards.
+// skipSSRF disables private-IP blocking (used when tests inject a custom Client).
+func urlAllowedForProbe(rawURL string, ignore, allow []string, skipSSRF bool) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		return false
+	}
+	if len(allow) > 0 && !hostMatchesList(host, allow) {
+		return false
+	}
+	if hostIgnored(rawURL, ignore) {
+		return false
+	}
+	if skipSSRF {
+		return true
+	}
+	if isBlockedHostname(host) {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return !isBlockedIP(ip)
+	}
+	return !hostnameResolvesToBlocked(host)
 }
 
 func loadLinkCache(path string) linkCacheFile {
@@ -191,24 +352,37 @@ func (s *Scanner) checkExternalLinks(ctx context.Context, pages []pageInfo) ([]E
 	}
 	cfg := *s.externalLinks
 	ignore := cfg.ignoreHosts()
+	allow := cfg.Allow
 	cache := loadLinkCache(cfg.CachePath)
 	ttl := cfg.cacheTTL()
 	now := time.Now().UTC()
+	maxChecks := cfg.maxChecks()
 
 	type pageURL struct {
 		path string
 		url  string
 	}
+	seenURLs := make(map[string]bool)
 	var toCheck []pageURL
 	for _, p := range pages {
 		for _, u := range extractExternalURLs(p.bodyText) {
-			if hostIgnored(u, ignore) {
+			if !urlAllowedForProbe(u, ignore, allow, cfg.Client != nil) {
 				continue
 			}
 			if ent, ok := cache.Entries[u]; ok && now.Sub(ent.CheckedAt) < ttl {
 				continue
 			}
+			if seenURLs[u] {
+				continue
+			}
+			seenURLs[u] = true
 			toCheck = append(toCheck, pageURL{path: p.path, url: u})
+			if len(toCheck) >= maxChecks {
+				break
+			}
+		}
+		if len(toCheck) >= maxChecks {
+			break
 		}
 	}
 
@@ -217,9 +391,12 @@ func (s *Scanner) checkExternalLinks(ctx context.Context, pages []pageInfo) ([]E
 		client = newLinkHTTPClient(cfg.timeout())
 	}
 
+	maxConcurrent := cfg.maxConcurrent()
+	requestDelay := cfg.requestDelay()
+
 	var (
 		mu       sync.Mutex
-		sem      = make(chan struct{}, maxConcurrentLinkChecks)
+		sem      = make(chan struct{}, maxConcurrent)
 		wg       sync.WaitGroup
 		updated  bool
 		findings []ExternalLinkFinding
@@ -235,10 +412,12 @@ func (s *Scanner) checkExternalLinks(ctx context.Context, pages []pageInfo) ([]E
 		}
 		defer func() { <-sem }()
 
-		select {
-		case <-time.After(linkCheckRequestDelay):
-		case <-ctx.Done():
-			return
+		if requestDelay > 0 {
+			select {
+			case <-time.After(requestDelay):
+			case <-ctx.Done():
+				return
+			}
 		}
 
 		status, probeErr := probeURL(ctx, client, pu.url)
@@ -283,7 +462,7 @@ func (s *Scanner) checkExternalLinks(ctx context.Context, pages []pageInfo) ([]E
 	// Include cached broken links not re-checked this run.
 	for _, p := range pages {
 		for _, u := range extractExternalURLs(p.bodyText) {
-			if hostIgnored(u, ignore) {
+			if !urlAllowedForProbe(u, ignore, allow, cfg.Client != nil) {
 				continue
 			}
 			ent, ok := cache.Entries[u]
@@ -347,6 +526,9 @@ func newLinkHTTPClient(timeout time.Duration) *http.Client {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxLinkRedirects {
 				return fmt.Errorf("stopped after %d redirects", maxLinkRedirects)
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to disallowed scheme: %s", req.URL.Scheme)
 			}
 			return nil
 		},

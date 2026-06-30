@@ -678,7 +678,11 @@ func janitorExecutionOpts(cfg *config.Config, root string) []janitor.Option {
 			true,
 			j.ExternalLinkTimeoutDuration(),
 			j.ExternalLinkCacheTTLDuration(),
+			j.ExternalLinkRequestDelayDuration(),
 			j.ResolvedExternalLinkIgnore(),
+			j.ExternalLinkAllow,
+			j.ResolvedExternalLinkMaxChecks(),
+			j.ResolvedExternalLinkMaxConcurrent(),
 			root,
 		)...)
 	}

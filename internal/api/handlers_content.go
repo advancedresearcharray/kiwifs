@@ -462,7 +462,11 @@ func (h *Handlers) Janitor(c echo.Context) error {
 				true,
 				j.ExternalLinkTimeoutDuration(),
 				j.ExternalLinkCacheTTLDuration(),
+				j.ExternalLinkRequestDelayDuration(),
 				j.ResolvedExternalLinkIgnore(),
+				j.ExternalLinkAllow,
+				j.ResolvedExternalLinkMaxChecks(),
+				j.ResolvedExternalLinkMaxConcurrent(),
 				h.root,
 			)...)
 		}
