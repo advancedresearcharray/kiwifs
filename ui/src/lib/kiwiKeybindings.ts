@@ -224,7 +224,7 @@ export function matchBoundAction(
 }
 
 const SHORTCUT_IGNORED_SELECTORS =
-  'input, textarea, select, [contenteditable="true"], [role="textbox"], .cm-editor, .cm-content';
+  "input, textarea, select, [contenteditable='true'], [contenteditable=''], [role='textbox'], .cm-editor, .cm-content, [cmdk-input]";
 
 /** Skip global shortcuts while focus is in an editable field or CodeMirror surface. */
 export function isKeyboardShortcutTargetIgnored(target: EventTarget | null): boolean {
@@ -235,7 +235,7 @@ export function isKeyboardShortcutTargetIgnored(target: EventTarget | null): boo
 /** Open shortcuts help on bare "?" (Shift+/) outside editable targets. */
 export function shouldTriggerBareShortcutsHelp(e: KeyboardEvent): boolean {
   if (isKeyboardShortcutTargetIgnored(e.target)) return false;
-  if (e.metaKey || e.ctrlKey) return false;
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
   return key === "?" || (e.shiftKey && key === "/");
 }

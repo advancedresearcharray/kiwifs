@@ -170,4 +170,16 @@ describe("shouldTriggerBareShortcutsHelp", () => {
     } as KeyboardEvent;
     expect(shouldTriggerBareShortcutsHelp(e)).toBe(false);
   });
+
+  it("does not open when alt is held", () => {
+    const e = {
+      key: "?",
+      shiftKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: true,
+      target: mockTarget(false),
+    } as KeyboardEvent;
+    expect(shouldTriggerBareShortcutsHelp(e)).toBe(false);
+  });
 });
