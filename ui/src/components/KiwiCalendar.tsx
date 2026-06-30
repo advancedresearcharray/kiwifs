@@ -64,10 +64,10 @@ function loadSavedDateField(): string {
 }
 
 export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
-  const now = new Date();
-  const [yearMonth, setYearMonth] = useState(() =>
-    formatYearMonth(now.getFullYear(), now.getMonth() + 1),
-  );
+  const [yearMonth, setYearMonth] = useState(() => {
+    const t = new Date();
+    return formatYearMonth(t.getFullYear(), t.getMonth() + 1);
+  });
   const [dateField, setDateField] = useState(loadSavedDateField);
   const [dateFieldOptions, setDateFieldOptions] = useState<string[]>([...DEFAULT_DATE_FIELDS]);
   const [entries, setEntries] = useState<CalendarEntry[]>([]);
@@ -104,7 +104,8 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
     try {
       let dql: string;
       if (isMobile) {
-        const anchorDay = Math.min(now.getDate(), new Date(year, month, 0).getDate());
+        const today = new Date();
+        const anchorDay = Math.min(today.getDate(), new Date(year, month, 0).getDate());
         const week = weekDateKeys(new Date(year, month - 1, anchorDay));
         dql = buildCalendarQueryRange(dateField, week[0]!, dayAfter(week[6]!));
       } else {
@@ -119,7 +120,7 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [dateField, yearMonth, isMobile, year, month, now]);
+  }, [dateField, yearMonth, isMobile, year, month]);
 
   useEffect(() => {
     loadMonth();

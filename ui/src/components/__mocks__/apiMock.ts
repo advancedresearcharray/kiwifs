@@ -19,6 +19,7 @@ import type {
   WorkflowDef,
   WorkflowPage,
 } from "@kw/lib/api";
+import { isCalendarTableQuery } from "@kw/lib/calendarView";
 
 export type MockUIConfig = {
   themeLocked?: boolean;
@@ -201,12 +202,16 @@ function createMockFetch(overrides: MockOverrides = {}) {
         // Check if it's a CALENDAR query
         const qMatch = url.match(/[?&]q=([^&]+)/);
         const dql = qMatch ? decodeURIComponent(qMatch[1]) : "";
-        if (/^\s*CALENDAR\b/i.test(dql)) {
+        if (/^\s*CALENDAR\b/i.test(dql) || isCalendarTableQuery(dql)) {
           const rows = overrides.calendarRows ?? [
             { _path: "pages/frontmatter.md", date: new Date().toISOString().slice(0, 10) },
           ];
+          const columns =
+            rows.length > 0
+              ? ["_path", ...Object.keys(rows[0]!).filter((k) => k !== "_path")]
+              : ["_path", "date"];
           return jsonResponse({
-            columns: ["_path", "date"],
+            columns,
             rows,
             total: rows.length,
             has_more: false,

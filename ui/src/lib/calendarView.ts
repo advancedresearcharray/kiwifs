@@ -73,6 +73,11 @@ export function buildCalendarQueryRange(dateField: string, start: string, end: s
   return `TABLE _path, ${dateField}, tags, state, title WHERE striptime(${dateField}) >= DATE("${start}") AND striptime(${dateField}) < DATE("${end}")`;
 }
 
+/** True when DQL is a KiwiCalendar month/range TABLE query (not legacy CALENDAR). */
+export function isCalendarTableQuery(dql: string): boolean {
+  return /\bTABLE\b/i.test(dql) && /\bstriptime\s*\(/i.test(dql) && /\bDATE\s*\(/i.test(dql);
+}
+
 export function dayAfter(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00`);
   d.setDate(d.getDate() + 1);

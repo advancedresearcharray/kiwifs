@@ -703,6 +703,7 @@ const handleSpaceSwitch = useCallback(() => {
     setWhiteboardOpen(false);
     setTimelineOpen(false);
     setKanbanOpen(false);
+    setCalendarOpen(false);
     recordVisit(path);
     if (isMobile) setSidebarOpen(false);
   }

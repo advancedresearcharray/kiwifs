@@ -8,6 +8,7 @@ import {
   detectDateFields,
   entryDotColor,
   groupByDate,
+  isCalendarTableQuery,
   monthStartEnd,
   parseCalendarResponse,
   toDateKey,
@@ -16,9 +17,15 @@ import {
 
 describe("calendarView", () => {
   it("builds month-scoped TABLE query", () => {
-    expect(buildCalendarQuery("date", "2026-06")).toBe(
+    const dql = buildCalendarQuery("date", "2026-06");
+    expect(dql).toBe(
       'TABLE _path, date, tags, state, title WHERE striptime(date) >= DATE("2026-06-01") AND striptime(date) < DATE("2026-07-01")',
     );
+    expect(isCalendarTableQuery(dql)).toBe(true);
+  });
+
+  it("does not treat legacy CALENDAR queries as calendar TABLE queries", () => {
+    expect(isCalendarTableQuery("CALENDAR date FROM events/")).toBe(false);
   });
 
   it("builds arbitrary date-range queries for mobile week spans", () => {
