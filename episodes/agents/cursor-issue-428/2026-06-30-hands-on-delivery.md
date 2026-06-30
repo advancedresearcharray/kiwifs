@@ -8,11 +8,11 @@ date: 2026-06-30
 
 ## Task
 
-Deliver kiwifs/kiwifs#428 — searchable keyboard shortcut cheat sheet overlay with verified tests and PR.
+Deliver kiwifs/kiwifs#428 — searchable keyboard shortcut cheat sheet overlay with verified tests, commit, and PR.
 
 ## Approach
 
-1. Rebased implementation onto `origin/main` (branch `feat/issue-428-keyboard-shortcuts-pr`) to avoid bundling calendar view (#427) changes.
+1. Cherry-picked overlay commit onto fresh `origin/main` branch `feat/issue-428-keyboard-shortcuts-clean` (6 files, no unrelated changes).
 2. Replaced static `Dialog` overlay with filterable `CommandDialog`.
 3. Added plain `?` trigger with `isTextInputTarget` / `shouldOpenShortcutsHelp` guards.
 4. Added HelpCircle toolbar button; custom bindings section via `getCustomShortcutItems`.
@@ -21,11 +21,17 @@ Deliver kiwifs/kiwifs#428 — searchable keyboard shortcut cheat sheet overlay w
 
 ```bash
 cd ui && npm test -- --run kiwiKeybindings overlayDismiss
+# Test Files  2 passed (2)
+# Tests  18 passed (18)
+
 go test ./internal/keybindings/... -count=1
+# ok
 ```
 
-18 UI tests passed; Go keybindings ok.
+## Delivery
 
-## Branch
-
-`feat/issue-428-keyboard-shortcuts-pr` — pushed for PR against main.
+- Commit: `db0ace4` on `feat/issue-428-keyboard-shortcuts-clean`
+- Pushed to `fork/feat/issue-428-keyboard-shortcuts-clean`
+- Fork PR: https://github.com/advancedresearcharray/kiwifs/pull/40
+- Upstream PR to kiwifs/kiwifs blocked (collaborators-only); branch ready for maintainer merge
+- Kiwi MCP gateway unreachable; fix doc at `pages/fixes/kiwifs-kiwifs/issue-428-keyboard-shortcut-cheat-sheet.md`
