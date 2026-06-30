@@ -129,7 +129,7 @@ export function eventMatchesChord(e: KeyboardEvent, chord: string): boolean {
   return eventKey === parsed.key;
 }
 
-export function formatChordDisplay(chord: string): string {
+export function formatChordSegments(chord: string): string[] {
   const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
   const parsed = parseChord(chord);
   const parts: string[] = [];
@@ -141,12 +141,40 @@ export function formatChordDisplay(chord: string): string {
   if (parsed.key === "/") keyLabel = "/";
   if (parsed.key === "?") keyLabel = "?";
   if (parsed.key === "escape") keyLabel = "Esc";
+  parts.push(keyLabel);
+  return parts;
+}
 
-  if (isMac && parsed.mod && !parsed.shift && !parsed.alt) {
-    return `${parts[0]}${keyLabel}`;
+export function formatChordDisplay(chord: string): string {
+  const segments = formatChordSegments(chord);
+  const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
+  const parsed = parseChord(chord);
+
+  if (isMac && parsed.mod && !parsed.shift && !parsed.alt && segments.length === 2) {
+    return `${segments[0]}${segments[1]}`;
   }
-  if (parts.length === 0) return keyLabel;
-  return `${parts.join("+")}+${keyLabel}`;
+  if (segments.length <= 1) return segments[0] ?? "";
+  return segments.join("+");
+}
+
+/** True when the event target is an editable field (skip global shortcuts). */
+export function isTextInputTarget(e: KeyboardEvent): boolean {
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  return Boolean(
+    target.closest(".cm-editor, [contenteditable='true'], [role='textbox'], [cmdk-input], [cmdk-input-wrapper]"),
+  );
+}
+
+/** Plain `?` (no ctrl/meta/alt) opens the shortcuts overlay outside editable targets. */
+export function shouldOpenShortcutsHelp(
+  e: Pick<KeyboardEvent, "key" | "shiftKey" | "ctrlKey" | "metaKey" | "altKey">,
+): boolean {
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  return e.key === "?" || (e.key === "/" && e.shiftKey);
 }
 
 export function mergeKeybindings(config: KeybindingsConfig | null | undefined): Record<KeybindingAction, string> {
@@ -199,6 +227,30 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
 ];
+
+const ACTION_LABELS: Record<KeybindingAction, string> = Object.fromEntries(
+  SHORTCUT_SECTIONS.flatMap((section) =>
+    section.items.map((item) => [item.action, item.label] as const),
+  ),
+) as Record<KeybindingAction, string>;
+
+export function actionLabel(action: KeybindingAction): string {
+  return ACTION_LABELS[action] ?? action.replace(/_/g, " ");
+}
+
+export function getCustomShortcutItems(
+  bindings: Record<KeybindingAction, string>,
+  defaults: Partial<Record<KeybindingAction, string>>,
+): ShortcutSection["items"] {
+  const items: ShortcutSection["items"] = [];
+  for (const action of Object.keys(DEFAULT_KEYBINDINGS) as KeybindingAction[]) {
+    const chord = bindings[action];
+    const def = defaults[action] ?? DEFAULT_KEYBINDINGS[action];
+    if (!chord || normalizeChord(def) === normalizeChord(chord)) continue;
+    items.push({ action, label: actionLabel(action) });
+  }
+  return items.sort((a, b) => a.label.localeCompare(b.label));
+}
 
 export function buildChordIndex(bindings: Record<KeybindingAction, string>): Map<string, KeybindingAction[]> {
   const index = new Map<string, KeybindingAction[]>();
