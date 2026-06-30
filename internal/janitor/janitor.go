@@ -41,10 +41,11 @@ type Issue struct {
 }
 
 type ScanResult struct {
-	Issues    []Issue `json:"issues"`
-	Scanned   int     `json:"scanned"`
-	Healthy   int     `json:"healthy"`
-	Timestamp string  `json:"timestamp"`
+	Issues        []Issue               `json:"issues"`
+	ExternalLinks []ExternalLinkFinding `json:"external_links,omitempty"`
+	Scanned       int                   `json:"scanned"`
+	Healthy       int                   `json:"healthy"`
+	Timestamp     string                `json:"timestamp"`
 }
 
 // Summary renders a compact human-readable report.
@@ -126,6 +127,7 @@ type Scanner struct {
 	searcher           search.Searcher
 	staleDays          int
 	executionStaleness *ExecutionStalenessRule
+	externalLinks      *ExternalLinkConfig
 }
 
 type Option func(*Scanner)
@@ -222,6 +224,10 @@ func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 	result.Issues = append(result.Issues, s.checkDuplicates(pages)...)
 	result.Issues = append(result.Issues, s.checkContradictions(pages)...)
 	result.Issues = append(result.Issues, s.checkExecutionStaleness(pages)...)
+
+	extFindings, extIssues := s.checkExternalLinks(ctx, pages)
+	result.ExternalLinks = extFindings
+	result.Issues = append(result.Issues, extIssues...)
 
 	for _, is := range result.Issues {
 		pagesWithIssues[is.Path] = true
