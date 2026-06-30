@@ -24,7 +24,7 @@ require (
 	github.com/johannesboyne/gofakes3 v0.0.0-20260208201424-4c385a1f6a73
 	github.com/jomei/notionapi v1.13.3
 	github.com/labstack/echo/v4 v4.15.2
-	github.com/mark3labs/mcp-go v0.49.0
+	github.com/mark3labs/mcp-go v0.55.1
 	github.com/nickng/bibtex v1.1.0
 	github.com/parquet-go/parquet-go v0.29.0
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
