@@ -76,6 +76,14 @@ describe("calendarView", () => {
     expect(grouped.get("2026-06-02")).toHaveLength(1);
   });
 
+  it("always includes default date fields even when meta samples omit them", () => {
+    const fields = detectDateFields([{ due: "2026-06-01", title: "x" }]);
+    expect(fields[0]).toBe("date");
+    expect(fields).toContain("due");
+    expect(fields).toContain("created");
+    expect(fields).toContain("last_executed");
+  });
+
   it("detects date-like frontmatter fields with defaults first", () => {
     const fields = detectDateFields([
       { due: "2026-06-01", title: "x", custom_at: "2026-01-01" },

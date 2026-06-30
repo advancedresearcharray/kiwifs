@@ -261,28 +261,7 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
           const dateStr = `${yearMonth}-${String(day).padStart(2, "0")}`;
           const hits = byDate.get(dateStr) ?? [];
           return (
-            <div key={dateStr}>
-              {hits.length === 1 && !isMobile ? (
-                <button
-                  type="button"
-                  className={cn(
-                    "relative flex min-h-[4.5rem] w-full flex-col items-start rounded-md border border-transparent p-1.5 text-left text-xs transition-colors",
-                    "hover:border-border hover:bg-accent/40",
-                    dateStr === todayISO() && "ring-1 ring-primary",
-                    "bg-accent/20",
-                  )}
-                  onClick={() => onNavigate(hits[0]!.path)}
-                >
-                  <span className="mb-1 font-medium">{day}</span>
-                  <span
-                    className="inline-block h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: entryDotColor(hits[0]!) }}
-                  />
-                </button>
-              ) : (
-                renderDayPopover(dateStr, hits, day)
-              )}
-            </div>
+            <div key={dateStr}>{renderDayPopover(dateStr, hits, day)}</div>
           );
         })}
       </div>
@@ -293,7 +272,6 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
     <div className="space-y-2">
       {weekKeys.map((dateStr) => {
         const hits = byDate.get(dateStr) ?? [];
-        const dayNum = Number(dateStr.slice(8, 10));
         const weekday = WEEKDAYS[new Date(`${dateStr}T12:00:00`).getDay() === 0 ? 6 : new Date(`${dateStr}T12:00:00`).getDay() - 1];
         return (
           <div
@@ -304,7 +282,7 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
             )}
           >
             <div className="mb-1 flex items-center justify-between text-xs">
-              <span className="font-semibold">{weekday} {dayNum}</span>
+              <span className="font-semibold">{weekday} {dateStr.slice(5).replace("-", "/")}</span>
               {hits.length > 0 && (
                 <span className="text-muted-foreground">{hits.length} page{hits.length !== 1 ? "s" : ""}</span>
               )}

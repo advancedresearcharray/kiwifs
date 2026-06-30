@@ -156,14 +156,11 @@ export function detectDateFields(samples: Record<string, unknown>[]): string[] {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([key]) => key);
 
-  const merged: string[] = [];
-  for (const field of DEFAULT_DATE_FIELDS) {
-    if (discovered.includes(field) || counts.has(field)) merged.push(field);
-  }
+  const merged: string[] = [...DEFAULT_DATE_FIELDS];
   for (const field of discovered) {
     if (!merged.includes(field)) merged.push(field);
   }
-  return merged.length > 0 ? merged : [...DEFAULT_DATE_FIELDS];
+  return merged;
 }
 
 export function entryDotColor(entry: CalendarEntry): string {

@@ -568,7 +568,7 @@ const handleSpaceSwitch = useCallback(() => {
         setDataOpen(true);
         break;
       case "calendar":
-        setCalendarOpen(true);
+        if (features.calendar) setCalendarOpen(true);
         break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -912,7 +912,7 @@ const handleSpaceSwitch = useCallback(() => {
                 onClose={() => setKanbanOpen(false)}
                 onNavigate={(p) => { setKanbanOpen(false); navigate(p); }}
               />
-            ) : calendarOpen ? (
+            ) : calendarOpen && features.calendar ? (
               <KiwiCalendar
                 isMobile={isMobile}
                 onClose={() => setCalendarOpen(false)}
