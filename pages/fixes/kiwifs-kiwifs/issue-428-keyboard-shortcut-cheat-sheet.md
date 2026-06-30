@@ -9,8 +9,9 @@ languages: [typescript, react]
 status: verified
 peer_review: pass
 date: 2026-06-30
-verified: 2026-06-30T03:37:00Z
-delivery_commit: 9b78ea7
+verified: 2026-06-30T03:38:00Z
+delivery_commit: 7f9165d
+pr_url: https://github.com/advancedresearcharray/kiwifs/pull/28
 ---
 
 ## Problem
@@ -42,6 +43,10 @@ Issue #428 requested a keyboard shortcut cheat sheet overlay: searchable, groupe
 cd ui && npm test -- --run kiwiKeybindings overlayDismiss
 # Test Files  2 passed (2)
 # Tests  20 passed (20)
+
+cd ui && npm test -- --run
+# Test Files  33 passed (33)
+# Tests  196 passed (196)
 ```
 
 New regressions cover ignored targets, `?` vs mod+/, Custom section for config overrides, and default-only bindings (no Custom section).
