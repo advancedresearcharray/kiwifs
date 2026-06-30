@@ -72,6 +72,7 @@ import {
   openPathInSplit,
   openVersionInSplit,
   saveSplitViewState,
+  syncSplitViewWithActivePath,
   toggleSplitView,
   type SplitViewState,
 } from "./lib/splitView";
@@ -152,6 +153,10 @@ export default function App() {
   useEffect(() => {
     saveSplitViewState(splitView);
   }, [splitView]);
+
+  useEffect(() => {
+    setSplitView((prev) => syncSplitViewWithActivePath(prev, activePath));
+  }, [activePath]);
 
   useEffect(() => {
     if (isMobile && splitView.enabled) {
@@ -525,6 +530,7 @@ export default function App() {
 const handleSpaceSwitch = useCallback(() => {
     setActivePath(null);
     setEditing(false);
+    setSplitView(createSplitViewState());
     setGraphOpen(false);
     setHistoryOpen(false);
     setDataOpen(false);

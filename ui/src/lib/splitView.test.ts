@@ -8,6 +8,7 @@ import {
   openVersionInSplit,
   saveSplitViewState,
   splitViewHasSecondary,
+  syncSplitViewWithActivePath,
   toggleSplitView,
   clampSplitSizes,
 } from "./splitView";
@@ -69,6 +70,37 @@ describe("splitView", () => {
     expect(offAgain.enabled).toBe(false);
   });
 
+  it("toggle preserves custom pane sizes across on/off cycles", () => {
+    const custom: [number, number] = [35, 65];
+    const base = createSplitViewState({ sizes: custom });
+    const on = toggleSplitView(base, "a.md");
+    expect(on.sizes).toEqual(custom);
+    const off = toggleSplitView(on, "a.md");
+    expect(off.sizes).toEqual(custom);
+    expect(off.enabled).toBe(false);
+  });
+
+  it("double toggle returns to disabled state without side effects", () => {
+    const initial = createSplitViewState();
+    const once = toggleSplitView(initial, "notes/x.md");
+    const twice = toggleSplitView(once, "notes/x.md");
+    expect(twice).toEqual(initial);
+  });
+
+  it("toggle off clears secondary content including version compare", () => {
+    const withVersion = openVersionInSplit(createSplitViewState(), { path: "a.md", hash: "abc" });
+    const cleared = toggleSplitView(withVersion, "a.md");
+    expect(cleared.enabled).toBe(false);
+    expect(splitViewHasSecondary(cleared)).toBe(false);
+  });
+
+  it("toggle on when already open via openPathInSplit turns off", () => {
+    const open = openPathInSplit(createSplitViewState(), "left.md");
+    expect(open.enabled).toBe(true);
+    const closed = toggleSplitView(open, "left.md");
+    expect(closed.enabled).toBe(false);
+  });
+
   it("does not enable split without an active page", () => {
     const state = toggleSplitView(createSplitViewState(), null);
     expect(state.enabled).toBe(false);
@@ -86,5 +118,19 @@ describe("splitView", () => {
     expect(clampSplitSizes(10)).toEqual([20, 80]);
     expect(clampSplitSizes(90)).toEqual([80, 20]);
     expect(clampSplitSizes(55)).toEqual([55, 45]);
+  });
+
+  describe("syncSplitViewWithActivePath", () => {
+    it("disables split view when primary page is cleared", () => {
+      const open = openPathInSplit(createSplitViewState({ sizes: [40, 60] }), "a.md");
+      const synced = syncSplitViewWithActivePath(open, null);
+      expect(synced.enabled).toBe(false);
+      expect(synced.sizes).toEqual([40, 60]);
+    });
+
+    it("leaves split view unchanged when primary page exists", () => {
+      const open = openPathInSplit(createSplitViewState(), "a.md");
+      expect(syncSplitViewWithActivePath(open, "a.md")).toBe(open);
+    });
   });
 });

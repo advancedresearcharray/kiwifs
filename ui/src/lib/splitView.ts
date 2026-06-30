@@ -127,6 +127,17 @@ export function toggleSplitView(
   };
 }
 
+/** Disable split view when the primary page is cleared (navigation / space switch). */
+export function syncSplitViewWithActivePath(
+  state: SplitViewState,
+  activePath: string | null,
+): SplitViewState {
+  if (state.enabled && !activePath) {
+    return createSplitViewState({ sizes: state.sizes });
+  }
+  return state;
+}
+
 export function closeSecondaryPane(state: SplitViewState): SplitViewState {
   return createSplitViewState({ sizes: state.sizes });
 }

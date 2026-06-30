@@ -6,6 +6,29 @@ import (
 	"testing"
 )
 
+func TestNormalizeKey(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"escape", "escape"},
+		{"esc", "escape"},
+		{"\\", "\\"},
+		{"backslash", "\\"},
+		{"enter", "enter"},
+		{"return", "enter"},
+		{"tab", "tab"},
+		{"k", "k"},
+		{"f1", "f1"},
+	}
+	for _, tc := range tests {
+		got := normalizeKey(tc.in)
+		if got != tc.want {
+			t.Fatalf("normalizeKey(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestNormalizeChord(t *testing.T) {
 	tests := []struct {
 		in   string

@@ -58,6 +58,31 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   toggle_split_view: "mod+\\",
 };
 
+const KEY_ALIASES: Record<string, string> = {
+  esc: "escape",
+  escape: "escape",
+  slash: "/",
+  "/": "/",
+  question: "?",
+  "?": "?",
+  backslash: "\\",
+  "\\": "\\",
+  enter: "enter",
+  return: "enter",
+  tab: "tab",
+  space: "space",
+  " ": "space",
+  del: "delete",
+  delete: "delete",
+  backspace: "backspace",
+};
+
+/** Canonicalize a single key token (already lowercased). */
+export function normalizeKeyPart(part: string): string {
+  const key = part.trim().toLowerCase();
+  return KEY_ALIASES[key] ?? key;
+}
+
 export function normalizeChord(chord: string): string {
   const parts = chord.trim().split("+").map((p) => p.trim().toLowerCase()).filter(Boolean);
   const mods: string[] = [];
@@ -81,22 +106,8 @@ export function normalizeChord(chord: string): string {
       case "option":
         if (!mods.includes("alt")) mods.push("alt");
         break;
-      case "esc":
-      case "escape":
-        key = "escape";
-        break;
-      case "slash":
-        key = "/";
-        break;
-      case "question":
-        key = "?";
-        break;
-      case "backslash":
-      case "\\":
-        key = "\\";
-        break;
       default:
-        key = part.length === 1 ? part : part;
+        key = normalizeKeyPart(part);
     }
   }
   mods.sort();

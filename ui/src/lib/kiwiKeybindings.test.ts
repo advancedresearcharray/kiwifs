@@ -7,7 +7,21 @@ import {
   matchBoundAction,
   mergeKeybindings,
   normalizeChord,
+  normalizeKeyPart,
 } from "./kiwiKeybindings";
+
+describe("normalizeKeyPart", () => {
+  it("canonicalizes single- and multi-character key aliases uniformly", () => {
+    expect(normalizeKeyPart("Escape")).toBe("escape");
+    expect(normalizeKeyPart("Backslash")).toBe("\\");
+    expect(normalizeKeyPart("/")).toBe("/");
+    expect(normalizeKeyPart("Enter")).toBe("enter");
+    expect(normalizeKeyPart("Return")).toBe("enter");
+    expect(normalizeKeyPart("Tab")).toBe("tab");
+    expect(normalizeKeyPart("F1")).toBe("f1");
+    expect(normalizeKeyPart("k")).toBe("k");
+  });
+});
 
 describe("normalizeChord", () => {
   it("canonicalizes modifier order and aliases", () => {
@@ -94,6 +108,26 @@ describe("matchBoundAction", () => {
       altKey: false,
     } as KeyboardEvent;
     expect(matchBoundAction(e, bindings)).toBe("graph");
+  });
+
+  it("matches toggle_split_view via mod+\\ without affecting other bindings", () => {
+    const bindings = mergeKeybindings(null);
+    const splitToggle = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    const unrelated = {
+      key: "s",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(matchBoundAction(splitToggle, bindings)).toBe("toggle_split_view");
+    expect(matchBoundAction(unrelated, bindings)).toBe("save");
   });
 });
 

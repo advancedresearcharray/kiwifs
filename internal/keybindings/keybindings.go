@@ -121,22 +121,31 @@ func NormalizeChord(chord string) (string, error) {
 	return strings.Join(out, "+"), nil
 }
 
+// keyAliases maps common key names (already lowercased) to canonical tokens.
+var keyAliases = map[string]string{
+	"esc":       "escape",
+	"escape":    "escape",
+	"slash":     "/",
+	"/":         "/",
+	"question":  "?",
+	"?":         "?",
+	"backslash": "\\",
+	"\\":        "\\",
+	"enter":     "enter",
+	"return":    "enter",
+	"tab":       "tab",
+	"space":     "space",
+	" ":         "space",
+	"del":       "delete",
+	"delete":    "delete",
+	"backspace": "backspace",
+}
+
 func normalizeKey(key string) string {
-	switch key {
-	case "esc", "escape":
-		return "escape"
-	case "slash", "/":
-		return "/"
-	case "question", "?":
-		return "?"
-	case "backslash", "\\":
-		return "\\"
-	default:
-		if len(key) == 1 {
-			return key
-		}
-		return key
+	if canonical, ok := keyAliases[key]; ok {
+		return canonical
 	}
+	return key
 }
 
 func appendUnique(list []string, item string) []string {
