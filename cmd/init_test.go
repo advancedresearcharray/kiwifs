@@ -525,6 +525,8 @@ func TestRunbookTemplateEmbedded(t *testing.T) {
 		"templates/runbook/.kiwi/schemas/runbook.json",
 		"templates/runbook/.kiwi/config.toml",
 		"templates/runbook/.kiwi/templates/runbook.md",
+		"templates/runbook/services/api-service.md",
+		"templates/runbook/services/monitoring.md",
 	}
 	for _, p := range paths {
 		if _, err := fs.Stat(embedded, p); err != nil {
@@ -551,6 +553,8 @@ func TestRunbookTemplateInit(t *testing.T) {
 		".kiwi/templates/runbook.md",
 		".kiwi/config.toml",
 		".kiwi/playbook.md",
+		"services/api-service.md",
+		"services/monitoring.md",
 	}
 	for _, p := range mustExist {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {

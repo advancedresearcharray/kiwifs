@@ -2,16 +2,14 @@
 memory_kind: semantic
 doc_id: kiwifs-kiwifs-issue-325-runbook-init-template
 title: Runbook init template with 7-section schema
-tags: [kiwifs, workspace, runbooks, issue-325, init-template, uc-6, devhelm]
+tags: [kiwifs, workspace, runbooks, issue-325, init-template, uc-6, devhelm, embed-filter]
 repo: kiwifs/kiwifs
 issue_number: 325
 languages: [go, markdown, json]
 status: verified
 peer_review: pass
-date: 2026-06-21
-verified: 2026-06-21T15:42:00Z
-delivery_commit: 2724b00e162490a9b7440546a7f5a950c8f5cf33
-ci_run: 27909055535
+date: 2026-06-30
+verified: 2026-06-30T17:45:00Z
 ---
 
 ## Problem
@@ -21,55 +19,51 @@ runbook workspace. Users needed a JSON Schema for frontmatter (`trigger`, `sever
 `owner`, `services`), a worked example in the DevHelm 7-section format, a blank template,
 and regression tests so `kiwifs check` passes on the generated scaffold.
 
-The prior runbook template used a different layout (`incidents/`, `procedures/`,
-`postmortems/`) without schema validation or the UC-6 section structure.
+Additionally, `//go:embed all:templates` could ship local dev scaffolds (legacy
+`incidents/`, `postmortems/`, `procedures/`, superseded `knowledge/`) containing
+placeholder wiki links that fail lint on generated workspaces.
 
 ## Root cause
 
-The embedded runbook template predated UC-6 conventions. It lacked:
-
-1. `.kiwi/schemas/runbook.json` with required frontmatter fields
-2. A single reference runbook (`example-high-cpu.md`) demonstrating all seven sections
-3. Registration in `cmd/init.go` help text and examples
-4. Regression tests for schema validation, scaffold paths, and lint cleanliness
+1. The embedded runbook template predated UC-6 conventions — missing schema, 7-section
+   example, and CLI registration.
+2. Go embed includes all files on disk under `templates/`, not just git-tracked paths.
+   Dev-only directories with broken placeholder links could leak into init scaffolds.
 
 ## Solution
 
-Replace the legacy runbook scaffold with UC-6 DevHelm format:
-
-1. **Template files** under `internal/workspace/templates/runbook/`:
-   - `SCHEMA.md` — structure, frontmatter table, severity guide, execution staleness
-   - `index.md` — table of contents with DQL query for active runbooks
-   - `example-high-cpu.md` — full 7-section example with fenced bash blocks and expected output
+1. **UC-6 template** under `internal/workspace/templates/runbook/`:
+   - `SCHEMA.md`, `index.md`, `example-high-cpu.md` (7 sections + fenced bash blocks)
    - `.kiwi/schemas/runbook.json` — validates `type`, `title`, `trigger`, `severity`, `owner`, `services`
    - `.kiwi/templates/runbook.md` — blank 7-section scaffold
-   - `.kiwi/config.toml` — execution staleness janitor, typed `services` links, auth guidance
-   - `playbook.md` — MCP agent operations for execute/create/maintain
+   - `.kiwi/config.toml` — execution staleness janitor, typed `services` links
+   - `services/api-service.md`, `services/monitoring.md` — wiki-link targets for example runbook
 
-2. **Registration** — `runbook` already in `internal/workspace/init.go` switch; added to
-   `cmd/init.go` flag help and example.
+2. **Registration** — `runbook` in `internal/workspace/init.go` switch; `cmd/init.go` flag help and example.
 
-3. **Removed legacy paths** — `incidents/`, `postmortems/`, `procedures/` subdirs replaced
-   by flat runbook files and `.kiwi/` schema/template.
+3. **Embed filter** — `filteredTemplatesFS` in `embed_filter.go` excludes dev-only paths
+   from init copy while keeping UC-6 scaffold files visible.
 
 ## Files changed
 
-- `internal/workspace/templates/runbook/**` — new UC-6 scaffold
-- `internal/workspace/runbook_template_test.go` — schema, scaffold, lint, metadata tests
-- `internal/workspace/init_test.go` — include `runbook` in `ListInitTemplates` assertion
+- `internal/workspace/templates/runbook/**` — UC-6 scaffold + service stubs
+- `internal/workspace/embed_filter.go` — filtered embedded FS
+- `internal/workspace/embed_filter_test.go` — path exclusion tests
+- `internal/workspace/init.go` — wrap embed FS with filter
+- `internal/workspace/runbook_template_test.go` — schema, scaffold, lint, embed tests
+- `internal/workspace/init_test.go` — runbook in `ListInitTemplates`, embedded paths
 - `cmd/init.go` — flag help + example for `--template runbook`
-- `cmd/init_test.go` — `TestRunbookTemplateEmbedded`, `TestRunbookTemplateInit`, `TestInitCmdDocumentsRunbookTemplate`, `TestRunbookTemplateInitBlankRoot`
-- `cmd/check_test.go` — `TestRunbookInitCheckPasses` (acceptance: `kiwifs check` on scaffold)
+- `cmd/init_test.go` — embedded, init, CLI help, blank-root tests
+- `cmd/check_test.go` — `TestRunbookInitCheckPasses`
 
 ## Tests
 
 ```bash
-go test ./internal/workspace/... -count=1 -run 'Runbook|runbook'
-go test ./cmd/... -count=1 -run 'Runbook|runbook'
-go test ./... -count=1
+go test ./internal/workspace/... -count=1 -run 'Runbook|Embed|Filtered'
+go test ./cmd/... -count=1 -run 'Runbook|InitCheck'
 ```
 
-Manual verification:
+Manual verification (requires `ui/dist` for full binary build):
 
 ```bash
 TMP=$(mktemp -d)
@@ -79,27 +73,11 @@ go run . check --root "$TMP/runbooks"   # exit 0 (info-level orphans only)
 
 ## Peer review notes
 
-**Status: pass** (2026-06-21 hands-on delivery v11, PR #418, CI run 27909055535 SUCCESS)
-
-Verified template scaffold, schema, registration, and tests:
-
 - `runbook.json` requires `type`, `title`, `trigger`, `severity`, `owner`, `services`
 - `example-high-cpu.md` has all 7 UC-6 sections with fenced bash blocks and expected output
-- `cmd/init.go` lists `runbook` in help and example; `internal/workspace/init.go` registers template
-- `TestRunbookInitCheckPasses` confirms `kiwifs check` exit 0 on scaffold (info-level orphans only)
-- `TestInitCmdDocumentsRunbookTemplate` guards `--template runbook` in flag help and CLI example
-- `TestRunbookTemplateInitBlankRoot` hardens blank-parent init path (matches ADR/prompt peer-review pattern)
-- UC-6 wiki updated: runbook init template removed from "What's Missing", milestone 1 marked shipped
-- No code defects found; implementation complete
-
-- Example runbook frontmatter must pass `runbook.json` — include at least one service in
-  `services` array with wiki-link syntax.
-- `TestRunbookTemplateLintClean` rejects broken-link, orphan, and empty-file lint issues
-  on the scaffold; README/playbook orphans are info-only in `kiwifs check`.
-- Execution staleness janitor config ships in template `.kiwi/config.toml`; pairs with
-  issue #326 janitor rule implementation.
-- Follow ADR/prompt template patterns for future UC init templates: SCHEMA + playbook +
-  `.kiwi/schemas/*.json` + `*_template_test.go`.
+- `TestRunbookInitCheckPasses` confirms `kiwifs check` exit 0 on scaffold
+- `TestRunbookEmbedUsesUC6ScaffoldOnly` guards against legacy path regression
+- Embed filter is transparent to tracked UC-6 files; dev-only paths remain on disk but do not ship
 
 ## Reuse guide
 
@@ -107,7 +85,6 @@ When adding or updating the runbook init template:
 
 1. Keep all seven body sections in example and blank template.
 2. Update `runbook.json` required fields if UC-6 schema changes.
-3. Run `TestRunbookSchemaValidatesExample` and `TestRunbookSchemaRejectsInvalidFrontmatter`
-   after schema edits.
-4. Ensure diagnosis/verification sections include fenced code blocks with expected output.
-5. Register new optional frontmatter in both `SCHEMA.md` and `runbook.json`.
+3. Run `TestRunbookSchemaValidatesExample` and `TestRunbookSchemaRejectsInvalidFrontmatter` after schema edits.
+4. Add dev-only template dirs to `excludedEmbedDirs` in `embed_filter.go` if they contain placeholder links.
+5. Run `TestFilteredTemplatesFSHidesLegacyRunbookPaths` after embed filter changes.

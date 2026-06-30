@@ -58,6 +58,8 @@ func TestInitRunbookTemplateScaffold(t *testing.T) {
 		"example-high-cpu.md",
 		"index.md",
 		"SCHEMA.md",
+		"services/api-service.md",
+		"services/monitoring.md",
 	} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Fatalf("missing %s: %v", p, err)
@@ -263,5 +265,36 @@ func TestInitRunbookDoesNotOverwriteExisting(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "example-high-cpu.md")); err != nil {
 		t.Fatal("expected example-high-cpu.md to be created alongside existing index.md")
+	}
+}
+
+func TestRunbookEmbedUsesUC6ScaffoldOnly(t *testing.T) {
+	t.Parallel()
+	legacy := []string{
+		"templates/runbook/incidents/template.md",
+		"templates/runbook/postmortems/template.md",
+		"templates/runbook/procedures/deploy-rollback.md",
+		"templates/runbook/procedures/rotate-secrets.md",
+		"templates/runbook/procedures/scale-up.md",
+		"templates/knowledge/index.md",
+	}
+	for _, p := range legacy {
+		if _, err := templates.ReadFile(p); err == nil {
+			t.Fatalf("legacy runbook scaffold %q must not be embedded (breaks lint via placeholder wiki links)", p)
+		}
+	}
+	required := []string{
+		"templates/runbook/SCHEMA.md",
+		"templates/runbook/index.md",
+		"templates/runbook/example-high-cpu.md",
+		"templates/runbook/.kiwi/schemas/runbook.json",
+		"templates/runbook/.kiwi/templates/runbook.md",
+		"templates/runbook/services/api-service.md",
+		"templates/runbook/services/monitoring.md",
+	}
+	for _, p := range required {
+		if _, err := templates.ReadFile(p); err != nil {
+			t.Fatalf("required UC-6 runbook scaffold missing %q: %v", p, err)
+		}
 	}
 }
