@@ -35,3 +35,16 @@ cd ui && npm test -- --run kiwiKeybindings overlayDismiss  # 17 passed
 - `ui/src/components/KeyboardShortcuts.tsx`
 - `ui/src/components/ui/command.tsx`
 - `ui/src/App.tsx`
+
+## Verification (2026-06-30 hands-on takeover)
+
+Re-ran full test suite after fleet delivery rejection (broken `.git` overlay; use `GIT_DIR=.git.writable`):
+
+```
+go test ./internal/keybindings/... -count=1          ok
+go test ./internal/api/ -run GetKeybindings -count=1 ok
+cd ui && npm test -- --run kiwiKeybindings overlayDismiss  # 17 passed
+```
+
+Applied peer-review fix: swagger `@Tags ui` on GetKeybindings (was `theme`).
+Branch `feat/428-keyboard-shortcut-cheat-sheet` pushed to fork; PR #36 on advancedresearcharray/kiwifs.

@@ -11,7 +11,7 @@ import (
 //
 //	@Summary		Get keyboard shortcut bindings
 //	@Description	Returns merged keybindings from defaults, .kiwi/keybindings.json, and [ui.keybindings] in config.toml. Includes conflict warnings when multiple actions share a chord.
-//	@Tags			theme
+//	@Tags			ui
 //	@Security		BearerAuth
 //	@Success		200		{object}	keybindings.Resolved
 //	@Failure		500		{object}	map[string]string
