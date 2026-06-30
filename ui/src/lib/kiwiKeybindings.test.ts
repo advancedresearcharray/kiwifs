@@ -4,9 +4,12 @@ import {
   buildChordIndex,
   eventMatchesChord,
   formatChordDisplay,
+  isCustomBinding,
+  isTypingTarget,
   matchBoundAction,
   mergeKeybindings,
   normalizeChord,
+  shouldOpenShortcutsHelp,
 } from "./kiwiKeybindings";
 
 describe("normalizeChord", () => {
@@ -99,5 +102,51 @@ describe("buildChordIndex", () => {
 describe("formatChordDisplay", () => {
   it("formats mod shortcuts for display", () => {
     expect(formatChordDisplay("mod+k")).toMatch(/K/i);
+  });
+});
+
+describe("isTypingTarget", () => {
+  function mockEl(
+    tagName: string,
+    opts: { contentEditable?: boolean; closest?: string | null } = {},
+  ): EventTarget {
+    const el = {
+      tagName,
+      isContentEditable: opts.contentEditable ?? false,
+      closest: (sel: string) => (opts.closest && sel.includes(opts.closest) ? el : null),
+    };
+    return el as unknown as EventTarget;
+  }
+
+  it("returns true for inputs and contenteditable", () => {
+    expect(isTypingTarget(mockEl("INPUT"))).toBe(true);
+    expect(isTypingTarget(mockEl("TEXTAREA"))).toBe(true);
+    expect(isTypingTarget(mockEl("DIV", { contentEditable: true }))).toBe(true);
+    expect(isTypingTarget(mockEl("DIV", { closest: "cm-content" }))).toBe(true);
+  });
+
+  it("returns false for non-editable elements", () => {
+    expect(isTypingTarget(mockEl("DIV"))).toBe(false);
+    expect(isTypingTarget(null)).toBe(false);
+  });
+});
+
+describe("shouldOpenShortcutsHelp", () => {
+  it("matches plain question mark without modifiers", () => {
+    expect(shouldOpenShortcutsHelp({ key: "?", shiftKey: true, ctrlKey: false, metaKey: false, altKey: false })).toBe(true);
+    expect(shouldOpenShortcutsHelp({ key: "k", shiftKey: false, ctrlKey: false, metaKey: false, altKey: false })).toBe(false);
+    expect(shouldOpenShortcutsHelp({ key: "?", shiftKey: true, ctrlKey: true, metaKey: false, altKey: false })).toBe(false);
+  });
+});
+
+describe("isCustomBinding", () => {
+  it("detects overrides against defaults", () => {
+    const bindings = mergeKeybindings({
+      bindings: { search: "mod+j" },
+      defaults: DEFAULT_KEYBINDINGS,
+      conflicts: [],
+    });
+    expect(isCustomBinding("search", bindings, DEFAULT_KEYBINDINGS)).toBe(true);
+    expect(isCustomBinding("save", bindings, DEFAULT_KEYBINDINGS)).toBe(false);
   });
 });

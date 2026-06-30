@@ -3,6 +3,7 @@ import {
   Clock4,
   Columns3,
   Database,
+  HelpCircle,
   LayoutGrid,
   Moon,
   Network,
@@ -47,7 +48,7 @@ import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
 import { useUIConfig } from "./hooks/useUIConfig";
 import { usePreferences } from "./hooks/usePreferences";
-import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
+import { formatChordDisplay, isTypingTarget, matchBoundAction, shouldOpenShortcutsHelp, type KeybindingAction } from "./lib/kiwiKeybindings";
 import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
 import { formatDocumentTitle } from "./lib/pageTitle";
@@ -179,7 +180,7 @@ export default function App() {
   const { recent, recordVisit } = useRecentPages(currentSpace);
   const { starred, toggle: toggleStar, isStarred } = useStarredPages(currentSpace);
   const { pinned, toggle: togglePin, isPinned } = usePinnedPages(currentSpace);
-  const { bindings, conflicts } = useKeybindings();
+  const { bindings, conflicts, defaults: keybindingDefaults } = useKeybindings();
   const { config: uiConfig, loaded: uiConfigLoaded } = useUIConfig();
   const resolvedStartPage = resolveStartPage(uiConfig.startPage);
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
@@ -312,6 +313,15 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+
+      if (!isTypingTarget(e.target) && shouldOpenShortcutsHelp(e)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+
+      if (isTypingTarget(e.target)) return;
+
       const action = matchBoundAction(e, bindings);
       if (!action) return;
 
@@ -733,6 +743,12 @@ const handleSpaceSwitch = useCallback(() => {
               }}
             />
             <HostToolbarActions />
+            <ToolbarButton
+              onClick={() => setShortcutsOpen(true)}
+              label={`Keyboard shortcuts (${formatChordDisplay(bindings.shortcuts_help)})`}
+            >
+              <HelpCircle className="h-4 w-4" />
+            </ToolbarButton>
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -964,6 +980,7 @@ const handleSpaceSwitch = useCallback(() => {
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
         bindings={bindings}
+        defaults={keybindingDefaults}
         conflicts={conflicts}
       />
     </TooltipProvider>
