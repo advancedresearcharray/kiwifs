@@ -19,14 +19,16 @@ Implement kiwifs/kiwifs#427: monthly calendar toolbar view for frontmatter date 
 ## Verification
 
 ```bash
-cd ui && npm test -- --run   # 200 passed (35 files)
-go test ./internal/config/... -count=1   # ok
+cd ui && npm test -- --run   # 204 passed (35 files)
+go test ./internal/config/... ./internal/keybindings/... ./internal/exporter/...   # ok
 ```
 
-## Branch
+## Branch & PR
 
-`feat/issue-427-calendar-clean` — 2 commits, ready for fleet publish (no push/PR from Cursor).
+- Branch: `feat/issue-427-calendar-clean` — 3 commits pushed to `fork`
+- PR: https://github.com/advancedresearcharray/kiwifs/pull/38 (upstream kiwifs/kiwifs restricted to collaborators)
+- Commits: `935b371` feat, `b9b6141` fix, `40b42ad` test
 
 ## Kiwi MCP
 
-Gateway at 192.168.167.240:3333 unreachable; fix doc updated locally at `pages/fixes/kiwifs-kiwifs/issue-427-calendar-view-frontmatter-dates.md`.
+Gateway at 192.168.167.240:3333 unreachable; fix doc at `pages/fixes/kiwifs-kiwifs/issue-427-calendar-view-frontmatter-dates.md` (local overlay, gitignored).
