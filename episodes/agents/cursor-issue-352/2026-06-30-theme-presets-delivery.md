@@ -42,7 +42,8 @@ cd ui && npm test -- --run src/themes/index.test.ts      → 4 passed
 - Branch: `feat/issue-352-theme-presets-config-clean`
 - Feature commit: `553ef59` · Docs: `587e46c` · Verification: `0b1094e`
 - Closes #352
-- Pushed to `fork/feat/issue-352-theme-presets-config-clean` and PR opened against `kiwifs/kiwifs` main
+- Pushed to `fork/feat/issue-352-theme-presets-config-clean`
+- PR: https://github.com/advancedresearcharray/kiwifs/pull/58 (upstream kiwifs/kiwifs restricted to collaborators)
 
 ## Hands-on delivery (2026-06-30)
 
