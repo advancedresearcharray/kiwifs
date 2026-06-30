@@ -50,10 +50,10 @@ describe("calendarView", () => {
   it("parses query rows into calendar entries", () => {
     const entries = parseCalendarResponse(
       {
-        columns: ["_path", "date", "tags", "state"],
+        columns: ["_path", "date", "tags", "state", "title"],
         rows: [
-          { _path: "notes/a.md", date: "2026-06-15", tags: ["bug"], state: "proposed" },
-          { _path: "notes/b.md", date: "2026-06-15T10:00:00Z" },
+          { _path: "notes/a.md", date: "2026-06-15", tags: ["bug"], state: "proposed", title: "Bug report" },
+          { _path: "notes/b.md", date: "2026-06-15T10:00:00Z", title: "Morning note" },
           { _path: "notes/c.md", date: "invalid" },
         ],
         total: 3,
@@ -62,8 +62,13 @@ describe("calendarView", () => {
       "date",
     );
     expect(entries).toHaveLength(2);
-    expect(entries[0]).toMatchObject({ path: "notes/a.md", date: "2026-06-15", state: "proposed" });
-    expect(entries[1]?.date).toBe("2026-06-15");
+    expect(entries[0]).toMatchObject({
+      path: "notes/a.md",
+      date: "2026-06-15",
+      state: "proposed",
+      title: "Bug report",
+    });
+    expect(entries[1]).toMatchObject({ date: "2026-06-15", title: "Morning note" });
   });
 
   it("groups entries by date", () => {
