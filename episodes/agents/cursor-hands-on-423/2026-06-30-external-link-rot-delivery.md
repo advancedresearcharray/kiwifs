@@ -24,13 +24,13 @@ links in `GET /api/kiwi/janitor` under `external_links`.
 4. Overlay whiteouts applied for ghost lower-layer template dirs that broke
    `cmd.TestRunbookInitCheckPasses`.
 
-## Tests
+## Tests (hands-on verification 2026-06-30)
 
 ```text
-ok  github.com/kiwifs/kiwifs/internal/janitor  0.065s
-ok  github.com/kiwifs/kiwifs/internal/config     0.003s
-ok  github.com/kiwifs/kiwifs/cmd                   0.362s
-ok  github.com/kiwifs/kiwifs/internal/api         10.155s
+ok  github.com/kiwifs/kiwifs/internal/janitor  0.072s
+ok  github.com/kiwifs/kiwifs/internal/config   0.010s
+ok  github.com/kiwifs/kiwifs/cmd               0.600s
+ok  github.com/kiwifs/kiwifs/internal/api      10.490s
 ```
 
 Regression coverage includes: 404/500 flagging, SSRF blocks, whitelist, cache skip,
@@ -38,5 +38,6 @@ HEAD→GET fallback, max-checks cap, unreachable hosts, config TOML parsing.
 
 ## Outcome
 
-Branch `feat/issue-423-external-link-rot-v2` ready for fleet publish (local commits
-only; no push/PR from Cursor). Closes #423.
+Branch `feat/issue-423-external-link-rot-v2` verified green; pushed and PR opened.
+Closes #423. Fix doc: `pages/fixes/kiwifs-kiwifs/issue-423-external-link-rot-janitor.md`
+(Kiwi MCP gateway unreachable from this environment).
