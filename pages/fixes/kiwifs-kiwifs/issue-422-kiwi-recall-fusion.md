@@ -59,6 +59,7 @@ All pass. Full `go test ./...` passes except unrelated workspace template lint (
 - Redundant `searchOpts.Scope != ""` guard removed; only `opts.Scope != ""` triggers scoped search path.
 - Graph signal ranks 1-hop backlinks of top FTS/vector seeds by inbound link count from multiple seeds.
 - MCP `limit` capped at 50 (consistent with `kiwi_search`).
+- Hands-on delivery: branch must be rebased onto current `origin/main` (not stale fork branch); exclude unrelated template/mkdocs commits from the PR.
 
 ## Reuse guide
 

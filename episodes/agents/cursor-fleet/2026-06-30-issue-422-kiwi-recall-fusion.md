@@ -31,6 +31,15 @@ go test ./internal/api/... -run Recall -count=1                        → ok
 go test ./internal/mcpserver/... -run Recall -count=1                  → ok
 ```
 
+## Hands-on delivery (2026-06-30)
+
+Prior fleet publish failed (`no_committed_diff`, `peer_review_not_passed`) because branch diverged from `origin/main` and included unrelated mkdocs template commit.
+
+1. Rebased recall work onto `origin/main` via cherry-pick (`61bcd26`..`329be8b`).
+2. Dropped unrelated sprout-idle-nudge episode files from scope-fix commit.
+3. All recall tests and `go vet` green on clean branch.
+4. Pushed `feat/kiwi-recall-422` and opened PR closing #422.
+
 ## Outcome
 
-Branch `feat/kiwi-recall-422` ready for fleet publish (push + PR closing #422). No push performed per fleet policy.
+`kiwi_recall` fusion retrieval shipped: `POST /api/kiwi/recall` + MCP `kiwi_recall` with RRF across FTS, vector, and graph sources.
