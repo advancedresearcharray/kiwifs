@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/kiwifs/kiwifs/internal/links"
@@ -184,10 +185,43 @@ type DraftsConfig struct {
 }
 
 type JanitorConfig struct {
-	Interval           string                     `toml:"interval"`
-	StaleDays          int                        `toml:"stale_days"`
-	StartupScan        bool                       `toml:"startup_scan"`
-	ExecutionStaleness ExecutionStalenessConfig   `toml:"execution_staleness"`
+	Interval             string                   `toml:"interval"`
+	StaleDays            int                      `toml:"stale_days"`
+	StartupScan          bool                     `toml:"startup_scan"`
+	ExecutionStaleness   ExecutionStalenessConfig `toml:"execution_staleness"`
+	ExternalLinkCheck    *bool                    `toml:"external_link_check"`
+	ExternalLinkTimeout  string                   `toml:"external_link_timeout"`
+	ExternalLinkIgnore   []string                 `toml:"external_link_ignore"`
+	ExternalLinkCacheTTL string                   `toml:"external_link_cache_ttl"`
+}
+
+// ExternalLinksEnabled reports whether external URL rot checks are configured.
+func (j JanitorConfig) ExternalLinksEnabled() bool {
+	return j.ExternalLinkCheck != nil && *j.ExternalLinkCheck
+}
+
+// ExternalLinkTimeoutDuration parses external_link_timeout (default 5s).
+func (j JanitorConfig) ExternalLinkTimeoutDuration() time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(j.ExternalLinkTimeout)); err == nil && d > 0 {
+		return d
+	}
+	return 5 * time.Second
+}
+
+// ExternalLinkCacheTTLDuration parses external_link_cache_ttl (default 24h).
+func (j JanitorConfig) ExternalLinkCacheTTLDuration() time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(j.ExternalLinkCacheTTL)); err == nil && d > 0 {
+		return d
+	}
+	return 24 * time.Hour
+}
+
+// ResolvedExternalLinkIgnore returns configured ignore hosts or sensible defaults.
+func (j JanitorConfig) ResolvedExternalLinkIgnore() []string {
+	if len(j.ExternalLinkIgnore) > 0 {
+		return j.ExternalLinkIgnore
+	}
+	return []string{"localhost", "127.0.0.1", "example.com"}
 }
 
 // ExecutionStalenessConfig flags runbooks (or other directory-scoped pages) when
