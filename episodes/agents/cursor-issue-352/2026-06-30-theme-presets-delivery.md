@@ -40,6 +40,19 @@ cd ui && npm test -- --run src/themes/index.test.ts      → 4 passed
 ## Deliverable
 
 - Branch: `feat/issue-352-theme-presets-config-clean`
-- Feature commit: `553ef59` · Docs: `587e46c`
+- Feature commit: `553ef59` · Docs: `587e46c` · Verification: `0b1094e`
 - Closes #352
-- Fleet agent to push and open PR (local only per fleet policy)
+- Pushed to `fork/feat/issue-352-theme-presets-config-clean` and PR opened against `kiwifs/kiwifs` main
+
+## Hands-on delivery (2026-06-30)
+
+Re-ran full regression suite before push — all green:
+
+```
+go test ./internal/themepresets/... -count=1 -v          → 7 passed
+go test ./internal/config/... -run TestUIConfigThemePresets → PASS
+go test ./internal/api/... -run 'ThemePresets|UIConfig_Theme' → 2 passed
+cd ui && npm test -- --run src/themes/index.test.ts      → 4 passed
+```
+
+Kiwi cluster depot (`192.168.167.240:3333`) unreachable; durable fix doc at `pages/fixes/kiwifs-kiwifs/issue-352-theme-presets-config.md` (gitignored locally).
