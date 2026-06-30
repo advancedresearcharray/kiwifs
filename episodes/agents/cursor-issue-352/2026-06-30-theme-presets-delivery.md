@@ -56,4 +56,17 @@ go test ./internal/api/... -run 'ThemePresets|UIConfig_Theme' → 2 passed
 cd ui && npm test -- --run src/themes/index.test.ts      → 4 passed
 ```
 
-Kiwi cluster depot (`192.168.167.240:3333`) unreachable; durable fix doc at `pages/fixes/kiwifs-kiwifs/issue-352-theme-presets-config.md` (gitignored locally).
+Kiwi cluster depot (`192.168.167.240:3333`) unreachable; durable fix doc committed at `pages/fixes/kiwifs-kiwifs/issue-352-theme-presets-config.md`.
+
+## Hands-on takeover (2026-06-30)
+
+Fleet delivery failed (`no_committed_diff`, `peer_review_not_passed`). Re-verified implementation on `feat/issue-352-theme-presets-config-clean`:
+
+```
+go test ./internal/themepresets/... -count=1 -v          → 7 passed
+go test ./internal/config/... -count=1                   → PASS
+go test ./internal/api/... -count=1                      → PASS
+cd ui && npm test -- --run src/themes/index.test.ts      → 4 passed
+```
+
+Added durable fix doc to repo, pushed branch, updated fork PR #58 (removed Cursor attribution).
