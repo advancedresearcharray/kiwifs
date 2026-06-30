@@ -192,8 +192,35 @@ type JanitorConfig struct {
 	ExternalLinkCheck    *bool                    `toml:"external_link_check"`
 	ExternalLinkTimeout  string                   `toml:"external_link_timeout"`
 	ExternalLinkIgnore   []string                 `toml:"external_link_ignore"`
+	ExternalLinkAllow    []string                 `toml:"external_link_allow"`
 	ExternalLinkCacheTTL string                   `toml:"external_link_cache_ttl"`
+	// ExternalLinkMaxChecks caps outbound HTTP probes per scan (default 200).
+	ExternalLinkMaxChecks int `toml:"external_link_max_checks"`
+	// ExternalLinkMaxConcurrent limits parallel probes (default 10).
+	ExternalLinkMaxConcurrent int `toml:"external_link_max_concurrent"`
+	// ExternalLinkRequestDelay is the pause between starting probes (default 100ms).
+	ExternalLinkRequestDelay string `toml:"external_link_request_delay"`
 }
+
+// External link rot detection (opt-in). Scans markdown bodies for http(s) URLs,
+// probes them with HEAD/GET, and flags 4xx/5xx or unreachable hosts.
+//
+// Example (.kiwi/config.toml):
+//
+//	[janitor]
+//	external_link_check = true
+//	external_link_timeout = "5s"
+//	external_link_ignore = ["localhost", "127.0.0.1", "example.com"]
+//	external_link_allow = ["docs.example.com", "github.com"]  # optional whitelist
+//	external_link_cache_ttl = "24h"
+//	external_link_max_checks = 200
+//	external_link_max_concurrent = 10
+//	external_link_request_delay = "100ms"
+//
+// When external_link_allow is non-empty, only URLs whose host matches the
+// allow list are probed. Private/link-local IPs and metadata endpoints are
+// always blocked (SSRF protection). Results appear in kiwifs check, the
+// scheduled janitor, and GET /api/kiwi/janitor under external_links.
 
 // ExternalLinksEnabled reports whether external URL rot checks are configured.
 func (j JanitorConfig) ExternalLinksEnabled() bool {
@@ -216,12 +243,36 @@ func (j JanitorConfig) ExternalLinkCacheTTLDuration() time.Duration {
 	return 24 * time.Hour
 }
 
+// ExternalLinkRequestDelayDuration parses external_link_request_delay (default 100ms).
+func (j JanitorConfig) ExternalLinkRequestDelayDuration() time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(j.ExternalLinkRequestDelay)); err == nil && d >= 0 {
+		return d
+	}
+	return 100 * time.Millisecond
+}
+
 // ResolvedExternalLinkIgnore returns configured ignore hosts or sensible defaults.
 func (j JanitorConfig) ResolvedExternalLinkIgnore() []string {
 	if len(j.ExternalLinkIgnore) > 0 {
 		return j.ExternalLinkIgnore
 	}
 	return []string{"localhost", "127.0.0.1", "example.com"}
+}
+
+// ResolvedExternalLinkMaxChecks returns the per-scan probe cap (default 200).
+func (j JanitorConfig) ResolvedExternalLinkMaxChecks() int {
+	if j.ExternalLinkMaxChecks > 0 {
+		return j.ExternalLinkMaxChecks
+	}
+	return 200
+}
+
+// ResolvedExternalLinkMaxConcurrent returns parallel probe limit (default 10).
+func (j JanitorConfig) ResolvedExternalLinkMaxConcurrent() int {
+	if j.ExternalLinkMaxConcurrent > 0 {
+		return j.ExternalLinkMaxConcurrent
+	}
+	return 10
 }
 
 // ExecutionStalenessConfig flags runbooks (or other directory-scoped pages) when

@@ -92,7 +92,11 @@ func janitorOptsFromConfig(root string) []janitor.Option {
 			true,
 			j.ExternalLinkTimeoutDuration(),
 			j.ExternalLinkCacheTTLDuration(),
+			j.ExternalLinkRequestDelayDuration(),
 			j.ResolvedExternalLinkIgnore(),
+			j.ExternalLinkAllow,
+			j.ResolvedExternalLinkMaxChecks(),
+			j.ResolvedExternalLinkMaxConcurrent(),
 			root,
 		)...)
 	}
