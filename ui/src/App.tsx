@@ -3,6 +3,7 @@ import {
   Clock4,
   Columns3,
   Database,
+  HelpCircle,
   LayoutGrid,
   Moon,
   Network,
@@ -48,6 +49,7 @@ import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
 import { useUIConfig } from "./hooks/useUIConfig";
 import { usePreferences } from "./hooks/usePreferences";
+import { resolveShortcutsOverlayKey } from "./lib/keyboardShortcutsOverlay";
 import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
 import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
@@ -395,6 +397,11 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      if (resolveShortcutsOverlayKey(e, bindings) === "toggle") {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
       const action = matchBoundAction(e, bindings);
       if (!action) return;
 
@@ -458,10 +465,6 @@ export default function App() {
           setKanbanOpen(next);
           break;
         }
-        case "shortcuts_help":
-          e.preventDefault();
-          setShortcutsOpen((v) => !v);
-          break;
         case "undo":
           if (state.editing) return;
           e.preventDefault();
@@ -821,6 +824,12 @@ const handleSpaceSwitch = useCallback(() => {
               }}
             />
             <HostToolbarActions />
+            <ToolbarButton
+              onClick={() => setShortcutsOpen(true)}
+              label={`Keyboard shortcuts (${formatChordDisplay(bindings.shortcuts_help)}, ?)`}
+            >
+              <HelpCircle className="h-4 w-4" />
+            </ToolbarButton>
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
