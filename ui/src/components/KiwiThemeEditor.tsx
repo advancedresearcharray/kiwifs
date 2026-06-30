@@ -6,8 +6,15 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { applyKiwiTheme, type KiwiThemeOverrides, type KiwiTokens } from "../lib/kiwiTheme";
-import { getCustomTheme, setCustomTheme } from "../hooks/useTheme";
+import { getCustomTheme, setCustomTheme, useTheme } from "../hooks/useTheme";
 import { api } from "../lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 
 interface TokenGroup {
   label: string;
@@ -272,6 +279,7 @@ interface Props {
 }
 
 export function KiwiThemeEditor({ onClose, onPresetReset, embedded }: Props) {
+  const { preset, setPreset, presets, presetErrors } = useTheme();
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [lightTokens, setLightTokens] = useState<KiwiTokens>({});
   const [darkTokens, setDarkTokens] = useState<KiwiTokens>({});
@@ -400,6 +408,36 @@ export function KiwiThemeEditor({ onClose, onPresetReset, embedded }: Props) {
       )}
 
       <div className={`flex-1 overflow-auto ${embedded ? "p-0 pt-2" : "p-4 sm:p-6"} space-y-6 kiwi-scroll`}>
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3">Preset</h3>
+          <Select value={preset} onValueChange={setPreset}>
+            <SelectTrigger className="w-full max-w-sm">
+              <SelectValue placeholder="Choose a preset" />
+            </SelectTrigger>
+            <SelectContent>
+              {presets.map((p) => (
+                <SelectItem key={p.name} value={p.name}>
+                  <span>{p.name}</span>
+                  {p.description ? (
+                    <span className="text-muted-foreground ml-2 text-xs">{p.description}</span>
+                  ) : null}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {presetErrors.length > 0 && (
+            <ul className="mt-2 text-xs text-destructive space-y-1">
+              {presetErrors.map((err) => (
+                <li key={err.file}>
+                  {err.file}: {err.error}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="h-px bg-border" />
+
         {TOKEN_GROUPS.map((group) => (
           <div key={group.label}>
             <h3 className="text-sm font-medium text-muted-foreground mb-3">
