@@ -28,6 +28,7 @@ import {
 } from "@kw/lib/treeClipboard";
 import {
   ChevronRight,
+  Columns2,
   Copy,
   File,
   FileAxis3D,
@@ -91,6 +92,7 @@ type Props = {
   autoReveal?: boolean;
   publishedPaths?: Set<string>;
   onPublishedChanged?: () => void;
+  onOpenInSplitView?: (path: string) => void;
 };
 
 export type KiwiTreeHandle = {
@@ -220,6 +222,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
     autoReveal = true,
     publishedPaths,
     onPublishedChanged,
+    onOpenInSplitView,
   },
   ref,
 ) {
@@ -873,6 +876,7 @@ export const KiwiTree = forwardRef<KiwiTreeHandle, Props>(function KiwiTree(
             onFolderAltClick={(data) => openFolderRecursive(treeRef.current, data)}
             publishedPaths={publishedPaths}
             onPublishedChanged={onPublishedChanged}
+            onOpenInSplitView={onOpenInSplitView}
           />
         )}
       </Tree>
@@ -906,6 +910,7 @@ type TreeNodeProps = NodeRendererProps<FlatNode> & {
   onFolderAltClick: (data: FlatNode) => void;
   publishedPaths?: Set<string>;
   onPublishedChanged?: () => void;
+  onOpenInSplitView?: (path: string) => void;
 };
 
 function FrontmatterWarning({ path, error }: { path: string; error?: string }) {
@@ -942,6 +947,7 @@ function TreeNode({
   onFolderAltClick,
   publishedPaths,
   onPublishedChanged,
+  onOpenInSplitView,
 }: TreeNodeProps) {
   const path = node.id;
   const isActive = activePath === path;
@@ -1520,6 +1526,12 @@ function TreeNode({
           <File className="h-3.5 w-3.5" />
           Open
         </ContextMenuItem>
+        {onOpenInSplitView && isMarkdown(path) && (
+          <ContextMenuItem onClick={() => onOpenInSplitView(path)}>
+            <Columns2 className="h-3.5 w-3.5" />
+            Open in Split View
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         {isPublished ? (
           <>
