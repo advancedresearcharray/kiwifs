@@ -14,6 +14,7 @@ export type KeybindingAction =
   | "graph"
   | "toggle_bases"
   | "toggle_timeline"
+  | "toggle_calendar"
   | "toggle_kanban"
   | "toggle_mode"
   | "shortcuts_help"
@@ -48,6 +49,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   graph: "mod+g",
   toggle_bases: "mod+shift+b",
   toggle_timeline: "mod+shift+t",
+  toggle_calendar: "mod+shift+c",
   toggle_kanban: "mod+shift+w",
   toggle_mode: "mod+shift+e",
   shortcuts_help: "mod+/",
@@ -129,6 +131,23 @@ export function eventMatchesChord(e: KeyboardEvent, chord: string): boolean {
   return eventKey === parsed.key;
 }
 
+const KEYBOARD_SHORTCUT_IGNORE_SELECTOR =
+  "input, textarea, select, [contenteditable='true'], [contenteditable=''], .cm-content, .cm-editor, [cmdk-input]";
+
+/** True when global shortcut handlers should ignore the event target (inputs, editors). */
+export function isKeyboardShortcutTargetIgnored(target: EventTarget | null): boolean {
+  if (!target || typeof (target as HTMLElement).closest !== "function") return false;
+  return (target as HTMLElement).closest(KEYBOARD_SHORTCUT_IGNORE_SELECTOR) !== null;
+}
+
+/** Bare `?` opens shortcuts help when not typing in an input or editor. */
+export function shouldTriggerBareShortcutsHelp(e: Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey" | "target">): boolean {
+  if (isKeyboardShortcutTargetIgnored(e.target)) return false;
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  const eventKey = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  return eventKey === "?" || (eventKey === "/" && e.shiftKey);
+}
+
 export function formatChordDisplay(chord: string): string {
   const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
   const parsed = parseChord(chord);
@@ -185,6 +204,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { action: "graph", label: "Knowledge graph" },
       { action: "toggle_bases", label: "Toggle Bases" },
       { action: "toggle_timeline", label: "Toggle Timeline" },
+      { action: "toggle_calendar", label: "Toggle Calendar" },
       { action: "toggle_kanban", label: "Toggle Kanban" },
     ],
   },

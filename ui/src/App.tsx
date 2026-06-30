@@ -4,6 +4,7 @@ import {
   Columns3,
   Database,
   LayoutGrid,
+  HelpCircle,
   Moon,
   Network,
   PanelLeftClose,
@@ -47,7 +48,12 @@ import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
 import { useUIConfig } from "./hooks/useUIConfig";
 import { usePreferences } from "./hooks/usePreferences";
-import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
+import {
+  formatChordDisplay,
+  matchBoundAction,
+  shouldTriggerBareShortcutsHelp,
+  type KeybindingAction,
+} from "./lib/kiwiKeybindings";
 import { resolveOverlayDismiss } from "./lib/overlayDismiss";
 import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplyStartPage } from "./lib/startPage";
 import { formatDocumentTitle } from "./lib/pageTitle";
@@ -312,6 +318,11 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      if (shouldTriggerBareShortcutsHelp(e)) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
       const action = matchBoundAction(e, bindings);
       if (!action) return;
 
@@ -733,6 +744,12 @@ const handleSpaceSwitch = useCallback(() => {
               }}
             />
             <HostToolbarActions />
+            <ToolbarButton
+              onClick={() => setShortcutsOpen(true)}
+              label={`Keyboard shortcuts (${formatChordDisplay(bindings.shortcuts_help)}, ?)`}
+            >
+              <HelpCircle className="h-4 w-4" />
+            </ToolbarButton>
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
