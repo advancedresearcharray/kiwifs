@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_KEYBINDINGS,
   buildChordIndex,
   eventMatchesChord,
   formatChordDisplay,
+  formatChordSegments,
+  getCustomShortcutItems,
+  isTextInputTarget,
   matchBoundAction,
+  shouldOpenShortcutsHelp,
   mergeKeybindings,
   normalizeChord,
 } from "./kiwiKeybindings";
@@ -99,5 +103,105 @@ describe("buildChordIndex", () => {
 describe("formatChordDisplay", () => {
   it("formats mod shortcuts for display", () => {
     expect(formatChordDisplay("mod+k")).toMatch(/K/i);
+  });
+});
+
+describe("formatChordSegments", () => {
+  it("shows ⌘ on macOS and Ctrl elsewhere", () => {
+    vi.stubGlobal("navigator", { platform: "MacIntel" });
+    expect(formatChordSegments("mod+k")).toEqual(["⌘", "K"]);
+    vi.stubGlobal("navigator", { platform: "Win32" });
+    expect(formatChordSegments("mod+k")).toEqual(["Ctrl", "K"]);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("getCustomShortcutItems", () => {
+  it("lists only bindings that differ from defaults", () => {
+    const bindings = mergeKeybindings({
+      bindings: { search: "mod+j", save: "mod+s" },
+      defaults: DEFAULT_KEYBINDINGS,
+      conflicts: [],
+    });
+    const custom = getCustomShortcutItems(bindings, DEFAULT_KEYBINDINGS);
+    expect(custom.map((item) => item.action)).toEqual(["search"]);
+  });
+});
+
+describe("isTextInputTarget", () => {
+  it("detects native inputs and editor surfaces", () => {
+    class MockHTMLElement {
+      tagName = "";
+      isContentEditable = false;
+      closest(_selector: string): MockHTMLElement | null {
+        return null;
+      }
+    }
+    vi.stubGlobal("HTMLElement", MockHTMLElement);
+
+    const input = new MockHTMLElement();
+    input.tagName = "INPUT";
+    expect(
+      isTextInputTarget({ target: input } as unknown as KeyboardEvent),
+    ).toBe(true);
+
+    const editorHost = new MockHTMLElement();
+    editorHost.closest = (selector: string) =>
+      selector.includes("cm-editor") ? editorHost : null;
+    expect(
+      isTextInputTarget({ target: editorHost } as unknown as KeyboardEvent),
+    ).toBe(true);
+
+    const div = new MockHTMLElement();
+    expect(
+      isTextInputTarget({ target: div } as unknown as KeyboardEvent),
+    ).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("shouldOpenShortcutsHelp", () => {
+  it("matches plain question mark without modifiers", () => {
+    expect(
+      shouldOpenShortcutsHelp({
+        key: "?",
+        shiftKey: true,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldOpenShortcutsHelp({
+        key: "k",
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldOpenShortcutsHelp({
+        key: "?",
+        shiftKey: true,
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("plain question mark shortcut", () => {
+  it("does not match mod+/ binding without a modifier", () => {
+    const e = {
+      key: "?",
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(matchBoundAction(e, DEFAULT_KEYBINDINGS)).toBeNull();
   });
 });
