@@ -59,6 +59,7 @@ type AppSidebarProps = {
   onTreeSortModeChange: Dispatch<SetStateAction<TreeSortMode>>;
   onActivePathChange: (path: string | null) => void;
   onTreeRefresh: (options?: { background?: boolean; reconcile?: boolean }) => void;
+  onOpenInSplitView?: (path: string) => void;
 };
 
 export function AppSidebar({
@@ -87,6 +88,7 @@ export function AppSidebar({
   onTreeSortModeChange,
   onActivePathChange,
   onTreeRefresh,
+  onOpenInSplitView,
 }: AppSidebarProps) {
   const publishedPages = usePublishedPagesStore((state) => state.pages);
   const showPublishedList = usePublishedPagesStore((state) => state.showList);
@@ -269,6 +271,7 @@ export function AppSidebar({
                       onTreeRefresh({ background: true, reconcile: options?.refresh === false ? false : undefined });
                       if (path) onNavigate(path);
                     }}
+                    onOpenInSplitView={onOpenInSplitView}
                   />
                 </SidebarSection>
               ))}
@@ -354,6 +357,7 @@ export function AppSidebar({
                 if (path) onNavigate(path);
               }}
               enableKanbanDrag={kanbanOpen}
+              onOpenInSplitView={onOpenInSplitView}
             />
           </SidebarSection>
         </div>

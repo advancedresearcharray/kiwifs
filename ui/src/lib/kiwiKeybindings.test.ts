@@ -7,7 +7,21 @@ import {
   matchBoundAction,
   mergeKeybindings,
   normalizeChord,
+  normalizeKeyPart,
 } from "./kiwiKeybindings";
+
+describe("normalizeKeyPart", () => {
+  it("canonicalizes single- and multi-character key aliases uniformly", () => {
+    expect(normalizeKeyPart("Escape")).toBe("escape");
+    expect(normalizeKeyPart("Backslash")).toBe("\\");
+    expect(normalizeKeyPart("/")).toBe("/");
+    expect(normalizeKeyPart("Enter")).toBe("enter");
+    expect(normalizeKeyPart("Return")).toBe("enter");
+    expect(normalizeKeyPart("Tab")).toBe("tab");
+    expect(normalizeKeyPart("F1")).toBe("f1");
+    expect(normalizeKeyPart("k")).toBe("k");
+  });
+});
 
 describe("normalizeChord", () => {
   it("canonicalizes modifier order and aliases", () => {
@@ -27,6 +41,18 @@ describe("eventMatchesChord", () => {
       altKey: false,
     } as KeyboardEvent;
     expect(eventMatchesChord(e, "Mod+K")).toBe(true);
+  });
+
+  it("matches backslash split-view shortcut", () => {
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(eventMatchesChord(e, "mod+\\")).toBe(true);
+    expect(normalizeChord("Mod+\\")).toBe("mod+\\");
   });
 
   it("matches help shortcut on slash and question mark", () => {
@@ -53,6 +79,7 @@ describe("mergeKeybindings", () => {
   it("keeps defaults when config is empty", () => {
     const merged = mergeKeybindings(null);
     expect(merged.search).toBe(DEFAULT_KEYBINDINGS.search);
+    expect(merged.toggle_split_view).toBe("mod+\\");
   });
 
   it("applies server overrides", () => {
@@ -81,6 +108,26 @@ describe("matchBoundAction", () => {
       altKey: false,
     } as KeyboardEvent;
     expect(matchBoundAction(e, bindings)).toBe("graph");
+  });
+
+  it("matches toggle_split_view via mod+\\ without affecting other bindings", () => {
+    const bindings = mergeKeybindings(null);
+    const splitToggle = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    const unrelated = {
+      key: "s",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(matchBoundAction(splitToggle, bindings)).toBe("toggle_split_view");
+    expect(matchBoundAction(unrelated, bindings)).toBe("save");
   });
 });
 
