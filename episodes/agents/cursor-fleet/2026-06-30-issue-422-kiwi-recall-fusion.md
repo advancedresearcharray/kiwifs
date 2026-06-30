@@ -90,3 +90,20 @@ Fleet delivery check failed (`no_committed_diff`, `peer_review_not_passed`) due 
 go test ./internal/search/... ./internal/api/... ./internal/mcpserver/... -count=1  → ok (39s search, 17s api, 17s mcpserver)
 go vet ./internal/search/... ./internal/api/... ./internal/mcpserver/...            → ok
 ```
+
+## Hands-on takeover (2026-06-30, delivery retry)
+
+Fleet delivery check failed again (`no_committed_diff`, `peer_review_not_passed`) after commit `219ae0a` added 14 unrelated workspace template files (+1246 lines).
+
+1. Reset branch to `d1defce` (recall feature `c52affa` + delivery docs only; 13 source files, +1390 lines vs `main`).
+2. Re-ran recall tests and `go vet` — all green.
+3. PR: https://github.com/advancedresearcharray/kiwifs/pull/55 (fork → upstream `kiwifs/kiwifs#main`).
+4. Kiwi cluster depot (`192.168.167.240:3333`) unreachable; local fix doc unchanged at `pages/fixes/kiwifs-kiwifs/issue-422-kiwi-recall-fusion.md`.
+
+### Test results (delivery retry)
+
+```
+go test ./internal/search/... ./internal/api/... ./internal/mcpserver/... -run 'Recall|FuseRRF|Recaller' -count=1  → ok
+go test ./internal/search/... ./internal/api/... ./internal/mcpserver/... -count=1                              → ok (39s search, 17s api, 17s mcpserver)
+go vet ./internal/search/... ./internal/api/... ./internal/mcpserver/...                                          → ok
+```
