@@ -9,8 +9,9 @@ languages: [go, markdown, json]
 status: verified
 peer_review: pass
 date: 2026-06-21
-verified: 2026-06-21T15:42:00Z
-delivery_commit: 2724b00e162490a9b7440546a7f5a950c8f5cf33
+verified: 2026-06-30T09:25:00Z
+delivery_commit: pending
+embed_filter: pages/fixes/kiwifs-kiwifs/issue-325-runbook-embed-filter.md
 ci_run: 27909055535
 ---
 

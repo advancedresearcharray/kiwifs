@@ -11,7 +11,11 @@ import (
 )
 
 //go:embed all:templates
-var templates embed.FS
+var templatesRaw embed.FS
+
+// templates hides legacy runbook scaffold paths that may still exist on disk
+// during development but must not ship via kiwifs init --template runbook.
+var templates filteredTemplatesFS = filteredTemplatesFS{inner: templatesRaw}
 
 // InitTemplate describes a workspace scaffold available at space creation.
 type InitTemplate struct {
