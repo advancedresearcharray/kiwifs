@@ -48,3 +48,10 @@ cd ui && npm test -- --run kiwiKeybindings overlayDismiss  # 17 passed
 
 Applied peer-review fix: swagger `@Tags ui` on GetKeybindings (was `theme`).
 Branch `feat/428-keyboard-shortcut-cheat-sheet` pushed to fork; PR #36 on advancedresearcharray/kiwifs.
+
+## Hands-on takeover (2026-06-30)
+
+- Verified implementation in workspace overlay; `.git` mount is empty — use `GIT_DIR=.git.writable`.
+- Re-ran tests: Go keybindings + GetKeybindings API + UI kiwiKeybindings/overlayDismiss (17 pass).
+- Commits on branch: `6ad309a` (UI overlay), `9117668` (swagger tag peer-review fix).
+- Kiwi depot at 192.168.167.240:3333 unreachable; fix doc at `pages/fixes/kiwifs-kiwifs/issue-428-keyboard-shortcut-cheat-sheet.md`.
