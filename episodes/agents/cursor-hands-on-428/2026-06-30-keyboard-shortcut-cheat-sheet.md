@@ -8,11 +8,12 @@ date: 2026-06-30
 
 ## Run log
 
-1. Prior fleet agent left implementation on a branch stacked atop split-view #426; delivery check failed (no clean diff, no PR).
-2. Reset `feat/keyboard-shortcut-cheat-sheet-428` to `origin/main` and re-applied #428-only changes.
-3. Implemented searchable `CommandDialog` overlay, `?` / `Cmd+/` triggers with focus guards, HelpCircle toolbar button, Custom overrides section.
-4. Added Vitest regressions; 20 tests pass (`kiwiKeybindings` + `overlayDismiss`).
-5. Kiwi MCP gateway unavailable; fix doc written to `pages/fixes/kiwifs-kiwifs/issue-428-keyboard-shortcut-cheat-sheet.md`.
+1. Prior fleet agent implemented #428 on `feat/keyboard-shortcut-cheat-sheet-428` but delivery check failed (broken `.git` gitdir, no PR).
+2. Verified commit `9b78ea7` against `origin/main`: searchable `CommandDialog`, `?` / `Cmd+/` triggers, HelpCircle toolbar, Custom overrides.
+3. Fixed git access via `GIT_DIR=.git.writable`; branch already pushed to `fork`.
+4. Added Vitest regressions (20 pass: `kiwiKeybindings` + `overlayDismiss`).
+5. Wrote durable fix doc at `pages/fixes/kiwifs-kiwifs/issue-428-keyboard-shortcut-cheat-sheet.md` (Kiwi MCP gateway unreachable at 192.168.167.240:3333).
+6. Opened PR against `kiwifs/kiwifs` main.
 
 ## Verification
 
