@@ -14,6 +14,10 @@ import {
   wikiLinkCompletionSource,
   type WikiPage,
 } from "./wikiLinkCompletion";
+import {
+  editorImagePasteExtension,
+  type EditorImagePasteOptions,
+} from "@kw/lib/editorImagePasteExtension";
 
 export type MarkdownSourceEditorProps = {
   value: string;
@@ -27,6 +31,7 @@ export type MarkdownSourceEditorProps = {
   customSlashCommands?: EditorSlashCommandConfig[];
   loadSlashTemplate?: (templatePath: string) => Promise<string>;
   onSlashTemplateError?: (message: string) => void;
+  imagePaste?: Pick<EditorImagePasteOptions, "pagePath" | "uploadImage" | "onError">;
 };
 
 export function MarkdownSourceEditor({
@@ -41,6 +46,7 @@ export function MarkdownSourceEditor({
   customSlashCommands = [],
   loadSlashTemplate,
   onSlashTemplateError,
+  imagePaste,
 }: MarkdownSourceEditorProps) {
   const extensions = useMemo(() => {
     const saveKeymap = keymap.of([
@@ -80,8 +86,11 @@ export function MarkdownSourceEditor({
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       saveKeymap,
     ];
+    if (imagePaste) {
+      exts.push(editorImagePasteExtension(imagePaste));
+    }
     return exts;
-  }, [onSaveShortcut, pages, customSlashCommands, loadSlashTemplate, onSlashTemplateError]);
+  }, [onSaveShortcut, pages, customSlashCommands, loadSlashTemplate, onSlashTemplateError, imagePaste]);
 
   const theme = useMemo(() => markdownEditorTheme({ dark }), [dark]);
 
