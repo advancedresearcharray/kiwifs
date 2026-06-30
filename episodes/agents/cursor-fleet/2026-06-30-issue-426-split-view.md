@@ -21,13 +21,14 @@ Implement kiwifs/kiwifs#426 — side-by-side page view with tree/wiki-link menus
 5. Registered `toggle_split_view` in Go + TS keybindings with backslash normalization.
 6. Kiwi MCP gateway at `192.168.167.240:3333` unreachable — updated local fix doc under `pages/fixes/`.
 
-## Verification
+## Verification (hands-on delivery)
 
 - `npm test -- src/lib/splitView.test.ts src/lib/kiwiKeybindings.test.ts` → 17 passed
-- `npm test` (full UI suite) → 198 passed
-- `go test ./internal/keybindings/...` → ok
-- Removed duplicate `WikiLinkMenu` and unrelated template commit from branch
+- `go test ./internal/keybindings/... -count=1` → ok
+- Reverted unrelated workspace template commit from branch
+- Fix: secondary pane × fully exits split view (preserves pane sizes)
 - Fix doc: `pages/fixes/kiwifs-kiwifs/issue-426-split-side-by-side-page-view.md`
+- Kiwi MCP gateway at `192.168.167.240:3333` unreachable — local fix doc only
 
 ## Handoff
 

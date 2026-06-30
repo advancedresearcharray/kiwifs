@@ -128,11 +128,7 @@ export function toggleSplitView(
 }
 
 export function closeSecondaryPane(state: SplitViewState): SplitViewState {
-  return {
-    ...state,
-    rightPath: null,
-    rightVersion: null,
-  };
+  return createSplitViewState({ sizes: state.sizes });
 }
 
 export function clampSplitSizes(
