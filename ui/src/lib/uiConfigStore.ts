@@ -7,6 +7,7 @@ export const THEME_LOCKED_TOOLTIP = "Theme locked by admin";
 
 type UIConfigState = {
   themeLocked: boolean;
+  allowedPresets: string[];
   branding: BrandingConfig;
   features: Record<UIFeatureKey, boolean>;
   toolbarViews: string[] | null | undefined;
@@ -16,6 +17,7 @@ type UIConfigState = {
 
 export const useUIConfigStore = create<UIConfigState>((set) => ({
   themeLocked: false,
+  allowedPresets: [],
   branding: DEFAULT_BRANDING,
   features: DEFAULT_UI_FEATURES,
   toolbarViews: undefined,
@@ -25,6 +27,7 @@ export const useUIConfigStore = create<UIConfigState>((set) => ({
       const config = await api.getUIConfig();
       set({
         themeLocked: config.themeLocked === true,
+        allowedPresets: config.theme?.allowedPresets ?? [],
         branding: resolveBranding(config.branding ?? {}),
         features: resolveUIFeatures(config.features),
         toolbarViews: config.toolbarViews ?? null,
@@ -33,6 +36,7 @@ export const useUIConfigStore = create<UIConfigState>((set) => ({
     } catch {
       set({
         themeLocked: false,
+        allowedPresets: [],
         branding: DEFAULT_BRANDING,
         features: DEFAULT_UI_FEATURES,
         toolbarViews: null,

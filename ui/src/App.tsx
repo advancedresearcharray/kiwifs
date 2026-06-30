@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Clock4,
   Columns3,
   Database,
@@ -53,6 +54,13 @@ import { hasDeepLinkPath, resolveDashboardPath, resolveStartPage, shouldApplySta
 import { formatDocumentTitle } from "./lib/pageTitle";
 import { useUIConfigStore } from "./lib/uiConfigStore";
 import { Button } from "./components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import {
   Tooltip,
   TooltipContent,
@@ -171,7 +179,7 @@ export default function App() {
     } catch { return 272; }
   });
   const resizing = useRef(false);
-  const { theme, toggleTheme, themeLocked } = useTheme({
+  const { theme, toggleTheme, preset, setPreset, presets, presetErrors, themeLocked } = useTheme({
     serverPrefs: prefsLoaded ? prefs : null,
     onPresetChange: (preset) => updatePreferences({ theme: preset }),
   });
@@ -733,6 +741,45 @@ const handleSpaceSwitch = useCallback(() => {
               }}
             />
             <HostToolbarActions />
+            {!themeLocked && presets.length > 0 && (
+              <Select value={preset} onValueChange={setPreset}>
+                <SelectTrigger
+                  className="h-8 w-[9rem] border-0 bg-transparent shadow-none focus:ring-0 text-xs"
+                  aria-label="Theme preset"
+                >
+                  <SelectValue placeholder="Theme" />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((p) => (
+                    <SelectItem key={p.name} value={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {!themeLocked && presetErrors.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex text-destructive"
+                    aria-label="Theme preset validation errors"
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-sm">
+                  <p className="font-medium mb-1">Invalid theme preset files</p>
+                  <ul className="text-xs space-y-1">
+                    {presetErrors.map((err) => (
+                      <li key={err.file}>
+                        {err.file}: {err.error}
+                      </li>
+                    ))}
+                  </ul>
+                </TooltipContent>
+              </Tooltip>
+            )}
             {!themeLocked && (
               <ToolbarButton onClick={toggleTheme} label={theme === "dark" ? "Light mode" : "Dark mode"}>
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}

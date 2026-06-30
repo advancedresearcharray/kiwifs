@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyKiwiTheme,
   applyKiwiCustomCSS,
@@ -8,7 +8,15 @@ import {
 import { api, getCurrentSpace, onSpaceChange } from "../lib/api";
 import { guardedThemeAction } from "../lib/themeEditLock";
 import { useUIConfigStore } from "../lib/uiConfigStore";
-import { presets, presetToOverrides, findPreset } from "../themes";
+import {
+  presets as builtinPresets,
+  presetToOverrides,
+  findPreset,
+  mergePresets,
+  filterPresetsWithAllowList,
+  resolvePresetName,
+  type ThemePreset,
+} from "../themes";
 import type { UserPreferences } from "../lib/userPreferences";
 
 export type Theme = "light" | "dark";
@@ -61,8 +69,6 @@ export function setCustomTheme(t: KiwiThemeOverrides | null) {
   }
 }
 
-// When running inside the cloud app, the cloud ThemeProvider exposes these
-// globals so we delegate dark/light control to a single source of truth.
 function externalThemeAPI(): {
   get: () => Theme;
   toggle: () => void;
@@ -84,6 +90,22 @@ function externalThemeAPI(): {
   return null;
 }
 
+function workspacePresetFromAPI(
+  p: {
+    name: string;
+    description?: string;
+    light: Record<string, string>;
+    dark: Record<string, string>;
+  },
+): ThemePreset {
+  return {
+    name: p.name,
+    description: p.description || "",
+    light: p.light,
+    dark: p.dark,
+  };
+}
+
 export function useTheme(options?: {
   serverPrefs?: UserPreferences | null;
   onPresetChange?: (preset: string) => void;
@@ -92,7 +114,8 @@ export function useTheme(options?: {
   toggleTheme: () => void;
   preset: string;
   setPreset: (name: string) => void;
-  presets: typeof presets;
+  presets: ThemePreset[];
+  presetErrors: Array<{ file: string; error: string }>;
   themeLocked: boolean;
 } {
   const themeLocked = useUIConfigStore((s) => s.themeLocked);
@@ -104,6 +127,10 @@ export function useTheme(options?: {
   });
 
   const [preset, setPresetState] = useState(() => serverPreset || readLS(lsPreset(), "Kiwi"));
+  const [availablePresets, setAvailablePresets] = useState<ThemePreset[]>(builtinPresets);
+  const [presetErrors, setPresetErrors] = useState<Array<{ file: string; error: string }>>([]);
+  const presetRef = useRef(preset);
+  presetRef.current = preset;
 
   useEffect(() => {
     if (serverPreset) {
@@ -111,9 +138,41 @@ export function useTheme(options?: {
     }
   }, [serverPreset]);
 
-  // Keep local state in sync with the DOM (handles both cloud-managed and
-  // standalone scenarios — the cloud ThemeProvider changes the class,
-  // and this observer picks it up).
+  const loadPresets = useCallback(() => {
+    api.getThemePresets()
+      .then((presetRes) => {
+        const workspace = (presetRes.presets || []).map(workspacePresetFromAPI);
+        const merged = mergePresets(builtinPresets, workspace);
+        const allowed = useUIConfigStore.getState().allowedPresets;
+        const filtered = filterPresetsWithAllowList(merged, allowed);
+        setAvailablePresets(filtered);
+        setPresetErrors(presetRes.errors || []);
+        const saved = readLS(lsPreset(), "");
+        const active = serverPreset || saved || presetRef.current;
+        const resolved = resolvePresetName(active, filtered);
+        if (resolved !== active) {
+          setPresetState(resolved);
+          writeLS(lsPreset(), resolved);
+          onPresetChange?.(resolved);
+        }
+      })
+      .catch(() => {
+        const allowed = useUIConfigStore.getState().allowedPresets;
+        setAvailablePresets(filterPresetsWithAllowList(builtinPresets, allowed));
+        setPresetErrors([]);
+      });
+  }, [serverPreset, onPresetChange]);
+
+  useEffect(() => {
+    loadPresets();
+    return onSpaceChange(loadPresets);
+  }, [loadPresets]);
+
+  const resolvePreset = useCallback(
+    (name: string) => findPreset(name, availablePresets),
+    [availablePresets],
+  );
+
   useEffect(() => {
     const observer = new MutationObserver(() => {
       const next: Theme = document.documentElement.classList.contains("dark")
@@ -128,7 +187,6 @@ export function useTheme(options?: {
     return () => observer.disconnect();
   }, []);
 
-  // Standalone only: apply dark class to DOM when no external provider owns it.
   useEffect(() => {
     if (externalThemeAPI()) return;
     const root = document.documentElement;
@@ -138,9 +196,6 @@ export function useTheme(options?: {
     writeLS("app-theme", theme);
   }, [theme]);
 
-  // On mount, fetch the server-side team default theme. localStorage preset
-  // (per-user) overrides it — the server theme only kicks in when the user
-  // hasn't picked a preset yet.
   useEffect(() => {
     const custom = getCustomTheme();
     if (custom) {
@@ -149,12 +204,12 @@ export function useTheme(options?: {
     }
 
     const saved = readLS(lsPreset(), "");
-    if (saved) return;
+    if (saved || serverPreset) return;
 
     api.getTheme().then((data) => {
       const name = data?.preset as string | undefined;
       if (name) {
-        const found = findPreset(name);
+        const found = findPreset(name, availablePresets);
         if (found) {
           setPresetState(name);
           applyKiwiTheme(presetToOverrides(found));
@@ -165,7 +220,7 @@ export function useTheme(options?: {
         applyKiwiTheme(data as KiwiThemeOverrides);
       }
     }).catch(() => {});
-  }, []);
+  }, [availablePresets, serverPreset]);
 
   useEffect(() => {
     const custom = getCustomTheme();
@@ -173,15 +228,14 @@ export function useTheme(options?: {
       applyKiwiTheme(custom);
       return;
     }
-    const found = findPreset(preset);
+    const found = resolvePreset(preset);
     if (found) {
       applyKiwiTheme(presetToOverrides(found));
     } else {
       removeKiwiTheme();
     }
-  }, [preset]);
+  }, [preset, resolvePreset]);
 
-  // Workspace custom CSS loads after theme tokens and applies on every boot/reload.
   useEffect(() => {
     api.getCustomCSS().then(applyKiwiCustomCSS).catch(() => {});
   }, []);
@@ -202,7 +256,7 @@ export function useTheme(options?: {
       const saved = readLS(lsPreset(), "");
       if (saved) {
         setPresetState(saved);
-        const found = findPreset(saved);
+        const found = findPreset(saved, availablePresets);
         if (found) applyKiwiTheme(presetToOverrides(found));
         else removeKiwiTheme();
         return;
@@ -210,7 +264,7 @@ export function useTheme(options?: {
       api.getTheme().then((data) => {
         const name = data?.preset as string | undefined;
         if (name) {
-          const found = findPreset(name);
+          const found = findPreset(name, availablePresets);
           if (found) {
             setPresetState(name);
             applyKiwiTheme(presetToOverrides(found));
@@ -224,7 +278,7 @@ export function useTheme(options?: {
         }
       }).catch(() => {});
     });
-  }, []);
+  }, [availablePresets]);
 
   const toggleTheme = useCallback(() => {
     guardedThemeAction(themeLocked, () => {
@@ -243,12 +297,20 @@ export function useTheme(options?: {
       setPresetState(name);
       writeLS(lsPreset(), name);
       onPresetChange?.(name);
-      const found = findPreset(name);
+      const found = findPreset(name, availablePresets);
       if (found) {
         api.putTheme({ preset: name, ...presetToOverrides(found) } as unknown as Record<string, unknown>).catch(() => {});
       }
     });
-  }, [themeLocked, onPresetChange]);
+  }, [themeLocked, onPresetChange, availablePresets]);
 
-  return { theme, toggleTheme, preset, setPreset, presets, themeLocked };
+  return {
+    theme,
+    toggleTheme,
+    preset,
+    setPreset,
+    presets: availablePresets,
+    presetErrors,
+    themeLocked,
+  };
 }

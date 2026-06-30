@@ -496,6 +496,35 @@ new_page = "Ctrl+Shift+N"
 	}
 }
 
+func TestUIConfigThemePresets(t *testing.T) {
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, ".kiwi")
+	_ = os.MkdirAll(cfgDir, 0755)
+	body := `
+[ui.theme]
+presets_dir = "brand/themes"
+allowed_presets = ["kiwi", "corporate-light"]
+`
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0644)
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.UI.Theme.ResolvedPresetsDir() != "brand/themes" {
+		t.Fatalf("presets_dir = %q", cfg.UI.Theme.ResolvedPresetsDir())
+	}
+	if len(cfg.UI.Theme.AllowedPresets) != 2 {
+		t.Fatalf("allowed_presets = %+v", cfg.UI.Theme.AllowedPresets)
+	}
+	empty := UIThemeConfig{}
+	if empty.ResolvedPresetsDir() != DefaultThemePresetsDir {
+		t.Fatalf("empty presets dir should default to %q, got %q", DefaultThemePresetsDir, empty.ResolvedPresetsDir())
+	}
+	if (UIThemeConfig{PresetsDir: "../outside"}).ResolvedPresetsDir() != DefaultThemePresetsDir {
+		t.Fatal("path traversal should fall back to default presets dir")
+	}
+}
+
 func TestUIConfigSidebar(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := filepath.Join(root, ".kiwi")
