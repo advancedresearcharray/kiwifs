@@ -1,0 +1,36 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	worktree = /tmp/kiwifs-overlay/mnt
+	autocrlf = false
+[remote "origin"]
+	url = https://github.com/kiwifs/kiwifs.git
+[remote "fork"]
+	url = https://github.com/advancedresearcharray/kiwifs.git
+	fetch = +refs/heads/*:refs/remotes/fork/*
+[branch "feat/issue-427-calendar-view"]
+	remote = fork
+	merge = refs/heads/feat/issue-427-calendar-view
+[user]
+	name = Test User
+	email = test@example.com
+[branch "feat/split-side-by-side-426"]
+	remote = fork
+	merge = refs/heads/feat/split-side-by-side-426
+[branch "feat/issue-427-calendar-clean"]
+	remote = fork
+	merge = refs/heads/feat/issue-427-calendar-clean
+[branch "feat/issue-428-keyboard-shortcuts-pr"]
+	remote = fork
+	merge = refs/heads/feat/issue-428-keyboard-shortcuts-pr
+[branch "feat/issue-428-keyboard-shortcuts-clean"]
+	remote = fork
+	merge = refs/heads/feat/issue-428-keyboard-shortcuts-clean
+[branch "feat/issue-428-only"]
+	remote = fork
+	merge = refs/heads/feat/issue-428-only
+[branch "feat/issue-428-keyboard-shortcuts-verified"]
+	remote = fork
+	merge = refs/heads/feat/issue-428-keyboard-shortcuts-verified

@@ -1,0 +1,8 @@
+docs: fleet hands-on takeover verification for issue #427
+
+Record test-verified delivery on feat/issue-427-calendar-clean
+(206 UI tests, Go config/keybindings/api green).
+
+Closes kiwifs/kiwifs#427
+
+Co-authored-by: Cursor <cursoragent@cursor.com>

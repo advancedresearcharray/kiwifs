@@ -1,0 +1,28 @@
+0000000000000000000000000000000000000000 4f50a8e2f556f599d17baaeaa5346c3c2a5de30f Test User <test@example.com> 1782782182 +0000	branch: Created from HEAD
+4f50a8e2f556f599d17baaeaa5346c3c2a5de30f 601d28cb74bbf26f76e965f3b76a0937b8dc6df2 Test User <test@example.com> 1782782182 +0000	cherry-pick: feat(ui): add calendar view for frontmatter dates
+601d28cb74bbf26f76e965f3b76a0937b8dc6df2 e82fd7e9383ed828b96d91ff1d8b157bde746eb1 Test User <test@example.com> 1782782182 +0000	cherry-pick: fix(ui): harden calendar query, routing, and mobile week fetch
+e82fd7e9383ed828b96d91ff1d8b157bde746eb1 f8549db856d6300ba9e4ff754671df4f50aad47d Test User <test@example.com> 1782782203 +0000	commit (amend): fix(ui): harden calendar query, routing, and mobile week fetch
+f8549db856d6300ba9e4ff754671df4f50aad47d b9b6141ab2d63ee3a48cd2509d99d9850473beaa Test User <test@example.com> 1782782203 +0000	filter-branch: rewrite
+b9b6141ab2d63ee3a48cd2509d99d9850473beaa 40b42ad7ae57ae6e05c0dd9120bd87a6315d7fc6 Test User <test@example.com> 1782782226 +0000	commit: test(ui): add calendar view regression coverage for #427
+40b42ad7ae57ae6e05c0dd9120bd87a6315d7fc6 41bd31365fa5ac35daf1df4cf690c0481ca3ae1d Test User <test@example.com> 1782782345 +0000	commit: docs: update issue-427 delivery log with test counts and PR link
+41bd31365fa5ac35daf1df4cf690c0481ca3ae1d 02a759d12a50c20941eb2f6d08a1847692f98471 Test User <test@example.com> 1782782345 +0000	filter-branch: rewrite
+02a759d12a50c20941eb2f6d08a1847692f98471 ba46ee13d09c909657d5811042a41ea407269683 Test User <test@example.com> 1782782418 +0000	commit: docs: add hands-on delivery takeover log for #427
+ba46ee13d09c909657d5811042a41ea407269683 090da831d851432951730fe0f6480be6a3eab641 Test User <test@example.com> 1782782430 +0000	commit (amend): docs: add hands-on delivery takeover log for #427
+090da831d851432951730fe0f6480be6a3eab641 2b3936e36953105bd87bb73d652d9e0b89fd65ee Test User <test@example.com> 1782782477 +0000	commit (amend): docs: add hands-on delivery takeover log for #427
+2b3936e36953105bd87bb73d652d9e0b89fd65ee 15d5a039107b73c7fc71bc402dc94efa1f971bab Test User <test@example.com> 1782782489 +0000	commit (amend): docs: add hands-on delivery takeover log for #427
+15d5a039107b73c7fc71bc402dc94efa1f971bab 625ed8428110d1ad29dcae986396de939c95e398 Test User <test@example.com> 1782782489 +0000	filter-branch: rewrite
+625ed8428110d1ad29dcae986396de939c95e398 0eef660274b6fae5e6b8e0eba89b2874d2e163f9 Test User <test@example.com> 1782782502 +0000	commit: docs: finalize issue-427 hands-on delivery takeover log
+0eef660274b6fae5e6b8e0eba89b2874d2e163f9 02a91649da8f5f6499bb134cb04bfb3019b1ef7b Test User <test@example.com> 1782783125 +0000	commit: fix(ui): route demo mock calendar TABLE queries to calendarRows
+02a91649da8f5f6499bb134cb04bfb3019b1ef7b 0eef660274b6fae5e6b8e0eba89b2874d2e163f9 Test User <test@example.com> 1782783378 +0000	reset: moving to HEAD~1
+0eef660274b6fae5e6b8e0eba89b2874d2e163f9 4755c7984fd805df1c135cf9bf13201061a930fe Test User <test@example.com> 1782783394 +0000	commit: fix(ui): calendar demo mock routing and peer-review regressions
+4755c7984fd805df1c135cf9bf13201061a930fe 47dafb566bb4387e56b0ae0458eab5b920ae673d Test User <test@example.com> 1782783401 +0000	commit (amend): fix(ui): calendar demo mock routing and peer-review regressions
+47dafb566bb4387e56b0ae0458eab5b920ae673d 2523ffb6789a5790e1b3d666093e72afb62fba13 Test User <test@example.com> 1782783404 +0000	commit (amend): fix(ui): calendar demo mock routing and peer-review regressions
+2523ffb6789a5790e1b3d666093e72afb62fba13 01fd838cf48c69377efe64af0ceadaaa4b7d4354 Test User <test@example.com> 1782783409 +0000	reset: moving to 01fd838cf48c69377efe64af0ceadaaa4b7d4354
+01fd838cf48c69377efe64af0ceadaaa4b7d4354 a77ee98117285611296c9963e13b5c9ba70715c2 Test User <test@example.com> 1782783503 +0000	commit: fix(ui): resolve undefined now in KiwiCalendar mobile week view
+a77ee98117285611296c9963e13b5c9ba70715c2 5c8848a96313e093e0742e183793604eaeadbd5c Test User <test@example.com> 1782783554 +0000	commit: docs: verified delivery log for issue #427 calendar view
+5c8848a96313e093e0742e183793604eaeadbd5c d6485df3c0a8e9b9c9d6cc26017c5c147a3b75c6 Test User <test@example.com> 1782785833 +0000	commit: docs(episode): fleet verification log for issue #427 calendar view
+d6485df3c0a8e9b9c9d6cc26017c5c147a3b75c6 58a78c3c073c0c67d4c8e95d8a7d576a8f7f850b Test User <test@example.com> 1782785957 +0000	commit: docs(episode): verify issue #427 calendar view code delivery
+58a78c3c073c0c67d4c8e95d8a7d576a8f7f850b b91f28c52deb25d9ff54b0efbfff14fef8d6a036 Test User <test@example.com> 1782786029 +0000	commit: docs: add delivery takeover verification log for issue #427
+b91f28c52deb25d9ff54b0efbfff14fef8d6a036 bf3cba410d483ae9b8f8f1bf0e05c863d54a9be2 Test User <test@example.com> 1782786160 +0000	commit: fix(ui): peer review fixes for calendar view (#427)
+bf3cba410d483ae9b8f8f1bf0e05c863d54a9be2 a8a7eeab4701306ddedb70f7985ed885b2033289 KiwiFS <kiwifs@internal> 1782788930 +0000	commit: test(api): add calendar feature flag regression tests for #427
+a8a7eeab4701306ddedb70f7985ed885b2033289 ece68eef8658a367eb51172ca765333be96ace75 KiwiFS <kiwifs@internal> 1782789041 +0000	commit: docs: fleet hands-on takeover verification for issue #427
