@@ -198,7 +198,6 @@ function createMockFetch(overrides: MockOverrides = {}) {
       }
 
       if (url.includes("/query?") || url.endsWith("/query")) {
-        // Check if it's a CALENDAR query
         const qMatch = url.match(/[?&]q=([^&]+)/);
         const dql = qMatch ? decodeURIComponent(qMatch[1]) : "";
         if (/^\s*CALENDAR\b/i.test(dql)) {
@@ -207,6 +206,34 @@ function createMockFetch(overrides: MockOverrides = {}) {
           ];
           return jsonResponse({
             columns: ["_path", "date"],
+            rows,
+            total: rows.length,
+            has_more: false,
+          });
+        }
+        if (/striptime\(/i.test(dql) && /DATE\("/i.test(dql)) {
+          const rows = overrides.calendarRows ?? [
+            { _path: "pages/frontmatter.md", title: "Frontmatter Guide", date: new Date().toISOString().slice(0, 10), tags: ["docs"], status: "published" },
+          ];
+          const columns = rows.length > 0
+            ? ["_path", ...Object.keys(rows[0]).filter((k) => k !== "_path")]
+            : ["_path", "title", "date"];
+          return jsonResponse({
+            columns,
+            rows,
+            total: rows.length,
+            has_more: false,
+          });
+        }
+        if (/date != null OR due != null/i.test(dql)) {
+          const rows = overrides.calendarRows ?? [
+            { _path: "pages/frontmatter.md", date: "2026-06-20", due: "2026-06-25", created: "2026-06-01" },
+          ];
+          const columns = rows.length > 0
+            ? ["_path", ...Object.keys(rows[0]).filter((k) => k !== "_path")]
+            : ["_path", "date", "due", "created"];
+          return jsonResponse({
+            columns,
             rows,
             total: rows.length,
             has_more: false,
@@ -403,6 +430,7 @@ function createMockFetch(overrides: MockOverrides = {}) {
             undo: "mod+z",
             focus_tree_filter: "mod+alt+f",
             close_overlay: "escape",
+            toggle_split_view: "mod+\\",
           },
           defaults: {},
           conflicts: [],
