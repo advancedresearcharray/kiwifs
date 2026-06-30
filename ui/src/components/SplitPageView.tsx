@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { forwardRef, useImperativeHandle, useState, type ReactNode } from "react";
 import { KiwiEditor } from "@kw/components/KiwiEditor";
 import { KiwiPage } from "@kw/components/KiwiPage";
 import { SplitPageLayout } from "@kw/components/SplitPageLayout";
@@ -8,6 +8,13 @@ import type { EditorMode } from "@kw/lib/editorMode";
 import type { SplitPaneSpec } from "@kw/lib/splitView";
 
 type PaneSide = "left" | "right";
+
+export type SplitPageViewHandle = {
+  toggleLeftEdit: () => void;
+  saveLeft: () => Promise<void>;
+  toggleLeftMode: () => void;
+  isLeftEditing: () => boolean;
+};
 
 type SharedPageProps = {
   tree: TreeEntry | null;
@@ -27,6 +34,7 @@ type SharedPageProps = {
 };
 
 type Props = SharedPageProps & {
+  onNavigatePrimary: (path: string) => void;
   editorRef: React.MutableRefObject<{ save: () => Promise<void>; toggleMode?: () => void } | null>;
   editorModePref?: "editor" | "source";
   onEditorModeChange?: (mode: EditorMode) => void;
@@ -39,7 +47,7 @@ function renderPane(
   editing: boolean,
   props: SharedPageProps & {
     onNavigate: (path: string) => void;
-    onEdit: () => void;
+    onEdit?: () => void;
     editorRef?: React.MutableRefObject<{ save: () => Promise<void>; toggleMode?: () => void } | null>;
     editorModePref?: "editor" | "source";
     onEditorModeChange?: (mode: EditorMode) => void;
@@ -89,29 +97,45 @@ function renderPane(
   );
 }
 
-export function SplitPageView({
-  tree,
-  refreshKey,
-  editorRef,
-  editorModePref,
-  onEditorModeChange,
-  onSaved,
-  onRevealInTree,
-  onToggleStar,
-  isStarred,
-  onTogglePin,
-  isPinned,
-  onDeleted,
-  onDuplicated,
-  onMoved,
-  onTagClick,
-  onPublishedChanged,
-  onHistory,
-  onOpenInSplit,
-}: Props) {
-  const { state, navigateLeft, navigateRight, setLeftSize, closeSplit } = useSplitView();
+export const SplitPageView = forwardRef<SplitPageViewHandle, Props>(function SplitPageView(
+  {
+    tree,
+    refreshKey,
+    onNavigatePrimary,
+    editorRef,
+    editorModePref,
+    onEditorModeChange,
+    onSaved,
+    onRevealInTree,
+    onToggleStar,
+    isStarred,
+    onTogglePin,
+    isPinned,
+    onDeleted,
+    onDuplicated,
+    onMoved,
+    onTagClick,
+    onPublishedChanged,
+    onHistory,
+    onOpenInSplit,
+  },
+  ref,
+) {
+  const { state, navigateRight, setLeftSize, closeSplit } = useSplitView();
   const [editingLeft, setEditingLeft] = useState(false);
-  const [editingRight, setEditingRight] = useState(false);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      toggleLeftEdit: () => setEditingLeft((v) => !v),
+      saveLeft: () => editorRef.current?.save() ?? Promise.resolve(),
+      toggleLeftMode: () => {
+        editorRef.current?.toggleMode?.();
+      },
+      isLeftEditing: () => editingLeft,
+    }),
+    [editorRef, editingLeft],
+  );
 
   if (!state.left || !state.right) return null;
 
@@ -141,7 +165,7 @@ export function SplitPageView({
         ...shared,
         onNavigate: (path) => {
           setEditingLeft(false);
-          navigateLeft(path);
+          onNavigatePrimary(path);
         },
         onEdit: () => setEditingLeft(true),
         editorRef,
@@ -153,15 +177,12 @@ export function SplitPageView({
         },
         onCloseEditor: () => setEditingLeft(false),
       })}
-      right={renderPane(state.right, "right", editingRight, {
+      right={renderPane(state.right, "right", false, {
         ...shared,
         onNavigate: (path) => {
-          setEditingRight(false);
           navigateRight(path);
         },
-        onEdit: () => setEditingRight(true),
-        onCloseEditor: () => setEditingRight(false),
       })}
     />
   );
-}
+});

@@ -64,7 +64,7 @@ import { useTheme } from "./hooks/useTheme";
 import { isMarkdown, isCanvasFile, isExcalidrawFile } from "./lib/paths";
 import { type TreeRevealRequest } from "./lib/treeReveal";
 import { HostToolbarActions } from "./components/HostToolbarActions";
-import { SplitPageView } from "./components/SplitPageView";
+import { SplitPageView, type SplitPageViewHandle } from "./components/SplitPageView";
 import { SplitViewProvider, useSplitView } from "./contexts/SplitViewContext";
 
 function getInitialActivePath(): string | null {
@@ -194,6 +194,7 @@ function AppMain() {
   const { config: uiConfig, loaded: uiConfigLoaded } = useUIConfig();
   const resolvedStartPage = resolveStartPage(uiConfig.startPage);
   const editorRef = useRef<{ save: () => Promise<void>; toggleMode?: () => void } | null>(null);
+  const splitPageRef = useRef<SplitPageViewHandle>(null);
   const [spaceKey, setSpaceKey] = useState(0);
   const refreshPublishedPages = usePublishedPagesStore((state) => state.refresh);
   const treeReconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -237,10 +238,10 @@ function AppMain() {
   }, [isMobile, splitView]);
 
   useEffect(() => {
-    if (!splitView.isSplit || !splitView.state.left?.path) return;
-    setActivePath((prev) => prev ?? splitView.state.left!.path);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!splitView.isSplit || !splitView.state.left?.path || activePath) return;
+    setActivePath(splitView.state.left.path);
+    recordVisit(splitView.state.left.path);
+  }, [splitView.isSplit, splitView.state.left?.path, activePath, recordVisit]);
 
   useEffect(() => {
     dispatchPageChanged(activePath);
@@ -358,15 +359,31 @@ function AppMain() {
           const { activePath, graphOpen, historyOpen, dataOpen } = state;
           if (!activePath || graphOpen || historyOpen || dataOpen) return;
           e.preventDefault();
-          setEditing((v) => !v);
+          if (splitView.isSplit) {
+            splitPageRef.current?.toggleLeftEdit();
+          } else {
+            setEditing((v) => !v);
+          }
           break;
         }
         case "save":
+          if (splitView.isSplit) {
+            if (!splitPageRef.current?.isLeftEditing()) return;
+            e.preventDefault();
+            splitPageRef.current.saveLeft().catch(() => {});
+            break;
+          }
           if (!state.editing) return;
           e.preventDefault();
           editorRef.current?.save().catch(() => {});
           break;
         case "toggle_mode":
+          if (splitView.isSplit) {
+            if (!splitPageRef.current?.isLeftEditing()) return;
+            e.preventDefault();
+            splitPageRef.current.toggleLeftMode();
+            break;
+          }
           if (!state.editing) return;
           e.preventDefault();
           editorRef.current?.toggleMode?.();
@@ -687,9 +704,14 @@ function AppMain() {
 
   const openInSplit = useCallback(
     (path: string) => {
-      splitView.openInSplit(path, activePath);
+      const primary = activePath ?? path;
+      if (!activePath) {
+        setActivePath(path);
+        recordVisit(path);
+      }
+      splitView.openInSplit(path, primary);
     },
-    [splitView, activePath],
+    [splitView, activePath, recordVisit],
   );
 
   return (
@@ -903,10 +925,12 @@ function AppMain() {
                   setHistoryOpen(false);
                 }}
               />
-            ) : splitView.isSplit && activePath ? (
+            ) : splitView.isSplit && (activePath ?? splitView.state.left?.path) ? (
               <SplitPageView
+                ref={splitPageRef}
                 tree={tree}
                 refreshKey={refreshKey}
+                onNavigatePrimary={navigate}
                 editorRef={editorRef}
                 editorModePref={prefs.default_view}
                 onEditorModeChange={(mode) =>
@@ -919,6 +943,7 @@ function AppMain() {
                 onTogglePin={togglePin}
                 isPinned={isPinned}
                 onDeleted={() => {
+                  splitView.closeSplit();
                   setActivePath(null);
                   setRefreshKey((k) => k + 1);
                 }}
