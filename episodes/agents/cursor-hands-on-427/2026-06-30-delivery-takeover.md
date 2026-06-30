@@ -8,7 +8,7 @@ date: 2026-06-30
 
 ## Context
 
-Fleet engineer failed delivery check (`no_committed_diff`, `peer_review_not_passed`) because overlay `.git` mount is empty; git metadata lives in `.git.writable`. Implementation already on `feat/issue-427-calendar-clean` (4 commits vs `main`).
+Fleet engineer failed delivery check (`no_committed_diff`, `peer_review_not_passed`) because overlay `.git` mount is empty; git metadata lives in `.git.writable`. Hands-on takeover verified implementation on `feat/issue-427-calendar-clean` (5 commits vs `main`), stripped Cursor co-author trailers, and force-pushed.
 
 ## Verification
 
