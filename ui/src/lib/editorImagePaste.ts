@@ -61,11 +61,13 @@ export function extractImagesFromDataTransfer(
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item.kind !== "file") continue;
-      if (!isPasteableImageType(item.type)) continue;
       const file = item.getAsFile();
-      if (file) files.push(file);
+      if (!file) continue;
+      const mime = item.type || file.type;
+      if (!isPasteableImageType(mime)) continue;
+      files.push(file);
     }
-    return files;
+    if (files.length > 0) return files;
   }
   return Array.from(dataTransfer.files).filter((f) => isPasteableImageType(f.type));
 }

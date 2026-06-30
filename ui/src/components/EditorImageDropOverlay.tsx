@@ -1,6 +1,6 @@
 import { ImagePlus } from "lucide-react";
 import { cn } from "@kw/lib/cn";
-import { isOsImageDrag } from "@kw/lib/editorImagePaste";
+import { hasImageInDataTransfer, isOsImageDrag } from "@kw/lib/editorImagePaste";
 
 type Props = {
   active: boolean;
@@ -26,5 +26,5 @@ export function EditorImageDropOverlay({ active, className }: Props) {
 }
 
 export function shouldShowEditorImageDropOverlay(event: DragEvent): boolean {
-  return isOsImageDrag(event);
+  return isOsImageDrag(event) && hasImageInDataTransfer(event.dataTransfer);
 }

@@ -42,6 +42,14 @@ describe("editorImagePaste", () => {
     expect(hasImageInDataTransfer(dt)).toBe(true);
   });
 
+  it("falls back to files when items have empty MIME types", () => {
+    const png = new File(["a"], "a.png", { type: "image/png" });
+    const items = [{ kind: "file", type: "", getAsFile: () => png }];
+    const dt = { items, files: [png] } as unknown as DataTransfer;
+    expect(extractImagesFromDataTransfer(dt)).toEqual([png]);
+    expect(hasImageInDataTransfer(dt)).toBe(true);
+  });
+
   it("maps uploaded /raw/ URLs to page-relative markdown refs", () => {
     expect(assetUrlToMarkdownRef("/raw/notes/paste-1.png", "notes/page.md")).toBe(
       "paste-1.png",

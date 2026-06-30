@@ -35,7 +35,12 @@ import { MarkdownSourceEditor } from "./editor/MarkdownSourceEditor";
 import { blockNoteSlashItems, loadSlashCommandTemplate } from "@kw/lib/editorSlashCommands";
 import { useEditorSlashCommands } from "../hooks/useEditorSlashCommands";
 import { EditorImageDropOverlay } from "./EditorImageDropOverlay";
-import { hasImageInDataTransfer, isOsImageDrag, renameFileForPaste } from "@kw/lib/editorImagePaste";
+import {
+  hasImageInDataTransfer,
+  isOsImageDrag,
+  isUploadingPlaceholder,
+  renameFileForPaste,
+} from "@kw/lib/editorImagePaste";
 import {
   Dialog,
   DialogContent,
@@ -432,7 +437,9 @@ function EditorInner({
   const [imagePasteError, setImagePasteError] = useState<string | null>(null);
   const imagePasteErrorTimer = useRef<number | null>(null);
   const [imageDropActive, setImageDropActive] = useState(false);
+  const [pendingImageUploads, setPendingImageUploads] = useState(0);
   const imageDropDepthRef = useRef(0);
+  const pendingImageUploadsRef = useRef(0);
   const editorRef = useRef<BlockNoteEditor | null>(null);
   const onSlashTemplateError = useCallback((message: string) => {
     setSlashCommandError(message);
@@ -443,6 +450,14 @@ function EditorInner({
       setSlashCommandError(null);
       slashCommandErrorTimer.current = null;
     }, 6000);
+  }, []);
+  const onImageUploadStart = useCallback(() => {
+    pendingImageUploadsRef.current += 1;
+    setPendingImageUploads(pendingImageUploadsRef.current);
+  }, []);
+  const onImageUploadEnd = useCallback(() => {
+    pendingImageUploadsRef.current = Math.max(0, pendingImageUploadsRef.current - 1);
+    setPendingImageUploads(pendingImageUploadsRef.current);
   }, []);
   const onImagePasteError = useCallback((message: string) => {
     setImagePasteError(message);
@@ -607,6 +622,13 @@ function EditorInner({
       setSaveStatus("saving");
       setError(null);
       try {
+        if (
+          editorMode === "source" &&
+          (pendingImageUploadsRef.current > 0 || isUploadingPlaceholder(sourceText))
+        ) {
+          return false;
+        }
+
         let md: string;
         if (editorMode === "source") {
           md = sourceText;
@@ -823,13 +845,20 @@ function EditorInner({
       pagePath: path,
       uploadImage: uploadAssetForEditor,
       onError: onImagePasteError,
+      onUploadStart: onImageUploadStart,
+      onUploadEnd: onImageUploadEnd,
     }),
-    [path, uploadAssetForEditor, onImagePasteError],
+    [path, uploadAssetForEditor, onImagePasteError, onImageUploadStart, onImageUploadEnd],
   );
+
+  const sourceUploadPending =
+    editorMode === "source" &&
+    (pendingImageUploads > 0 || isUploadingPlaceholder(sourceText));
 
   const canSave =
     saveStatus !== "clean" &&
     !saving &&
+    !sourceUploadPending &&
     (editorMode === "source" || ready);
 
   return (

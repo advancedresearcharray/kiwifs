@@ -13,6 +13,8 @@ export type EditorImagePasteOptions = {
   pagePath: string;
   uploadImage: (file: File) => Promise<string>;
   onError: (message: string) => void;
+  onUploadStart?: () => void;
+  onUploadEnd?: () => void;
 };
 
 export function replacePlaceholderInView(
@@ -53,6 +55,8 @@ export async function insertUploadedImage(
     removePlaceholderFromView(view, placeholder);
     const msg = e instanceof Error ? e.message : String(e);
     opts.onError(msg || "Image upload failed");
+  } finally {
+    opts.onUploadEnd?.();
   }
 }
 
@@ -68,13 +72,14 @@ export function beginImageInsert(
     changes: { from: pos, insert: placeholder },
     selection: { anchor: pos + placeholder.length },
   });
+  opts.onUploadStart?.();
   void insertUploadedImage(view, file, placeholder, opts);
   return placeholder;
 }
 
-export function editorImagePasteExtension(opts: EditorImagePasteOptions): Extension {
-  return EditorView.domEventHandlers({
-    paste(event, view) {
+export function editorImagePasteDomHandlers(opts: EditorImagePasteOptions) {
+  return {
+    paste(event: ClipboardEvent, view: EditorView) {
       if (!hasImageInDataTransfer(event.clipboardData)) return false;
       const files = extractImagesFromDataTransfer(event.clipboardData);
       if (files.length === 0) return false;
@@ -82,7 +87,7 @@ export function editorImagePasteExtension(opts: EditorImagePasteOptions): Extens
       beginImageInsert(view, files[0], opts);
       return true;
     },
-    drop(event, view) {
+    drop(event: DragEvent, view: EditorView) {
       if (!isOsImageDrag(event)) return false;
       const files = extractImagesFromDataTransfer(event.dataTransfer);
       if (files.length === 0) return false;
@@ -94,10 +99,14 @@ export function editorImagePasteExtension(opts: EditorImagePasteOptions): Extens
       beginImageInsert(view, files[0], opts);
       return true;
     },
-    dragover(event) {
+    dragover(event: DragEvent) {
       if (!isOsImageDrag(event) || !hasImageInDataTransfer(event.dataTransfer)) return false;
       event.preventDefault();
       return true;
     },
-  });
+  };
+}
+
+export function editorImagePasteExtension(opts: EditorImagePasteOptions): Extension {
+  return EditorView.domEventHandlers(editorImagePasteDomHandlers(opts));
 }
