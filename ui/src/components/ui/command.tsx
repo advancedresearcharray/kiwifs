@@ -23,6 +23,7 @@ Command.displayName = CommandPrimitive.displayName;
 interface CommandDialogProps extends React.ComponentProps<typeof Dialog> {
   className?: string;
   contentClassName?: string;
+  title?: string;
   commandProps?: React.ComponentPropsWithoutRef<typeof Command>;
 }
 
@@ -30,6 +31,7 @@ const CommandDialog = ({
   children,
   className,
   contentClassName,
+  title = "Search",
   commandProps,
   ...props
 }: CommandDialogProps) => (
@@ -38,7 +40,7 @@ const CommandDialog = ({
       className={cn("overflow-hidden p-0 sm:max-w-2xl", contentClassName)}
       showCloseButton={false}
     >
-      <DialogTitle className="sr-only">Search</DialogTitle>
+      <DialogTitle className="sr-only">{title}</DialogTitle>
       <Command
         {...commandProps}
         className={cn(
