@@ -7,6 +7,7 @@ import {
   isMobileViewport,
   loadSplitViewFromSession,
   navigateSplitPane,
+  normalizeSizes,
   openInSplitState,
   saveSplitViewToSession,
   toggleSplitState,
@@ -107,6 +108,19 @@ describe("splitView", () => {
     it("treats <=767px as mobile", () => {
       expect(isMobileViewport(767)).toBe(true);
       expect(isMobileViewport(768)).toBe(false);
+    });
+  });
+
+  describe("normalizeSizes", () => {
+    it("returns defaults for invalid input", () => {
+      expect(normalizeSizes(null)).toEqual([50, 50]);
+      expect(normalizeSizes([0, 100])).toEqual([50, 50]);
+      expect(normalizeSizes(["bad", 40])).toEqual([50, 50]);
+    });
+
+    it("normalizes arbitrary positive pairs to percentages summing to 100", () => {
+      expect(normalizeSizes([30, 70])).toEqual([30, 70]);
+      expect(normalizeSizes([1, 3])).toEqual([25, 75]);
     });
   });
 });

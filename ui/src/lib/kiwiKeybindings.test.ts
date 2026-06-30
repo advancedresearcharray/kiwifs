@@ -94,6 +94,18 @@ describe("matchBoundAction", () => {
     } as KeyboardEvent;
     expect(matchBoundAction(e, bindings)).toBe("graph");
   });
+
+  it("matches toggle_split default binding", () => {
+    const bindings = mergeKeybindings(null);
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(matchBoundAction(e, bindings)).toBe("toggle_split");
+  });
 });
 
 describe("buildChordIndex", () => {
