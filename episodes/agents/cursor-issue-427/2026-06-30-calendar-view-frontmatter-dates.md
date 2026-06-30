@@ -35,6 +35,15 @@ go test ./internal/config/... ./internal/keybindings/... -count=1
 # ok
 ```
 
+## Peer review fix (hands-on takeover)
+
+Prior branch mixed MCP #424 commits (`spec2026Handler`, `validateRoutingHeaders`) with calendar work, causing false security/correctness review findings on a 2187-line diff.
+
+1. Reset `feat/issue-427-calendar-view` to `main`.
+2. Cherry-picked only calendar commit (`3abee7e` → `f2ae395`).
+3. Verified diff is 20 files / ~1151 lines, calendar-only.
+4. Added durable fix doc at `pages/fixes/kiwifs-kiwifs/issue-427-calendar-view-frontmatter-dates.md`.
+
 ## Outcome
 
-Calendar view ready for fleet publish. Closes #427 when PR merges.
+Calendar view ready for PR. Closes #427 when merged.
