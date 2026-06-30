@@ -139,3 +139,20 @@ cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.t
 ```
 
 Committed and pushed to fork PR #58.
+
+## Hands-on takeover v5 (2026-06-30)
+
+Re-verified full implementation on `feat/issue-352-theme-presets-config-clean` (HEAD `862bec4`).
+All acceptance criteria met; no additional feature code changes required.
+
+Tests (all green):
+
+```
+go test ./internal/themepresets/... -count=1 -v          → 7 passed
+go test ./internal/config/... -run TestUIConfigThemePresets -count=1 → PASS
+go test ./internal/api/... -run 'GetThemePresets|UIConfig_Theme' -count=1 → 3 passed
+cd ui && npm test -- --run src/themes/index.test.ts src/lib/uiConfigStore.test.ts → 10 passed
+```
+
+Kiwi depot (`192.168.167.240:3333`) unreachable; fix doc at `pages/fixes/kiwifs-kiwifs/issue-352-theme-presets-config.md` (gitignored locally).
+PR: https://github.com/advancedresearcharray/kiwifs/pull/58 — Closes kiwifs/kiwifs#352
