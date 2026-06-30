@@ -17,6 +17,7 @@ func TestNormalizeChord(t *testing.T) {
 		{"Escape", "escape"},
 		{"Ctrl+/", "mod+/"},
 		{"Mod+?", "mod+?"},
+		{"Mod+\\", "mod+\\"},
 	}
 	for _, tc := range tests {
 		got, err := NormalizeChord(tc.in)

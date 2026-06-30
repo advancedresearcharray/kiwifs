@@ -29,6 +29,18 @@ describe("eventMatchesChord", () => {
     expect(eventMatchesChord(e, "Mod+K")).toBe(true);
   });
 
+  it("matches backslash split-view shortcut", () => {
+    const e = {
+      key: "\\",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(eventMatchesChord(e, "mod+\\")).toBe(true);
+    expect(normalizeChord("Mod+\\")).toBe("mod+\\");
+  });
+
   it("matches help shortcut on slash and question mark", () => {
     const slash = {
       key: "/",
@@ -53,6 +65,7 @@ describe("mergeKeybindings", () => {
   it("keeps defaults when config is empty", () => {
     const merged = mergeKeybindings(null);
     expect(merged.search).toBe(DEFAULT_KEYBINDINGS.search);
+    expect(merged.toggle_split_view).toBe("mod+\\");
   });
 
   it("applies server overrides", () => {
