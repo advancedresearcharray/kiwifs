@@ -152,10 +152,11 @@ export function KiwiCalendar({ onClose, onNavigate, isMobile = false }: Props) {
     return options;
   }, [year]);
 
-  const weekKeys = useMemo(
-    () => weekDateKeys(new Date(year, month - 1, Math.min(now.getDate(), new Date(year, month, 0).getDate()))),
-    [year, month, now],
-  );
+  const weekKeys = useMemo(() => {
+    const today = new Date();
+    const anchorDay = Math.min(today.getDate(), new Date(year, month, 0).getDate());
+    return weekDateKeys(new Date(year, month - 1, anchorDay));
+  }, [year, month]);
 
   const renderDayPopover = (dateStr: string, hits: CalendarEntry[], dayNum: number) => {
     const visible = hits.slice(0, 3);
