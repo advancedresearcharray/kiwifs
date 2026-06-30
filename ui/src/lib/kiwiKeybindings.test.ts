@@ -182,4 +182,16 @@ describe("shouldTriggerBareShortcutsHelp", () => {
     } as KeyboardEvent;
     expect(shouldTriggerBareShortcutsHelp(e)).toBe(false);
   });
+
+  it("opens on shift+/ without question key code", () => {
+    const e = {
+      key: "/",
+      shiftKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      target: mockTarget(false),
+    } as KeyboardEvent;
+    expect(shouldTriggerBareShortcutsHelp(e)).toBe(true);
+  });
 });

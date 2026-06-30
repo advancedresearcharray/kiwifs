@@ -7,23 +7,28 @@ import {
   CommandList,
 } from "@kw/components/ui/command";
 import {
-  formatChordDisplay,
-  SHORTCUT_SECTIONS,
-  type KeybindingAction,
-} from "../lib/kiwiKeybindings";
+  buildShortcutRows,
+  formatConflictSummary,
+  type BindingConflict,
+} from "../lib/keyboardShortcutsOverlay";
+import { SHORTCUT_SECTIONS, type KeybindingAction } from "../lib/kiwiKeybindings";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bindings: Record<KeybindingAction, string>;
-  conflicts?: { chord: string; actions: string[] }[];
+  conflicts?: BindingConflict[];
 };
 
-function shortcutSearchValue(section: string, label: string, chord: string): string {
-  return `${section} ${label} ${formatChordDisplay(chord)} ${chord}`.toLowerCase();
-}
-
 export function KeyboardShortcuts({ open, onOpenChange, bindings, conflicts = [] }: Props) {
+  const rows = buildShortcutRows(bindings);
+  const rowsBySection = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const list = rowsBySection.get(row.section) ?? [];
+    list.push(row);
+    rowsBySection.set(row.section, list);
+  }
+
   return (
     <CommandDialog
       open={open}
@@ -34,24 +39,23 @@ export function KeyboardShortcuts({ open, onOpenChange, bindings, conflicts = []
       <CommandInput placeholder="Filter shortcuts…" />
       {conflicts.length > 0 && (
         <div className="rounded-none border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          Conflicting bindings detected:{" "}
-          {conflicts.map((c) => `${c.actions.join(" / ")} (${formatChordDisplay(c.chord)})`).join("; ")}
+          Conflicting bindings detected: {formatConflictSummary(conflicts)}
         </div>
       )}
       <CommandList>
         <CommandEmpty>No shortcuts found.</CommandEmpty>
         {SHORTCUT_SECTIONS.map((s) => (
           <CommandGroup key={s.section} heading={s.section}>
-            {s.items.map((item) => (
+            {(rowsBySection.get(s.section) ?? []).map((row) => (
               <CommandItem
-                key={item.action}
-                value={shortcutSearchValue(s.section, item.label, bindings[item.action])}
+                key={row.action}
+                value={row.searchValue}
                 onSelect={() => {}}
                 className="flex items-center justify-between aria-selected:bg-accent"
               >
-                <span>{item.label}</span>
+                <span>{row.label}</span>
                 <kbd className="ml-4 shrink-0 px-2 py-0.5 rounded border border-border bg-muted font-mono text-xs text-muted-foreground">
-                  {formatChordDisplay(bindings[item.action])}
+                  {row.chordDisplay}
                 </kbd>
               </CommandItem>
             ))}

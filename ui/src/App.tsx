@@ -50,7 +50,8 @@ import { usePinnedPages } from "./hooks/usePinnedPages";
 import { useKeybindings } from "./hooks/useKeybindings";
 import { useUIConfig } from "./hooks/useUIConfig";
 import { usePreferences } from "./hooks/usePreferences";
-import { formatChordDisplay, matchBoundAction, shouldTriggerBareShortcutsHelp, type KeybindingAction } from "./lib/kiwiKeybindings";
+import { resolveShortcutsOverlayKey } from "./lib/keyboardShortcutsOverlay";
+import { formatChordDisplay, matchBoundAction, type KeybindingAction } from "./lib/kiwiKeybindings";
 import {
   shouldOpenViewFromPathname,
   shouldPreservePathnameForViewRoute,
@@ -353,7 +354,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (shouldTriggerBareShortcutsHelp(e)) {
+      if (resolveShortcutsOverlayKey(e, bindings) === "toggle") {
         e.preventDefault();
         setShortcutsOpen((v) => !v);
         return;
@@ -428,10 +429,6 @@ export default function App() {
           setKanbanOpen(next);
           break;
         }
-        case "shortcuts_help":
-          e.preventDefault();
-          setShortcutsOpen((v) => !v);
-          break;
         case "undo":
           if (state.editing) return;
           e.preventDefault();
